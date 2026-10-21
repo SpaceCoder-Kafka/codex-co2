@@ -39,10 +39,10 @@ The command opens a local first-launch guide after successful installation. Use 
 
 ### Install from a DMG
 
-Alternatively, download the DMG and matching `.sha256` file from [Releases](https://github.com/SpaceCoder-Kafka/codex-co2/releases/tag/v0.3.3-preview.10), then check the file:
+Alternatively, download the DMG and matching `.sha256` file from [Releases](https://github.com/SpaceCoder-Kafka/codex-co2/releases/tag/v0.3.3-preview.11), then check the file:
 
 ```sh
-shasum -a 256 -c Codex-Co2-0.3.3-build10-arm64-preview.dmg.sha256
+shasum -a 256 -c Codex-Co2-0.3.3-build11-arm64-preview.dmg.sha256
 ```
 
 The preview is **ad-hoc signed and not notarized by Apple**. macOS may block its first launch. Attempt to open Co² from Applications, then go to **System Settings → Privacy & Security → Open Anyway** and confirm. Homebrew installs the app directly without showing the DMG's installation window. See [Apple's guidance](https://support.apple.com/en-us/102445).
