@@ -18,10 +18,12 @@ Codex Co² 全称 **Codex Conversation Collaboration**。这是独立实验项�
 
 ```sh
 brew tap SpaceCoder-Kafka/tap
-brew install --cask SpaceCoder-Kafka/tap/codex-co2
+brew install --cask SpaceCoder-Kafka/tap/codex-co2 && open "$(brew --repository SpaceCoder-Kafka/tap)/guides/homebrew.html"
 ```
 
 如果你的 Homebrew 版本提示需要显式信任 Cask，先检查定义，再执行 `brew trust --cask SpaceCoder-Kafka/tap/codex-co2`，随后重试安装。
+
+安装成功后，上述命令会在默认浏览器打开本地首次使用引导。Homebrew 已将应用放入 Applications，无需再次拖拽。如果已经安装，只需执行 `brew update`，再单独执行上面的 `open` 命令，无需重新安装。
 
 也可以从 [Releases](https://github.com/SpaceCoder-Kafka/codex-co2/releases/tag/v0.3.3-preview.10) 下载 DMG 和对应 `.sha256` 文件，下载后执行：
 

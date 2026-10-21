@@ -24,10 +24,12 @@ Install with [Homebrew](https://github.com/SpaceCoder-Kafka/homebrew-tap):
 
 ```sh
 brew tap SpaceCoder-Kafka/tap
-brew install --cask SpaceCoder-Kafka/tap/codex-co2
+brew install --cask SpaceCoder-Kafka/tap/codex-co2 && open "$(brew --repository SpaceCoder-Kafka/tap)/guides/homebrew.html"
 ```
 
 If your Homebrew version requests explicit cask trust, review the cask and run `brew trust --cask SpaceCoder-Kafka/tap/codex-co2`, then retry installation.
+
+The command opens a local first-launch guide after successful installation. Homebrew has already placed the app in Applications, so no drag-and-drop step is needed. If you already installed it, run `brew update` and then only the `open` command above; reinstalling is unnecessary.
 
 Alternatively, download the DMG and matching `.sha256` file from [Releases](https://github.com/SpaceCoder-Kafka/codex-co2/releases/tag/v0.3.3-preview.10), then check the file:
 
