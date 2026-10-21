@@ -42,3 +42,19 @@ test('streaming incomplete Markdown and large code blocks stay readable', () => 
   const text = '<code> '.repeat(8000);
   assert.equal(all(render('```\n' + text), 'code')[0].textContent.trimEnd(), text.trimEnd());
 });
+
+test('image callback binds previews to parsed image positions while keeping code literal and unsupported images readable', () => {
+  const node = new Node('div'), images = [];
+  window.renderMarkdown(node, '之前 ![本地](/synthetic/a.png) ![不支持](/bad.svg)\n\n`![代码](/code.png)`\n\n之后 ![远程](https://example.invalid/a.png)', {
+    renderImage(parent, index, alt) {
+      images.push({ index, alt });
+      if (index === 1) return false;
+      const image = document.createElement('img'); image.setAttribute('alt', alt); parent.append(image); return true;
+    },
+  });
+  assert.deepEqual(images, [{ index: 0, alt: '本地' }, { index: 1, alt: '不支持' }, { index: 2, alt: '远程' }]);
+  assert.equal(all(node, 'img').length, 2);
+  assert.match(node.textContent, /\[图片：不支持\]/);
+  assert.equal(all(node, 'code')[0].textContent, '![代码](/code.png)');
+  assert.match(node.textContent, /之前.*之后/s);
+});

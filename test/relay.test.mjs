@@ -14,6 +14,8 @@ async function fixture(t, overrides = {}) {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'coop-relay-'));
   await fs.writeFile(path.join(dir, 'index.html'), '<!doctype html><p>Guest</p>');
   await fs.writeFile(path.join(dir, 'guest.js'), '// guest');
+  await fs.writeFile(path.join(dir, 'notifications.js'), '// notifications');
+  await fs.writeFile(path.join(dir, 'notification-worker.js'), '// notification worker');
   await fs.writeFile(path.join(dir, 'style.css'), 'body {}');
   await fs.writeFile(path.join(dir, 'private.txt'), 'must not be served');
   const registrationSecret = secret();
@@ -78,6 +80,12 @@ test('relay serves only fixed public assets and never emits CORS permissions', a
   assert.equal(page.status, 200);
   assert.match(page.headers.get('content-security-policy'), /frame-ancestors 'none'/);
   assert.equal(page.headers.get('access-control-allow-origin'), null);
+  assert.match(page.headers.get('content-security-policy'), /worker-src 'self'/);
+  assert.equal(await (await fetch(relay.url + '/notifications.js')).text(), '// notifications');
+  const worker = await fetch(relay.url + '/notification-worker.js');
+  assert.match(worker.headers.get('content-type'), /text\/javascript/);
+  assert.equal(worker.headers.get('cache-control'), 'no-store');
+  assert.equal(await worker.text(), '// notification worker');
   assert.equal(page.headers.get('referrer-policy'), 'no-referrer');
   assert.equal(await page.text(), '<!doctype html><p>Guest</p>');
   assert.deepEqual(await (await fetch(relay.url + '/health')).json(), { ok: true });

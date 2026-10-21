@@ -2,11 +2,15 @@
 (() => {
   const parser = window.markdownit({ html: false, linkify: false, typographer: false });
   const tags = new Set(['p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'blockquote', 'ul', 'ol', 'li', 'em', 'strong', 's', 'table', 'thead', 'tbody', 'tr', 'th', 'td']);
-  function appendTokens(parent, tokens, document) {
+  function appendTokens(parent, tokens, document, images) {
     const stack = [parent];
     for (const token of tokens) {
       const current = stack.at(-1);
-      if (token.type === 'inline') { appendTokens(current, token.children || [], document); continue; }
+      if (token.type === 'inline') { appendTokens(current, token.children || [], document, images); continue; }
+      if (token.type === 'image') {
+        const index = images.index++;
+        if (images.render?.(current, index, token.content || token.attrGet('alt') || '图片')) continue;
+      }
       if (token.nesting === -1) { if (stack.length > 1) stack.pop(); continue; }
       if (token.nesting === 1) {
         const node = document.createElement(tags.has(token.tag) ? token.tag : token.type === 'link_open' ? 'a' : 'span');
@@ -49,8 +53,8 @@
       }
     }
   }
-  window.renderMarkdown = (container, text) => {
-    try { appendTokens(container, parser.parse(text, {}), container.ownerDocument || document); }
+  window.renderMarkdown = (container, text, { renderImage } = {}) => {
+    try { appendTokens(container, parser.parse(text, {}), container.ownerDocument || document, { index: 0, render: renderImage }); }
     catch { container.textContent = text; }
   };
 })();

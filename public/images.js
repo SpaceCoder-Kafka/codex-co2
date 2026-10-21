@@ -48,12 +48,16 @@ window.createThreadImages = ({ send, canRead }) => {
     for (const { button, label, figure } of state.views) {
       button.replaceChildren(); label.textContent = state.name;
       if (state.status === 'ready' && state.kind === 'image') {
-        const image = document.createElement('img'), url = state.url; image.src = url; image.alt = state.name;
+        const image = document.createElement('img'), url = state.url; image.alt = state.name;
         image.loading = 'lazy'; image.decoding = 'async';
+        image.referrerPolicy = 'no-referrer';
         image.addEventListener('error', () => {
           if (states.get(state.id) !== state || state.url !== url) return;
-          release(state, 'failed'); draw(state);
+          release(state, 'failed');
+          if (state.remoteUrl) state.problem = '无法加载远程图片。点击重试';
+          draw(state);
         });
+        image.src = url;
         button.append(image); button.disabled = false; button.title = '点击放大图片';
       } else if (state.status === 'ready') {
         button.textContent = state.expanded ? '收起预览' : state.kind === 'video' ? '显示视频' : '预览文本';
@@ -72,6 +76,7 @@ window.createThreadImages = ({ send, canRead }) => {
   }
   function enqueue(state) {
     if (!state || ['ready', 'queued', 'loading'].includes(state.status) || !canRead()) return;
+    if (state.remoteUrl) { state.problem = ''; state.url = state.remoteUrl; state.status = 'ready'; draw(state); return; }
     state.problem = ''; state.status = 'queued'; queue.push(state.id); draw(state); pump();
   }
   function pump() {
@@ -122,31 +127,43 @@ window.createThreadImages = ({ send, canRead }) => {
         if (active?.state === state) { window.clearTimeout(timer); timer = null; active = null; }
       }
     },
-    render(refs, parent) {
+    render(refs, parent, { inline = false } = {}) {
+      let rendered = 0;
       for (const ref of refs ?? []) {
         const kind = ref?.kind ?? 'image';
         if (!ref || !/^[a-f0-9]{64}$/.test(ref.id ?? '') || typeof ref.name !== 'string' || !Object.hasOwn(limits, kind)) continue;
         let state = states.get(ref.id);
         if (!state) {
           if (states.size >= 128) continue;
-          state = { id: ref.id, name: ref.name.slice(0, 240), kind, status: 'idle', views: [], cost: 0, url: null }; states.set(ref.id, state);
+          let remoteUrl = null;
+          if (ref.url !== undefined) {
+            try {
+              const url = new URL(ref.url);
+              if (kind !== 'image' || !['https:', 'http:'].includes(url.protocol) || url.username || url.password || url.href.length > 4096) continue;
+              remoteUrl = url.href;
+            } catch { continue; }
+          }
+          state = { id: ref.id, name: ref.name.slice(0, 240), kind, status: 'idle', views: [], cost: 0, url: null, remoteUrl }; states.set(ref.id, state);
         }
         if (state.kind !== kind) continue;
-        const figure = document.createElement('figure'); figure.className = kind === 'image' ? 'message-image' : 'message-file';
+        const figure = document.createElement(inline ? 'span' : 'figure'); figure.className = kind === 'image' ? 'message-image' : 'message-file';
         const button = document.createElement('button'); button.type = 'button'; button.dataset.imageId = ref.id;
-        const label = document.createElement('figcaption'); figure.append(button, label); parent.append(figure);
+        const label = document.createElement(inline ? 'span' : 'figcaption'); label.className = 'image-caption'; figure.append(button, label); parent.append(figure);
+        rendered++;
         state.views.push({ button, label, figure }); draw(state);
-        button.addEventListener('click', () => {
+        button.addEventListener('click', event => {
+          event.preventDefault(); event.stopPropagation?.();
           if (state.status !== 'ready') { enqueue(state); return; }
           if (state.kind !== 'image') {
             state.expanded = !state.expanded;
             if (!state.expanded && state.media) { state.media.pause(); state.wasPlaying = false; }
             draw(state); return;
           }
-          expandedId = state.id; full.src = state.url; full.alt = state.name; caption.textContent = state.name; dialog.showModal();
+          expandedId = state.id; full.referrerPolicy = 'no-referrer'; full.src = state.url; full.alt = state.name; caption.textContent = state.name; dialog.showModal();
         });
         if (state.status === 'idle' && kind === 'image') { if (observer) observer.observe(button); else enqueue(state); }
       }
+      return rendered;
     },
     mounted() {
       for (const state of states.values()) if (state.wasPlaying && state.media?.paused && state.expanded && canRead()) state.media.play().catch(() => {});

@@ -6,7 +6,7 @@ import path from 'node:path';
 import { EventEmitter, once } from 'node:events';
 import { setTimeout as delay } from 'node:timers/promises';
 import WebSocket from 'ws';
-import { imageInputParts, imageRefs, readImage, imageMessageText, MAX_IMAGE_BYTES } from '../lib/thread-images.mjs';
+import { imageInputParts, imageRefs, assistantImageRefs, readImage, imageMessageText, MAX_IMAGE_BYTES } from '../lib/thread-images.mjs';
 import { ScopedThread } from '../lib/scoped-thread.mjs';
 import { projectDesktopThread } from '../lib/desktop-ipc.mjs';
 import { SharedRoom, secret } from '../lib/host.mjs';
@@ -108,6 +108,65 @@ test('only structured supported image input authorizes reads; signatures, size, 
   await fs.writeFile(disguised, Buffer.alloc(MAX_IMAGE_BYTES + 1)); await assert.rejects(readImage(get(disguised)));
 });
 
+test('assistant Markdown grants only image-token scope, with stable positions across unsupported sources and code examples', async t => {
+  const { dir, file } = await files(t);
+  const spaced = path.join(dir, '含 空格.png'); await fs.writeFile(spaced, png);
+  const text = `普通路径 ${file}\n\n[普通链接](${file})\n\n\`![代码](${file})\`\n\n\`\`\`md\n![示例](${file})\n\`\`\`\n\n<img src="${file}">\n\n![不支持](/private.svg)\n\n![本地](<${spaced}>)\n\n![远程](https://example.invalid/image.png)\n\n![内联](data:image/png;base64,${png.toString('base64')})`;
+  const refs = assistantImageRefs('reply', text, 'key');
+  assert.deepEqual(refs.map(r => r.index), [1, 2, 3]);
+  assert.deepEqual(refs.map(r => r.name), ['本地', '远程', '内联']);
+  assert.equal((await readImage(refs[0])).mime, 'image/png');
+  assert.equal((await readImage(refs[2])).mime, 'image/png');
+  await assert.rejects(readImage(refs[1]), 'remote sources never cause host HTTP requests');
+  assert.deepEqual(assistantImageRefs('reply', `路径 ${file}\n\n[link](${file})\n\n\`![code](${file})\``, 'key'), []);
+  assert.deepEqual(assistantImageRefs('reply', '![relative](./asset.png) ![protocol relative](//example.invalid/a.png)', 'key'), []);
+  assert.equal(assistantImageRefs('reply', text, 'key')[0].id, refs[0].id);
+  assert.notEqual(assistantImageRefs('other', text, 'key')[0].id, refs[0].id);
+  assert.notEqual(assistantImageRefs('reply', text, 'other-room')[0].id, refs[0].id);
+});
+
+test('assistant image refs survive both Desktop projections, stream deltas and completion; truncation and history removal revoke reads', async t => {
+  const { file } = await files(t), text = `之前\n\n![预览](${file})\n\n之后`;
+  for (const canonical of [false, true]) {
+    const turn = { turnId: 'turn', status: 'completed', items: [{ id: 'reply', type: 'agentMessage', text }] };
+    const state = { id: 'selected', hostId: 'local', ...(canonical
+      ? { turnHistory: { kind: 'canonical', history: { isComplete: true, islands: [{ entries: [{ value: 't' }] }], entitiesByKey: { t: turn } } } }
+      : { turns: [turn] }) };
+    const rpc = new Rpc([]); rpc.thread = projectDesktopThread(state, 'selected');
+    const thread = new ScopedThread({ rpc, threadId: 'selected' }); t.after(() => thread.close()); await thread.start();
+    const ref = thread.snapshot.items[0].images[0];
+    assert.deepEqual(Object.keys(ref).sort(), ['id', 'index', 'name']);
+    assert.equal((await thread.readImage(ref.id)).mime, 'image/png');
+    rpc.thread.turns[0].items[0].text = '开始'; await thread.refresh();
+    await assert.rejects(thread.readImage(ref.id));
+    rpc.emit('notification', { method: 'item/agentMessage/delta', params: { threadId: 'other', turnId: 'turn', itemId: 'reply', delta: text } });
+    assert.equal(thread.snapshot.items[0].images, undefined);
+    rpc.emit('notification', { method: 'item/agentMessage/delta', params: { threadId: 'selected', turnId: 'turn', itemId: 'reply', delta: `\n![预览](${file}` } });
+    assert.equal(thread.snapshot.items[0].images, undefined);
+    rpc.emit('notification', { method: 'item/agentMessage/delta', params: { threadId: 'selected', turnId: 'turn', itemId: 'reply', delta: ')' } });
+    assert.equal(thread.snapshot.items[0].images[0].id, ref.id);
+    assert.equal((await thread.readImage(ref.id)).mime, 'image/png');
+    rpc.emit('notification', { method: 'item/completed', params: { threadId: 'selected', turnId: 'turn', item: { id: 'reply', type: 'agentMessage', text } } });
+    rpc.thread.turns[0].items[0].text = text;
+    rpc.emit('notification', { method: 'turn/completed', params: { threadId: 'selected', turn: { id: 'turn' } } });
+    await thread.refresh(); assert.equal(thread._liveTurns.size, 0);
+    rpc.thread.turns[0].items[0].text = 'x'.repeat(100000) + text; await thread.refresh();
+    assert.equal(thread.snapshot.historyTruncated, true);
+    assert.equal(thread.snapshot.items[0].images, undefined);
+    await assert.rejects(thread.readImage(ref.id));
+    thread.close();
+  }
+});
+
+test('image reads refuse private runtime paths and symlinked private parents using synthetic files', async t => {
+  const { dir } = await files(t), privateDir = path.join(dir, '.coop');
+  await fs.mkdir(privateDir); const file = path.join(privateDir, 'private.png'); await fs.writeFile(file, png);
+  const parent = path.join(dir, 'alias'); await fs.symlink(privateDir, parent);
+  for (const source of [file, path.join(parent, 'private.png')]) {
+    await assert.rejects(readImage(imageRefs('item', [{ type: 'localImage', path: source }], 'key')[0]));
+  }
+});
+
 test('Desktop canonical and legacy projection preserve image-only input without granting access from text metadata', () => {
   const input = [{ type: 'localImage', path: '/synthetic/example.png', other: 'private' }];
   const state = { id: 'selected', hostId: 'local', turns: [{ turnId: 'turn', params: { input }, items: [] }] };
@@ -184,6 +243,7 @@ test('admitted guest receives bounded PNG chunks through the real relay; arbitra
   const bytes = Buffer.concat([png, Buffer.alloc(100000)]); await fs.writeFile(file, bytes);
   const registrationSecret = secret(), relay = await startRelay({ registrationSecret }); t.after(() => relay.close());
   const rpc = new Rpc([{ type: 'text', text: envelope([imageEntry(file)], '只展示问题和图片') }, { type: 'localImage', path: file }]);
+  rpc.thread.turns[0].items.push({ id: 'reply', type: 'agentMessage', text: `回复图片\n\n![README 页内播放实测](${file})` });
   const room = await new SharedRoom({ relayUrl: relay.url, registrationSecret, threadId: 'selected', rpcFactory: async () => rpc }).start(); t.after(() => room.close());
   const messages = [], guest = new WebSocket(relay.url.replace('http:', 'ws:') + '/guest', { origin: relay.url });
   t.after(() => guest.terminate()); guest.on('message', b => messages.push(JSON.parse(b))); await once(guest, 'open');
@@ -198,7 +258,12 @@ test('admitted guest receives bounded PNG chunks through the real relay; arbitra
   const chunks = messages.filter(m => m.payload?.type === 'image-chunk').map(m => m.payload);
   assert.ok(chunks.length > 1); assert.ok(chunks.every(c => Buffer.byteLength(JSON.stringify(c)) < 48 * 1024));
   assert.deepEqual(Buffer.concat(chunks.map(c => Buffer.from(c.data, 'base64'))), bytes);
-  assert.ok(!JSON.stringify(messages).includes(dir));
+  const assistantImageId = messages.find(m => m.payload?.type === 'snapshot').payload.items[1].images[0].id;
+  guest.send(JSON.stringify({ type: 'image-request', imageId: assistantImageId }));
+  await until(() => messages.some(m => m.payload?.imageId === assistantImageId && m.payload.index === m.payload.total - 1));
+  assert.deepEqual(Buffer.concat(messages.filter(m => m.payload?.type === 'image-chunk' && m.payload.imageId === assistantImageId)
+    .map(m => Buffer.from(m.payload.data, 'base64'))), bytes);
+  assert.ok(messages.filter(m => m.payload?.type === 'image-chunk').every(m => !JSON.stringify(m).includes(dir)));
   guest.send(JSON.stringify({ type: 'image-request', imageId: 'f'.repeat(64) }));
   await until(() => messages.some(m => m.payload?.type === 'image-unavailable'));
   guest.send(JSON.stringify({ type: 'image-request', imageId, path: file }));

@@ -3,20 +3,25 @@ import { webcrypto } from 'node:crypto';
 import fs from 'node:fs';
 import { test } from 'node:test';
 import vm from 'node:vm';
+import MarkdownIt from 'markdown-it';
 
 // Exercise the real browser script with synthetic UI/transport only. These tests
 // establish rendering decisions, not mobile browser layout or live transport.
 const html = fs.readFileSync(new URL('../public/index.html', import.meta.url), 'utf8');
 const script = fs.readFileSync(new URL('../public/guest.js', import.meta.url), 'utf8');
+const notificationScript = fs.readFileSync(new URL('../public/notifications.js', import.meta.url), 'utf8');
 const imageScript = fs.readFileSync(new URL('../public/images.js', import.meta.url), 'utf8');
+const markdownScript = fs.readFileSync(new URL('../public/markdown.js', import.meta.url), 'utf8');
 
 class Element {
   constructor(tag = 'div') {
-    Object.assign(this, { tag, children: [], dataset: {}, listeners: new Map(),
+    Object.assign(this, { tag, children: [], dataset: {}, style: { setProperty(name, value) { this[name] = value; } }, listeners: new Map(),
       hidden: false, disabled: false, value: '', textContent: '',
       scrollHeight: 500, scrollTop: 0, clientHeight: 500 });
   }
   set innerHTML(_value) { throw new Error('Guest messages must not use innerHTML'); }
+  set textContent(value) { this.valueText = value; this.children = []; }
+  get textContent() { return (this.valueText ?? '') + this.children.map(child => child.textContent).join(''); }
   append(...children) {
     this.children.push(...children.flatMap(child => child.tag === '#fragment' ? child.children : [child]));
   }
@@ -24,7 +29,8 @@ class Element {
   addEventListener(name, listener) { this.listeners.set(name, listener); }
   trigger(name, event = {}) { return this.listeners.get(name)?.({ preventDefault() {}, ...event }); }
   requestSubmit() { if (!this.submitButton?.disabled) this.trigger('submit'); }
-  focus() {}
+  focus() { this.onFocus?.(); }
+  contains(target) { return target === this || this.children.some(child => child.contains(target)); }
   select() { this.selected = true; }
   click() { this.clicked = true; return this.trigger('click'); }
   setAttribute(name, value) { this[name] = value; }
@@ -37,7 +43,7 @@ class Element {
   remove() { this.removed = true; }
 }
 
-function browser({ storage = new Map(), persistentStorage = new Map(), storageBlocked = false,
+function browser({ storage = new Map(), persistentStorage = new Map(), storageBlocked = false, viewport = null, notification = null, focused = true, markdown = false,
   invitation = `#room=synthetic-room&invite=${'x'.repeat(43)}` } = {}) {
   const urls = { created: [], revoked: [] };
   class PreviewURL extends URL {
@@ -48,6 +54,7 @@ function browser({ storage = new Map(), persistentStorage = new Map(), storageBl
     .map(match => {
       const element = new Element();
       element.hidden = /\shidden(?:\s|>)/.test(match[0]);
+      element.disabled = /\sdisabled(?:\s|>)/.test(match[0]);
       return [match[1], element];
     }));
   const sockets = [];
@@ -74,13 +81,18 @@ function browser({ storage = new Map(), persistentStorage = new Map(), storageBl
   };
   const documentListeners = new Map();
   const document = {
-    body: new Element('body'),
-    visibilityState: 'visible',
+    body: new Element('body'), documentElement: new Element('html'),
+    visibilityState: 'visible', hasFocus: () => focused,
     addEventListener(name, listener) { documentListeners.set(name, listener); },
     getElementById(id) { assert.ok(elements[id], `Missing HTML element: ${id}`); return elements[id]; },
     createElement: tag => new Element(tag),
+    createTextNode: text => { const node = new Element('#text'); node.textContent = text; return node; },
     createDocumentFragment: () => new Element('#fragment'),
   };
+  for (const element of Object.values(elements)) element.onFocus = () => { document.activeElement = element; };
+  const panelMarkup = html.slice(html.indexOf('<div id="collaboration-panel"'), html.indexOf('</header>'));
+  elements['collaboration-panel'].append(...[...panelMarkup.matchAll(/\bid="([^"]+)"/g)]
+    .map(match => elements[match[1]]).filter(element => element !== elements['collaboration-panel']));
   let clockNow = Date.now(), timerId = 0;
   const timers = new Map();
   const schedule = (fn, ms, repeat = false) => {
@@ -91,7 +103,9 @@ function browser({ storage = new Map(), persistentStorage = new Map(), storageBl
     URLSearchParams, URL: PreviewURL, WebSocket: Socket, crypto: webcrypto, Uint8Array, Blob, TextDecoder, atob, btoa,
     document,
     window: {
-      location,
+      ...(viewport ? { visualViewport: viewport } : {}),
+      ...(notification ? { Notification: notification } : {}),
+      location, focus() {},
       history: { replaceState(_state, _title, url) { redactedUrl = url; location.hash = ''; } },
       addEventListener(name, listener) { windowListeners.set(name, listener); },
       setTimeout: (fn, ms) => schedule(fn, ms), clearTimeout: id => timers.delete(id),
@@ -102,10 +116,13 @@ function browser({ storage = new Map(), persistentStorage = new Map(), storageBl
     },
   };
   vm.runInNewContext(imageScript, context);
+  if (markdown) { context.window.markdownit = MarkdownIt; vm.runInNewContext(markdownScript, context); }
+  vm.runInNewContext(notificationScript, context);
   vm.runInNewContext(script, context);
   assert.equal(redactedUrl, '/');
   return {
     elements, sockets, document, urls, storage, persistentStorage,
+    documentEvent(name, event) { documentListeners.get(name)?.(event); },
     tick(ms) {
       const until = clockNow + ms;
       for (;;) {
@@ -121,13 +138,13 @@ function browser({ storage = new Map(), persistentStorage = new Map(), storageBl
     online() { windowListeners.get('online')?.(); },
     pagehide() { windowListeners.get('pagehide')?.(); },
     pageshow() { windowListeners.get('pageshow')?.({ persisted: true }); },
-    join({ heartbeat = false } = {}) {
+    join({ heartbeat = false, admitted = true } = {}) {
       elements['display-name'].value = '合成访客';
       elements['join-form'].trigger('submit');
       const socket = sockets.at(-1);
       socket.open();
       socket.receive({ type: 'pending', guestId: 'synthetic-guest', heartbeat });
-      socket.receive({ type: 'admitted', guestId: 'synthetic-guest' });
+      if (admitted) socket.receive({ type: 'admitted', guestId: 'synthetic-guest' });
       return socket;
     },
     messages() { return elements.messages.children.map(article => article.children[1].textContent); },
@@ -406,6 +423,46 @@ test('unavailable images, unsafe MIME, unsolicited chunks and disconnect cannot 
   }
 });
 
+test('assistant images render at Markdown positions, preserve text, reuse cached bytes and enlarge through the existing preview', () => {
+  const page = browser({ markdown: true }), socket = page.join(), imageId = 'e'.repeat(64);
+  const item = { ...reply('之前\n\n![本地图片](/synthetic/example.png)\n\n之后'), images: [{ id: imageId, name: '本地图片', index: 0 }] };
+  snapshot(socket, 1, [item]);
+  assert.deepEqual(socket.sent.at(-1), { type: 'image-request', imageId });
+  let article = page.elements.messages.children[0], text = article.children[1], figure = text.children[1].children[0];
+  assert.equal(article.children.length, 2, 'no duplicate image appended below the reply');
+  assert.equal(figure.tag, 'span', 'valid inline container inside a Markdown paragraph');
+  assert.equal(text.children[0].textContent, '之前'); assert.equal(text.children[2].textContent, '之后');
+  const data = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLttAAAAABJRU5ErkJggg==';
+  socket.receive({ type: 'data', payload: { type: 'image-chunk', imageId, mime: 'image/png', total: 1, index: 0, data } });
+  assert.equal(figure.children[0].children[0].src, 'data:image/png;base64,' + data);
+  figure.children[0].trigger('click'); assert.equal(page.document.body.children[0].open, true);
+  snapshot(socket, 2, [item]);
+  text = page.elements.messages.children[0].children[1]; figure = text.children[1].children[0];
+  assert.equal(figure.children[0].children[0].tag, 'img');
+  assert.equal(socket.sent.filter(m => m.type === 'image-request').length, 1);
+  socket.receive({ type: 'revoked' });
+  assert.equal(page.document.body.children[0].open, false);
+  assert.equal(page.elements.messages.children.length, 0);
+});
+
+test('remote assistant images load without host fetches or referrers, retry failures and reject unsafe URL metadata', () => {
+  const page = browser({ markdown: true }), socket = page.join(), imageId = 'f'.repeat(64);
+  snapshot(socket, 1, [{ ...reply('![远程](https://example.invalid/image.png)'),
+    images: [{ id: imageId, name: '远程', index: 0, url: 'https://example.invalid/image.png' }] }]);
+  const button = page.elements.messages.children[0].children[1].children[0].children[0].children[0];
+  assert.equal(button.children[0].src, 'https://example.invalid/image.png');
+  assert.equal(button.children[0].referrerPolicy, 'no-referrer');
+  assert.equal(socket.sent.some(m => m.type === 'image-request'), false);
+  button.children[0].trigger('error'); assert.match(button.textContent, /无法加载远程图片/);
+  button.trigger('click'); assert.equal(button.children[0].tag, 'img');
+  for (const url of ['javascript:alert(1)', 'file:///private/example.png', 'data:image/svg+xml,<svg/>']) {
+    const other = browser({ markdown: true }), connection = other.join();
+    snapshot(connection, 1, [{ ...reply('![危险](https://example.invalid/a.png)'), images: [{ id: imageId, name: '危险', index: 0, url }] }]);
+    assert.equal(connection.sent.some(m => m.type === 'image-request'), false);
+    assert.match(other.elements.messages.children[0].children[1].textContent, /\[图片：危险\]/);
+  }
+});
+
 test('text previews load only by click, render HTML as code, handle empty files and preserve the message', () => {
   for (const text of ['# 标题\n<script>bad()</script>\n{"name":"合成"}', '']) {
     const page = browser(), socket = page.join(), fileId = 'c'.repeat(64);
@@ -605,7 +662,9 @@ test('blocked persistent storage leaves admission usable and visibly prompts the
   const socket = page.join(); confirmIdentity(socket);
   assert.equal(page.elements['send-button'].disabled, true, 'a snapshot is still required');
   assert.match(page.elements['identity-notice'].textContent, /未能长期保存/);
-  assert.equal(page.elements['recovery-panel'].open, true);
+  assert.equal(page.elements['identity-warning'].hidden, false);
+  page.elements['open-backup-warning'].trigger('click');
+  assert.equal(page.elements['collaboration-backup'].hidden, false);
   assert.equal(page.elements['recovery-code'].value, socket.sent[0].sessionId);
 });
 
@@ -665,4 +724,203 @@ test('legacy tab identities migrate on host confirmation and corrupt tab data ca
   const returning = browser({ storage, persistentStorage, invitation: scopedInvitation('scope-one', 'new-room') });
   assert.equal(returning.sockets.length, 1); returning.sockets[0].open();
   assert.equal(returning.sockets[0].sent[0].sessionId, 'l'.repeat(43));
+});
+
+test('collaboration navigation stays local, restores focus and closes by Escape, outside press or tabbing away', () => {
+  const page = browser();
+  const e = page.elements;
+  e['collaboration-toggle'].trigger('click');
+  assert.equal(e['collaboration-panel'].hidden, false);
+  assert.equal(e['collaboration-toggle']['aria-expanded'], 'true');
+  assert.equal(page.document.activeElement, e['open-proposals']);
+  e['open-proposals'].trigger('click');
+  assert.equal(e['collaboration-proposals'].hidden, false);
+  assert.equal(e['collaboration-menu'].hidden, true);
+  assert.equal(e['proposals-empty'].hidden, false);
+  assert.equal(page.document.activeElement, e['collaboration-back']);
+  e['collaboration-back'].trigger('click');
+  assert.equal(e['collaboration-menu'].hidden, false);
+  e['open-help'].trigger('click');
+  page.documentEvent('pointerdown', { target: e['keyboard-help'] });
+  assert.equal(e['collaboration-panel'].hidden, false, 'interacting inside the panel must not close it');
+  let prevented = false;
+  page.documentEvent('keydown', { key: 'Escape', preventDefault() { prevented = true; } });
+  assert.equal(prevented, true);
+  assert.equal(e['collaboration-panel'].hidden, true);
+  assert.equal(page.document.activeElement, e['collaboration-toggle']);
+  e['collaboration-toggle'].trigger('click');
+  page.documentEvent('pointerdown', { target: e.messages });
+  assert.equal(e['collaboration-panel'].hidden, true);
+  e['collaboration-toggle'].trigger('click');
+  e['open-help'].trigger('click');
+  e['collaboration-close'].trigger('click');
+  assert.equal(page.document.activeElement, e['collaboration-toggle']);
+  e['collaboration-toggle'].trigger('click');
+  e['proposal-text'].focus();
+  page.documentEvent('focusin', { target: e['proposal-text'] });
+  assert.equal(e['collaboration-panel'].hidden, true);
+  assert.equal(page.document.activeElement, e['proposal-text'], 'tabbing away must not steal focus');
+  assert.equal(page.sockets.length, 0, 'menu navigation cannot connect or send anything');
+});
+
+test('compact send mode follows host policy and submission history retains honest statuses', () => {
+  const page = browser(); const e = page.elements;
+  assert.equal(e['send-mode'].textContent, '同步中');
+  const socket = page.join(); snapshot(socket, 1, [prompt]);
+  socket.receive({ type: 'data', payload: { type: 'message-policy', requireApproval: false } });
+  assert.equal(e['send-mode'].textContent, '直接发送');
+  e['proposal-text'].value = '合成提交'; e['proposal-text'].trigger('input');
+  e['proposal-form'].trigger('submit');
+  assert.equal(e['submission-summary'].textContent, '1 条提交');
+  assert.equal(e['proposals-empty'].hidden, true);
+  assert.equal(e['proposal-feedback'].dataset.kind, 'info');
+  assert.equal(e.proposals.children[0].children[0].textContent, '正在提交给 Agent');
+  const request = socket.sent.find(message => message.type === 'proposal');
+  socket.receive({ type: 'data', payload: { type: 'proposal-status', requestId: request.requestId, status: 'accepted' } });
+  assert.equal(e.proposals.children[0].children[0].textContent, '已交给 Agent');
+  socket.receive({ type: 'data', payload: { type: 'message-policy', requireApproval: true } });
+  assert.equal(e['send-mode'].textContent, '需确认');
+  socket.receive({ type: 'data', payload: { type: 'proposal-status', requestId: request.requestId, status: 'failed' } });
+  assert.equal(e['proposal-feedback'].dataset.kind, 'warning');
+  assert.equal(e['proposal-feedback'].textContent, '提交失败');
+});
+
+test('backup task requires confirmed unexpired identity and survives pause but clears on revocation', () => {
+  const page = browser({ invitation: scopedInvitation('scope-one') }); const e = page.elements;
+  assert.equal(e['open-backup'].disabled, true);
+  e['open-backup'].trigger('click');
+  assert.equal(e['collaboration-panel'].hidden, true);
+  const socket = page.join(); confirmIdentity(socket);
+  assert.equal(e['open-backup'].disabled, false);
+  assert.equal(e['identity-warning'].hidden, true);
+  e['collaboration-toggle'].trigger('click'); e['open-backup'].trigger('click');
+  assert.equal(e['collaboration-backup'].hidden, false);
+  assert.match(e['recovery-note'].textContent, /身份有效至/);
+  e['manual-recovery'].open = true; e['recovery-code'].type = 'text';
+  e['collaboration-back'].trigger('click');
+  assert.equal(e['manual-recovery'].open, false);
+  assert.equal(e['recovery-code'].type, 'password');
+  socket.receive({ type: 'data', payload: { type: 'share-paused' } });
+  assert.equal(e['open-backup'].disabled, false);
+  const revoked = browser({ invitation: scopedInvitation('scope-one') });
+  const other = revoked.join(); confirmIdentity(other);
+  revoked.elements['open-backup'].trigger('click');
+  other.receive({ type: 'revoked' });
+  assert.equal(revoked.elements['recovery-panel'].hidden, true);
+  assert.equal(revoked.elements['backup-unavailable'].hidden, false);
+  assert.equal(revoked.elements['recovery-code'].value, '');
+  page.tick(86400000);
+  e['collaboration-toggle'].trigger('click'); e['collaboration-toggle'].trigger('click');
+  assert.equal(e['open-backup'].disabled, true);
+});
+
+test('backup download feedback stays in its task and does not hide a connection warning', () => {
+  const page = browser({ invitation: scopedInvitation('scope-one') });
+  const socket = page.join(); confirmIdentity(socket);
+  socket.receive({ type: 'offline' });
+  const warning = page.elements.notice.textContent;
+  page.elements['download-recovery'].trigger('click');
+  assert.match(page.elements['recovery-feedback'].textContent, /已请求下载/);
+  assert.equal(page.elements.notice.textContent, warning);
+  assert.equal(page.elements.notice.hidden, false);
+});
+
+test('composer grows up to 160px, shows count at 7200 characters and shrinks after sending', () => {
+  const page = browser(); const e = page.elements;
+  const socket = page.join(); snapshot(socket, 1, [prompt]);
+  const input = e['proposal-text'];
+  input.value = 'x'.repeat(7199); input.scrollHeight = 240; input.trigger('input');
+  assert.equal(input.style.height, '160px');
+  assert.equal(input.style.overflowY, 'auto');
+  assert.equal(e['character-count'].hidden, true);
+  input.value += 'x'; input.trigger('input');
+  assert.equal(e['character-count'].hidden, false);
+  assert.equal(e['character-count'].textContent, '7,200 / 8,000');
+  input.value = '短消息'; input.scrollHeight = 32; input.trigger('input');
+  assert.equal(input.style.height, '48px');
+  assert.equal(input.style.overflowY, 'hidden');
+  assert.equal(e['character-count'].hidden, true);
+  e['proposal-form'].trigger('submit');
+  assert.equal(input.value, '');
+  assert.equal(input.style.height, '48px');
+  assert.equal(e['character-count'].hidden, true);
+});
+
+test('a failed browser send keeps the draft and exposes actionable feedback outside the menu', () => {
+  const page = browser(); const socket = page.join(); snapshot(socket, 1, [prompt]);
+  const input = page.elements['proposal-text'];
+  input.value = '保留这条草稿'; input.trigger('input');
+  socket.send = () => { throw new Error('synthetic send failure'); };
+  page.elements['proposal-form'].trigger('submit');
+  assert.equal(input.value, '保留这条草稿');
+  assert.equal(page.elements['proposal-feedback'].dataset.kind, 'warning');
+  assert.match(page.elements['proposal-feedback'].textContent, /尚未发送，草稿已保留/);
+  assert.equal(page.elements['proposals-empty'].hidden, false);
+});
+
+test('visual viewport changes keep the composer within the resized shell without moving history', () => {
+  const listeners = new Map();
+  const viewport = { height: 710, offsetTop: 0, addEventListener(name, listener) { listeners.set(name, listener); } };
+  const page = browser({ viewport });
+  const socket = page.join(); snapshot(socket, 1, [prompt]);
+  page.elements.conversation.scrollTop = 100;
+  page.elements['proposal-text'].value = '合成多行草稿';
+  page.elements['proposal-text'].scrollHeight = 300;
+  viewport.height = 360; viewport.offsetTop = 8; listeners.get('resize')();
+  assert.equal(page.document.documentElement.style['--viewport-height'], '360px');
+  assert.equal(page.document.documentElement.style['--viewport-top'], '8px');
+  assert.equal(page.elements['proposal-text'].style.height, '160px');
+  assert.equal(page.elements.conversation.scrollTop, 100);
+  viewport.offsetTop = 12; listeners.get('scroll')();
+  assert.equal(page.document.documentElement.style['--viewport-top'], '12px');
+  assert.equal(page.elements['proposal-text'].value, '合成多行草稿');
+});
+
+test('live guest snapshots notify on run end, ignore stale/initial history and stop after disconnect or revocation', () => {
+  const shown = [];
+  class Notification {
+    static permission = 'granted';
+    constructor(_title, _options) { shown.push(this); }
+    close() { this.closed = true; }
+  }
+  const page = browser({ notification: Notification, focused: false });
+  const socket = page.join(); snapshot(socket, 1, [prompt], 'idle');
+  assert.equal(shown.length, 0);
+  snapshot(socket, 3, [prompt], 'running');
+  snapshot(socket, 2, [prompt, reply('过期回复')], 'idle');
+  assert.equal(shown.length, 0);
+  snapshot(socket, 4, [prompt, reply('最新回复')], 'idle');
+  snapshot(socket, 4, [prompt, reply('最新回复')], 'idle');
+  assert.equal(shown.length, 1);
+  page.elements.conversation.scrollTop = 10;
+  shown[0].onclick();
+  assert.equal(page.elements.conversation.scrollTop, page.elements.conversation.scrollHeight);
+  assert.equal(page.document.activeElement, page.elements.conversation);
+  snapshot(socket, 5, [prompt], 'running'); socket.close();
+  page.tick(1000); const next = page.sockets.at(-1); next.open(); next.receive({ type: 'admitted' });
+  snapshot(next, 1, [prompt, reply('离线期间的历史回复')], 'idle');
+  assert.equal(shown.length, 1);
+  snapshot(next, 2, [prompt], 'running'); next.receive({ type: 'revoked' });
+  snapshot(next, 3, [prompt, reply('无权接收')], 'idle');
+  assert.equal(shown.length, 1);
+  assert.equal(page.elements['task-toast'].hidden, true);
+});
+
+test('only confirmed admission automatically requests notification permission and synchronization does not await it', async () => {
+  let requests = 0, finish;
+  class Notification {
+    static permission = 'default';
+    static requestPermission() { requests++; return new Promise(resolve => { finish = resolve; }); }
+  }
+  const page = browser({ notification: Notification });
+  const socket = page.join({ admitted: false });
+  assert.equal(requests, 0);
+  socket.receive({ type: 'admitted' });
+  assert.equal(requests, 1);
+  assert.ok(socket.sent.some(message => message.type === 'snapshot-request'));
+  snapshot(socket, 1, [prompt], 'idle');
+  assert.equal(page.elements['proposal-text'].disabled, false);
+  socket.receive({ type: 'admitted' }); assert.equal(requests, 1);
+  Notification.permission = 'granted'; finish('granted'); await new Promise(resolve => setImmediate(resolve));
+  assert.equal(page.elements['notification-test'].disabled, false);
 });

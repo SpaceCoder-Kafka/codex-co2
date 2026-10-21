@@ -19,6 +19,11 @@ const ui = Object.fromEntries([
   'proposal-count', 'proposals', 'proposal-help',
   'recovery-input', 'recovery-panel', 'recovery-note', 'recovery-code', 'copy-recovery',
   'identity-notice', 'download-recovery', 'import-recovery',
+  'collaboration-toggle', 'collaboration-panel', 'collaboration-navigation',
+  'collaboration-menu', 'collaboration-proposals', 'collaboration-backup', 'collaboration-help',
+  'collaboration-back', 'collaboration-close', 'open-proposals', 'open-backup', 'open-help',
+  'submission-summary', 'proposals-empty', 'backup-summary', 'backup-name', 'backup-unavailable',
+  'identity-warning', 'open-backup-warning', 'manual-recovery', 'recovery-feedback', 'send-mode',
 ].map((id) => [id, byId(id)]));
 
 const proposals = new Map();
@@ -45,9 +50,64 @@ let recoveryRecord = null;
 let displayName = '';
 let lastRevision = null;
 let receivedSnapshot = false;
+let policyKnown = false;
 let requireApproval = true; // Until the host reports its policy (compatible with older hosts).
 let assistantTexts = new Map();
 const images = window.createThreadImages?.({ send, canRead: () => canPropose() });
+const taskNotifications = window.createTaskNotifications?.({
+  canReceive: () => canPropose(),
+  onView: () => { closeCollaboration(false); viewLatestReply(); ui.conversation.focus(); },
+  onSettings: () => showCollaboration('help'),
+});
+// The collaboration panel only changes presentation, never admission or policy.
+function showCollaboration(view = 'menu') {
+  const panel = ui['collaboration-panel'];
+  panel.hidden = false;
+  panel.dataset.view = view;
+  panel.scrollTop = 0;
+  if (view !== 'backup') {
+    ui['manual-recovery'].open = false;
+    ui['recovery-code'].type = 'password';
+  }
+  ui['collaboration-toggle'].setAttribute('aria-expanded', 'true');
+  ui['collaboration-navigation'].hidden = view === 'menu';
+  for (const name of ['menu', 'proposals', 'backup', 'help']) {
+    ui[`collaboration-${name}`].hidden = name !== view;
+  }
+  (view === 'menu' ? ui['open-proposals'] : ui['collaboration-back']).focus();
+}
+function closeCollaboration(restoreFocus = true) {
+  if (ui['collaboration-panel'].hidden) return;
+  ui['collaboration-panel'].hidden = true;
+  ui['collaboration-toggle'].setAttribute('aria-expanded', 'false');
+  // Never leave a revealed fallback credential around on the next visit.
+  ui['manual-recovery'].open = false;
+  ui['recovery-code'].type = 'password';
+  if (restoreFocus) ui['collaboration-toggle'].focus();
+}
+function refreshCollaboration() {
+  const available = Boolean(validIdentity(recoveryRecord));
+  ui['open-backup'].disabled = !available;
+  ui['backup-unavailable'].hidden = available;
+  ui['recovery-panel'].hidden = !available;
+  ui['backup-name'].textContent = displayName || '尚未加入';
+  ui['backup-summary'].textContent = available
+    ? (ui['identity-warning'].hidden ? '此浏览器已保存你的身份' : '请下载恢复文件，避免身份丢失')
+    : '当前没有可用的身份备份';
+  ui['send-mode'].textContent = policyKnown ? (requireApproval ? '需确认' : '直接发送') : '同步中';
+}
+function resizeComposer() {
+  const input = ui['proposal-text'];
+  input.style.height = 'auto';
+  input.style.height = `${Math.min(160, Math.max(48, input.scrollHeight))}px`;
+  input.style.overflowY = input.scrollHeight > 160 ? 'auto' : 'hidden';
+  ui['character-count'].hidden = input.value.length < 7200;
+}
+function proposalFeedback(message, warning = false) {
+  ui['proposal-feedback'].textContent = message;
+  ui['proposal-feedback'].dataset.kind = warning ? 'warning' : 'info';
+}
+
 function validIdentity(saved) {
   return saved && validRecovery(saved.token) && typeof saved.name === 'string'
     && saved.name.trim() && [...saved.name].length <= 40 && !/[\u0000-\u001f\u007f-\u009f]/u.test(saved.name)
@@ -85,6 +145,10 @@ function forgetIdentity() {
   ui['recovery-code'].value = '';
   ui['recovery-panel'].hidden = true;
   ui['identity-notice'].hidden = true;
+  ui['identity-warning'].hidden = true;
+  ui['recovery-feedback'].textContent = '';
+  ui['manual-recovery'].open = false;
+  ui['recovery-code'].type = 'password';
 }
 try {
   let tab;
@@ -170,6 +234,7 @@ function canPropose() {
 }
 
 function updateControls() {
+  refreshCollaboration();
   ui['proposal-text'].disabled = !canPropose();
   ui['send-button'].disabled = !canPropose() || !ui['proposal-text'].value.trim();
   ui['join-button'].disabled = !validInvitation || terminal || connecting || admitted;
@@ -213,6 +278,7 @@ function detachSocket() {
 }
 
 function disconnect(message) {
+  taskNotifications?.reset();
   connecting = false;
   admitted = false;
   hostOnline = false;
@@ -229,6 +295,7 @@ function disconnect(message) {
 }
 
 function setTerminal(message, label, { preserveIdentity = false } = {}) {
+  taskNotifications?.reset();
   if (!preserveIdentity) forgetIdentity();
   terminal = true;
   cancelReconnect(); stopHeartbeat();
@@ -253,7 +320,7 @@ function setTerminal(message, label, { preserveIdentity = false } = {}) {
   notice(message, 'warning');
   ui['member-description'].textContent = message;
   markPendingUnknown();
-  ui['proposal-feedback'].textContent = '访问已结束，旧建议不会自动重发。';
+  proposalFeedback('访问已结束，旧建议不会自动重发。', true);
   updateControls();
 }
 
@@ -293,10 +360,14 @@ function renderSnapshot(payload) {
     text.className = 'message-text';
     if (item.role === 'assistant' && window.renderMarkdown) {
       text.className += ' markdown';
-      window.renderMarkdown(text, item.text);
+      window.renderMarkdown(text, item.text, { renderImage(parent, index) {
+        const ref = item.images?.find(image => image.index === index);
+        if (!images || !ref) return false;
+        return images.render([ref], parent, { inline: true }) > 0;
+      } });
     } else text.textContent = item.text;
     article.append(label, text);
-    images?.render([...(item.images ?? []), ...(item.files ?? [])], article);
+    images?.render([...(item.role === 'assistant' && window.renderMarkdown ? [] : item.images ?? []), ...(item.files ?? [])], article);
     content.append(article);
   }
   ui.messages.replaceChildren(content);
@@ -332,6 +403,7 @@ function renderSnapshot(payload) {
     ui.conversation.scrollTop = previousScrollTop;
     if (hasNewReply) ui['new-replies-button'].hidden = false;
   }
+  taskNotifications?.observe(payload.status);
 }
 
 const proposalLabels = {
@@ -346,6 +418,8 @@ const proposalLabels = {
 function renderProposals() {
   ui['proposals-panel'].hidden = proposals.size === 0;
   ui['proposal-count'].textContent = String(proposals.size);
+  ui['submission-summary'].textContent = proposals.size ? `${proposals.size} 条提交` : '暂无提交';
+  ui['proposals-empty'].hidden = proposals.size > 0;
   const content = document.createDocumentFragment();
   for (const proposal of [...proposals.values()].reverse()) {
     const entry = document.createElement('li');
@@ -392,6 +466,7 @@ function handleMessage(message) {
       reconnectAttempts = 0; cancelReconnect();
       connecting = false;
       admitted = true;
+      void taskNotifications?.admitted();
       // Wait for the host's snapshot before enabling submission.
       hostOnline = false;
       setStatus('正在同步会话', 'pending');
@@ -425,6 +500,7 @@ function handleMessage(message) {
       setTerminal('连接已停止，请联系分享者检查后获取新邀请。', '连接已停止');
       break;
     case 'offline':
+      taskNotifications?.reset();
       hostOnline = false;
       images?.pause();
       setStatus('分享者离线', 'warning');
@@ -442,7 +518,7 @@ function handleMessage(message) {
       if (!admitted || !message.payload || typeof message.payload !== 'object') return;
       const payload = message.payload;
       if (payload.type === 'share-paused') {
-        setTerminal('共享入口已暂停。同一网站的新邀请会自动恢复身份；如果更换域名，请保存下面的恢复文件备用。旧消息不会重发。', '共享已暂停', { preserveIdentity: true });
+        setTerminal('共享入口已暂停。同一网站的新邀请会自动恢复身份；如果更换域名，请从协作详情中备份身份。旧消息不会重发。', '共享已暂停', { preserveIdentity: true });
         return;
       }
       if (payload.type === 'visitor-recovery' && Number.isSafeInteger(payload.expiresAt) && payload.expiresAt > Date.now()) {
@@ -460,16 +536,19 @@ function handleMessage(message) {
         ui['recovery-input'].value = '';
         ui['identity-notice'].hidden = false;
         ui['identity-notice'].textContent = persistent
-          ? `${payload.resumed ? '已自动恢复身份。' : '已在此浏览器自动保存身份。'}同一网站下次打开新邀请，无需填写恢复凭据。换域名或换浏览器前，请保存备用恢复文件。`
-          : '浏览器未能长期保存身份。请保存下面的恢复文件，下次打开邀请时选择该文件即可恢复。';
-        ui['recovery-panel'].open = !persistent;
+          ? `${payload.resumed ? '已自动恢复身份。' : '已在此浏览器自动保存身份。'}换浏览器或域名前，请下载一份恢复文件。`
+          : '浏览器未能长期保存身份。请下载恢复文件，下次打开邀请时选择该文件即可恢复。';
+        ui['identity-warning'].hidden = persistent;
         ui['recovery-panel'].hidden = false; ui['recovery-code'].value = visitorToken;
-        ui['recovery-note'].textContent = `身份有效至 ${new Date(payload.expiresAt).toLocaleString()}。恢复文件供换域名或换浏览器时使用，无需记住或手动输入凭据。`;
+        ui['recovery-note'].textContent = `身份有效至 ${new Date(payload.expiresAt).toLocaleString()}。`;
+        refreshCollaboration();
       }
       if (['image-chunk', 'image-unavailable', 'file-chunk', 'file-unavailable'].includes(payload.type)) images?.receive(payload);
       if (payload.type === 'snapshot') renderSnapshot(payload);
       if (payload.type === 'message-policy' && typeof payload.requireApproval === 'boolean') {
         requireApproval = payload.requireApproval;
+        policyKnown = true;
+        refreshCollaboration();
         ui['proposal-help'].textContent = requireApproval ? '分享者已开启消息审批，确认后才交给 Agent。' : '消息将直接交给 Agent，无需逐条审批。';
       }
       if (payload.type === 'proposal-status' && proposals.has(payload.requestId)
@@ -477,7 +556,7 @@ function handleMessage(message) {
         const proposal = proposals.get(payload.requestId);
         proposal.status = payload.status;
         proposal.message = typeof payload.message === 'string' ? payload.message.slice(0, 500) : '';
-        ui['proposal-feedback'].textContent = proposalLabels[payload.status];
+        proposalFeedback(proposalLabels[payload.status], ['failed', 'rejected', 'unknown'].includes(payload.status));
         renderProposals();
       }
       break;
@@ -489,6 +568,7 @@ function handleMessage(message) {
 
 function connect() {
   if (!validInvitation || terminal || connecting) return;
+  taskNotifications?.reset();
   cancelReconnect();
   detachSocket();
   images?.clear();
@@ -574,8 +654,11 @@ ui['recovery-input'].addEventListener('input', () => {
 });
 ui['copy-recovery'].addEventListener('click', () => {
   const input = ui['recovery-code'];
-  const fallback = () => { input.type = 'text'; input.select(); notice('请复制个人恢复凭据，只在分享者的新邀请页面输入。'); };
-  if (window.navigator?.clipboard) window.navigator.clipboard.writeText(input.value).then(() => notice('恢复凭据已复制，请勿转发给他人。')).catch(fallback);
+  const fallback = () => {
+    input.type = 'text'; input.select();
+    ui['recovery-feedback'].textContent = '请复制个人恢复凭据，只在分享者的新邀请页面输入。';
+  };
+  if (window.navigator?.clipboard) window.navigator.clipboard.writeText(input.value).then(() => { ui['recovery-feedback'].textContent = '恢复凭据已复制，请勿转发给他人。'; }).catch(fallback);
   else fallback();
 });
 ui['download-recovery'].addEventListener('click', () => {
@@ -584,7 +667,7 @@ ui['download-recovery'].addEventListener('click', () => {
   const link = document.createElement('a');
   link.href = url; link.download = 'Codex-Co2-身份恢复.json'; link.click();
   window.setTimeout(() => URL.revokeObjectURL(url), 1000);
-  ui['identity-notice'].textContent = '已请求下载个人恢复文件。换域名或换浏览器后，在新邀请页面选择该文件即可；请勿转发给其他人。';
+  ui['recovery-feedback'].textContent = '已请求下载恢复文件。换浏览器后，在新邀请页面选择该文件即可；请勿转发。';
 });
 ui['import-recovery'].addEventListener('change', async () => {
   const input = ui['import-recovery'];
@@ -606,12 +689,40 @@ ui['import-recovery'].addEventListener('change', async () => {
   finally { input.value = ''; }
 });
 
+ui['collaboration-toggle'].addEventListener('click', () => {
+  if (ui['collaboration-panel'].hidden) { refreshCollaboration(); showCollaboration(); }
+  else closeCollaboration();
+});
+ui['collaboration-back'].addEventListener('click', () => showCollaboration());
+ui['collaboration-close'].addEventListener('click', () => closeCollaboration());
+ui['open-proposals'].addEventListener('click', () => showCollaboration('proposals'));
+ui['open-help'].addEventListener('click', () => showCollaboration('help'));
+ui['open-backup'].addEventListener('click', () => {
+  refreshCollaboration();
+  if (!ui['open-backup'].disabled) showCollaboration('backup');
+});
+ui['open-backup-warning'].addEventListener('click', () => {
+  refreshCollaboration(); showCollaboration('backup');
+});
+document.addEventListener('pointerdown', event => {
+  if (!ui['collaboration-panel'].contains(event.target) && !ui['collaboration-toggle'].contains(event.target)) closeCollaboration();
+});
+document.addEventListener('keydown', event => {
+  if (event.key === 'Escape' && !ui['collaboration-panel'].hidden) {
+    event.preventDefault(); closeCollaboration();
+  }
+});
+document.addEventListener('focusin', event => {
+  if (!ui['collaboration-panel'].contains(event.target) && !ui['collaboration-toggle'].contains(event.target)) closeCollaboration(false);
+});
+
 ui['reconnect-button'].addEventListener('click', () => { reconnectAttempts = 0; connect(); });
 ui['new-replies-button'].addEventListener('click', viewLatestReply);
 ui.conversation.addEventListener('scroll', () => {
   if (nearConversationBottom(8)) ui['new-replies-button'].hidden = true;
 }, { passive: true });
 document.addEventListener('visibilitychange', () => {
+  taskNotifications?.refresh();
   if (document.visibilityState === 'visible' && admitted && !terminal
       && socket?.readyState === WebSocket.OPEN) {
     if (heartbeatTimer !== null && Date.now() - lastActivity > 75000) socket.close();
@@ -624,6 +735,7 @@ window.addEventListener('online', () => {
   if (!connecting) { reconnectAttempts = 0; connect(); }
 });
 window.addEventListener('pagehide', () => {
+  taskNotifications?.reset();
   cancelReconnect(); detachSocket(); connecting = false; admitted = false; hostOnline = false; updateControls();
 });
 window.addEventListener('pageshow', event => {
@@ -641,6 +753,7 @@ window.addEventListener('hashchange', () => {
 ui['proposal-text'].addEventListener('input', () => {
   saveDraft();
   ui['character-count'].textContent = `${ui['proposal-text'].value.length.toLocaleString('en-US')} / 8,000`;
+  resizeComposer();
   updateControls();
 });
 ui['proposal-text'].addEventListener('keydown', (event) => {
@@ -656,7 +769,7 @@ ui['proposal-form'].addEventListener('submit', (event) => {
   if (!canPropose() || !text || text.length > 8000) return;
   const id = requestId();
   if (!send({ type: 'proposal', requestId: id, text })) {
-    ui['proposal-feedback'].textContent = '尚未发送，草稿已保留。请恢复连接后再试。';
+    proposalFeedback('尚未发送，草稿已保留。请恢复连接后再试。', true);
     return;
   }
   proposals.set(id, { text, status: requireApproval ? 'pending' : 'processing', message: '' });
@@ -664,7 +777,8 @@ ui['proposal-form'].addEventListener('submit', (event) => {
   ui['proposal-text'].value = '';
   saveDraft();
   ui['character-count'].textContent = '0 / 8,000';
-  ui['proposal-feedback'].textContent = requireApproval ? '建议已提交，等待分享者确认。' : '消息已发送，正在提交给 Agent。';
+  proposalFeedback(requireApproval ? '建议已提交，等待分享者确认。' : '消息已发送，正在提交给 Agent。');
+  resizeComposer();
   updateControls();
 });
 
@@ -678,6 +792,8 @@ if (!validInvitation) {
   ui['join-feedback'].textContent = '当前链接没有有效的邀请信息。';
 }
 updateControls();
+resizeComposer();
+window.addEventListener('resize', resizeComposer);
 if (validInvitation && savedVisitor && displayName) connect();
 
 // Keep the composer above the software keyboard without changing transcript scroll.
@@ -685,6 +801,7 @@ if (window.visualViewport) {
   const resizeViewport = () => {
     document.documentElement.style.setProperty('--viewport-height', `${window.visualViewport.height}px`);
     document.documentElement.style.setProperty('--viewport-top', `${window.visualViewport.offsetTop}px`);
+    resizeComposer();
   };
   window.visualViewport.addEventListener('resize', resizeViewport);
   window.visualViewport.addEventListener('scroll', resizeViewport);

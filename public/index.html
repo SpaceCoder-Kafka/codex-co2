@@ -11,14 +11,52 @@
     <script defer src="/vendor/markdown-it.min.js"></script>
     <script defer src="/markdown.js"></script>
     <script defer src="/images.js"></script>
+    <script defer src="/notifications.js"></script>
     <script type="module" src="/guest.js"></script>
   </head>
   <body>
     <div class="page-shell">
       <header class="masthead">
-        <a class="brand" href="/" aria-label="Codex Co² 首页">Codex Co²</a>
-        <div class="heading"><h1 id="thread-title">共享会话</h1><span id="agent-status" class="agent-status" hidden>Agent 空闲</span></div>
-        <div id="connection-status" class="status-pill" data-state="neutral" role="status"><span class="status-dot" aria-hidden="true"></span><span id="connection-label">尚未连接</span></div>
+        <div class="masthead-content reading-width">
+          <div class="heading"><h1 id="thread-title">共享会话</h1><span id="agent-status" class="agent-status" hidden>Agent 空闲</span></div>
+          <div class="collaboration">
+            <button id="collaboration-toggle" class="collaboration-toggle" type="button" aria-expanded="false" aria-controls="collaboration-panel">协作详情 <span aria-hidden="true">⌄</span></button>
+            <div id="collaboration-panel" class="collaboration-panel" data-view="menu" role="dialog" aria-label="协作详情" hidden>
+              <div id="collaboration-navigation" class="panel-navigation" hidden><button id="collaboration-back" class="text-button" type="button">‹ 协作详情</button><button id="collaboration-close" class="close-button" type="button" aria-label="关闭协作详情">×</button></div>
+              <div id="collaboration-menu" class="collaboration-menu">
+                <button id="open-proposals" class="collaboration-entry" type="button"><span><strong>查看我的提交</strong><small id="submission-summary">暂无提交</small></span><span aria-hidden="true">›</span></button>
+                <button id="open-backup" class="collaboration-entry" type="button" disabled><span><strong>备份身份</strong><small id="backup-summary">身份确认后可用</small></span><span aria-hidden="true">›</span></button>
+                <button id="open-help" class="collaboration-entry" type="button"><span><strong>使用帮助</strong><small>快捷键、草稿与连接说明</small></span><span aria-hidden="true">›</span></button>
+              </div>
+              <section id="collaboration-proposals" class="panel-view" hidden>
+                <h2>我的提交</h2><p class="field-help">提交状态不代表 Agent 已执行。</p>
+                <p id="proposals-empty" class="panel-empty">还没有提交。回到对话，发送你的第一条消息。</p>
+                <section id="proposals-panel" hidden><span id="proposal-count" class="sr-only">0</span><ol id="proposals" class="proposals"></ol></section>
+              </section>
+              <section id="collaboration-backup" class="panel-view" hidden>
+                <h2>备份身份</h2><p class="card-description">当前身份：<span id="backup-name"></span></p>
+                <p id="backup-unavailable" class="field-help">当前没有可用的身份备份，请重新打开有效邀请。</p>
+                <section id="recovery-panel" hidden>
+                  <p id="identity-notice" class="backup-introduction" role="status" hidden></p>
+                  <button id="download-recovery" class="button button-primary backup-download" type="button">下载恢复文件</button>
+                  <p class="privacy-note">恢复文件仅供你本人使用，请勿转发。</p>
+                  <p id="recovery-feedback" class="inline-feedback" role="status"></p>
+                  <details id="manual-recovery" class="recovery-entry"><summary>其他备份方式：使用恢复凭据</summary><label class="sr-only" for="recovery-code">个人恢复凭据</label><input id="recovery-code" type="password" readonly autocomplete="off"><button id="copy-recovery" class="button" type="button">复制恢复凭据</button></details>
+                  <p id="recovery-note" class="field-help"></p><p class="privacy-note">停止共享、移除协作者或准入到期后，备份失效。</p>
+                </section>
+              </section>
+              <section id="collaboration-help" class="panel-view" hidden>
+                <h2>使用帮助</h2>
+                <section class="help-section"><h3>任务提醒</h3><p id="notification-status" role="status">开启浏览器通知，长任务结束时提醒你。</p><button id="notification-toggle" class="button" type="button">开启浏览器通知</button> <button id="notification-test" class="button" type="button" disabled>发送测试通知</button><p>批准加入后自动尝试申请通知权限；浏览器拦截时可点击开启。需保留页面并保持连接；网页在前台时只显示页内提醒。更换网站地址后需重新允许通知。</p></section>
+                <section class="help-section"><h3>输入与发送</h3><p id="keyboard-help">Enter 发送，Shift+Enter 换行。</p><p id="proposal-help">正在同步消息接收设置…</p></section>
+                <section class="help-section"><h3>草稿与连接</h3><p id="draft-help">未发送的草稿保存在当前标签页；断线后自动尝试重连，已发送消息不会自动重发。</p><div id="connection-status" class="status-pill" data-state="neutral" role="status"><span class="status-dot" aria-hidden="true"></span><span id="connection-label">尚未连接</span></div><p id="sync-label">等待同步</p></section>
+                <section id="member-panel" class="help-section" hidden><h3>参与信息</h3><p class="member-identity"><span id="member-avatar" class="avatar" aria-hidden="true">访</span><span id="member-name"></span><span id="member-title">你已加入</span></p><p id="member-description"></p></section>
+                <section class="help-section"><h3>共享边界</h3><p>仅共享这一条会话，任务在分享者的电脑上执行。</p><p>邀请仅在当前页面保留，刷新后请重新打开完整邀请链接。</p><div id="history-note" class="history-note" hidden></div></section>
+                <p class="panel-brand">Codex Co²</p>
+              </section>
+            </div>
+          </div>
+        </div>
       </header>
       <main class="workspace">
         <div class="context-bar reading-width">
@@ -28,11 +66,8 @@
             <form id="join-form"><label class="sr-only" for="display-name">显示名称</label><div class="join-row"><input id="display-name" name="display-name" type="text" maxlength="80" placeholder="你的显示名称" autocomplete="nickname" required aria-describedby="name-help"><button id="join-button" class="button button-primary" type="submit">申请加入</button></div><p id="name-help" class="field-help">最多 40 个字符，分享者确认后即可加入。</p><details class="recovery-entry"><summary>换浏览器或换域名？恢复已加入的身份</summary><p class="field-help">同一网站会自动记住你的身份。只有换浏览器、清理存储或更换域名时，才需要恢复。</p><label for="import-recovery">选择此前保存的恢复文件</label><input id="import-recovery" type="file" accept=".json,application/json"><label for="recovery-input">或粘贴备用恢复凭据</label><input id="recovery-input" type="password" maxlength="43" autocomplete="off" placeholder="首次加入无需填写"><p class="field-help">首次加入不用填写。没有恢复文件或凭据也可以填写显示名称，由分享者重新确认加入。</p></details></form>
             <p id="join-feedback" class="inline-feedback" aria-live="polite"></p>
           </section>
-          <details id="member-panel" class="member-card" hidden><summary><span id="member-avatar" class="avatar" aria-hidden="true">访</span><span id="member-name"></span><span id="member-title">你已加入</span><span class="details-hint">参与信息</span></summary><p id="member-description" class="card-description"></p><button id="reconnect-button" class="button" type="button" hidden>重新申请连接</button><p class="privacy-note">仅共享这一条会话。邀请仅在当前页面保留，刷新后请重新打开完整邀请链接。</p></details>
-          <p id="identity-notice" class="field-help" role="status" hidden></p>
-          <details id="recovery-panel" class="member-card" hidden><summary>个人身份备份</summary><p id="recovery-note" class="field-help"></p><button id="download-recovery" class="button" type="button">保存备用恢复文件</button><details class="recovery-entry"><summary>手动复制凭据</summary><label class="sr-only" for="recovery-code">个人恢复凭据</label><input id="recovery-code" type="password" readonly autocomplete="off"><button id="copy-recovery" class="button" type="button">复制恢复凭据</button></details><p class="privacy-note">恢复文件只供你本人使用，请勿转发。停止共享、移除协作者或准入到期后失效。</p></details>
-          <details id="proposals-panel" class="proposals-card" hidden><summary>你的建议 <span id="proposal-count" class="count-badge">0</span></summary><p class="field-help">提交状态不代表 Agent 已执行。</p><ol id="proposals" class="proposals"></ol></details>
-          <div id="history-note" class="history-note" hidden></div>
+          <button id="reconnect-button" class="button context-action" type="button" hidden>重新申请连接</button>
+          <div id="identity-warning" class="notice" data-kind="warning" role="status" hidden>浏览器未能长期保存身份，请保存一份备份。<button id="open-backup-warning" class="text-button" type="button">备份身份</button></div>
         </div>
         <section class="conversation-wrap" aria-labelledby="thread-title">
           <div id="conversation" class="conversation" tabindex="0" aria-label="已共享的对话记录">
@@ -41,12 +76,12 @@
               <div id="messages" class="messages"></div>
             </div>
           </div>
+          <aside id="task-toast" class="task-toast" role="status" hidden><p id="task-toast-text"></p><div class="toast-actions"><button id="task-toast-action" class="text-button" type="button">查看结果</button><button id="task-toast-dismiss" class="close-button" type="button" aria-label="关闭任务提醒">×</button></div></aside>
           <button id="new-replies-button" class="new-replies-button" type="button" hidden>有新回复，查看 ↓</button>
         </section>
         <footer class="composer reading-width">
-          <form id="proposal-form"><label class="sr-only" for="proposal-text">建议内容</label><div class="compose-box"><textarea id="proposal-text" name="proposal-text" rows="2" maxlength="8000" placeholder="补充你的想法…" disabled aria-describedby="proposal-help keyboard-help draft-help"></textarea><div class="compose-meta"><span id="character-count">0 / 8,000</span><button id="send-button" class="button button-primary" type="submit" disabled aria-label="发送建议">↑</button></div></div><p id="proposal-help" class="field-help review-explanation">正在同步消息接收设置…</p><p id="keyboard-help" class="field-help">Enter 发送，Shift+Enter 换行。</p><p id="draft-help" class="field-help">未发送的草稿保存在当前标签页；断线后自动尝试重连，已发送消息不会自动重发。</p></form>
-          <p id="proposal-feedback" class="inline-feedback" aria-live="polite"></p>
-          <div class="conversation-footer"><span>任务在分享者的电脑上执行</span><span aria-hidden="true">·</span><span id="sync-label">等待同步</span></div>
+          <form id="proposal-form"><label class="sr-only" for="proposal-text">建议内容</label><div class="compose-box"><textarea id="proposal-text" name="proposal-text" rows="1" maxlength="8000" placeholder="补充你的想法…" disabled aria-describedby="send-mode keyboard-help draft-help"></textarea><div class="compose-meta"><span id="character-count" hidden>0 / 8,000</span><span id="send-mode" role="status">同步中</span><button id="send-button" class="button button-primary" type="submit" disabled aria-label="发送建议">↑</button></div></div></form>
+          <p id="proposal-feedback" class="inline-feedback submission-feedback" aria-live="polite"></p>
         </footer>
       </main>
     </div>

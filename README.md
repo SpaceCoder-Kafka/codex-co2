@@ -60,12 +60,13 @@ The preview is **ad-hoc signed and not notarized by Apple**. macOS may block its
 1. Open the invitation in a browser, enter a display name and request access.
 2. After admission, read the shared conversation and send messages to its Agent.
 3. By default, new messages enter the Agent directly. If the host enables message approval, wait for the host's decision.
+4. After admission, the page automatically attempts to request notification permission if undecided. If your browser blocks the automatic request, click **Enable notifications** in the page prompt or **Collaboration details → Help**. Reconnecting does not repeat the request, and explicitly disabling notifications prevents automatic requests. Use **Send test notification** to check display and click behavior. A different invitation origin needs its own notification permission. If the browser accepts the test but no banner appears, check Chrome's system notification settings and Focus mode. Keep the page open and connected. Supported browsers can notify you while the page is in the background; clicking the notification returns to that page. A run ending does not necessarily mean it succeeded.
 
 The host can remove a collaborator, stop one share or stop all sharing. Closing the management window leaves the app running in the menu bar; **Quit** ends sharing. Stopping sharing does not cancel work already dispatched to the Agent.
 
 ## What sharing grants
 
-- Admission grants access to the selected conversation's projected history and future messages, including history from before sharing. Long histories may be truncated. Supported user images, MP4 and text attachments can be viewed; not all Desktop content is projected.
+- Admission grants access to the selected conversation's projected history and future messages, including history from before sharing. Long histories may be truncated. Supported user images, MP4 and text attachments can be viewed. Images in assistant Markdown replies appear in place and can be enlarged: absolute local PNG, JPEG and WebP files (up to 8 MiB each) use the admitted room connection; HTTP(S) images load directly in the guest browser without a referrer. Not all Desktop content is projected.
 - Guest messages enter the **same Agent**, using the conversation's existing tools, sandbox, permissions and billing or usage allowance. This is not a separate execution sandbox. Invite people you trust.
 - Only the local host can change message approval. Changes affect new messages; already pending messages still need a decision. **Native tool approvals remain in official Desktop**; message approval does not replace them.
 - The authenticated local manager reads IDs, titles, update times and project paths from the Desktop index. That catalog is not sent to guests or the relay. Selected content is read through Desktop IPC; the app does not copy default credentials or conversation files.
