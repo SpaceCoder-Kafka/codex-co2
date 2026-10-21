@@ -14,7 +14,11 @@ Codex Co² 全称 **Codex Conversation Collaboration**。这是独立实验项�
 
 分享者需要 Apple Silicon Mac 和已运行的官方 Codex Desktop。安装包最低要求 macOS **15.0**；原生检查仅记录于 macOS **26.4.1**、Desktop **26.1007.30912**，其他组合尚未验证。协作者使用支持 JavaScript 和 WebSocket 的浏览器；手机真机验收仍待完成。双方网络需能访问生成的公网地址。
 
-通过 [Homebrew](https://github.com/SpaceCoder-Kafka/homebrew-tap) 安装：
+### 新用户使用（Homebrew）
+
+以下步骤供分享者使用。协作者只需在浏览器打开邀请，无需安装应用。
+
+如果尚未安装，请先安装 [Homebrew](https://brew.sh/)，并保持官方 Codex Desktop 运行。随后通过[项目 Tap](https://github.com/SpaceCoder-Kafka/homebrew-tap) 安装：
 
 ```sh
 brew tap SpaceCoder-Kafka/tap
@@ -23,7 +27,9 @@ brew install --cask SpaceCoder-Kafka/tap/codex-co2 && open "$(brew --repository 
 
 如果你的 Homebrew 版本提示需要显式信任 Cask，先检查定义，再执行 `brew trust --cask SpaceCoder-Kafka/tap/codex-co2`，随后重试安装。
 
-安装成功后，上述命令会在默认浏览器打开本地首次使用引导。Homebrew 已将应用放入 Applications，无需再次拖拽。如果已经安装，只需执行 `brew update`，再单独执行上面的 `open` 命令，无需重新安装。
+安装成功后，上述命令会在默认浏览器打开本地首次使用引导，页面顶部提供 **中文 / English** 切换按钮。Homebrew 已将应用放入 Applications，无需再次拖拽。如果已经安装，只需执行 `brew update`，再单独执行上面的 `open` 命令，无需重新安装。
+
+### 通过 DMG 安装
 
 也可以从 [Releases](https://github.com/SpaceCoder-Kafka/codex-co2/releases/tag/v0.3.3-preview.10) 下载 DMG 和对应 `.sha256` 文件，下载后执行：
 

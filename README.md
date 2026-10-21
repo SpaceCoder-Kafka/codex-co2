@@ -20,7 +20,11 @@ The macOS preview attaches to your **already running official Codex Desktop**, k
 - **Guest:** a browser with JavaScript and WebSocket support. Real mobile-device acceptance remains pending.
 - **Network:** both participants need access to the generated public address. The default temporary entry uses Cloudflare Quick Tunnels.
 
-Install with [Homebrew](https://github.com/SpaceCoder-Kafka/homebrew-tap):
+### New users: install with Homebrew
+
+These steps are for the host. Guests only need to open an invitation in their browser.
+
+Install [Homebrew](https://brew.sh/) if needed, and keep official Codex Desktop running. Then install Codex Co² from the [project's tap](https://github.com/SpaceCoder-Kafka/homebrew-tap):
 
 ```sh
 brew tap SpaceCoder-Kafka/tap
@@ -29,7 +33,9 @@ brew install --cask SpaceCoder-Kafka/tap/codex-co2 && open "$(brew --repository 
 
 If your Homebrew version requests explicit cask trust, review the cask and run `brew trust --cask SpaceCoder-Kafka/tap/codex-co2`, then retry installation.
 
-The command opens a local first-launch guide after successful installation. Homebrew has already placed the app in Applications, so no drag-and-drop step is needed. If you already installed it, run `brew update` and then only the `open` command above; reinstalling is unnecessary.
+The command opens a local first-launch guide after successful installation. Use the **中文 / English** buttons at the top to choose your language. Homebrew has already placed the app in Applications, so no drag-and-drop step is needed. If you already installed it, run `brew update` and then only the `open` command above; reinstalling is unnecessary.
+
+### Install from a DMG
 
 Alternatively, download the DMG and matching `.sha256` file from [Releases](https://github.com/SpaceCoder-Kafka/codex-co2/releases/tag/v0.3.3-preview.10), then check the file:
 
