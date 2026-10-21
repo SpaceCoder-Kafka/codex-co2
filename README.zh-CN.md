@@ -4,9 +4,9 @@
 
 作为分享者，你可以继续在 Codex Desktop 工作，协作者则通过浏览器加入同一条会话，一起讨论、补充上下文、跟进 Agent 的回复。
 
-[![Codex Co²：共享一条 Codex 会话，协作者一起推进工作](assets/promotional_image_cn.png)](assets/promotional_video_cn.mp4)
+https://github.com/user-attachments/assets/b1c2f544-3684-432e-9e03-f32ac15b9370
 
-▶ [观看宣传视频](assets/promotional_video_cn.mp4)
+[下载宣传视频](assets/promotional_video_cn.mp4) · [查看宣传海报](assets/promotional_image_cn.png)
 
 Codex Co² 全称是 **Codex Conversation Collaboration**。这是独立实验项目，并非 OpenAI 官方产品，也未获 OpenAI 背书。
 
