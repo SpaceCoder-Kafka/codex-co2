@@ -6,9 +6,11 @@ Share the same Codex conversation and move the work forward together.
 
 As the host, you can keep working in Codex Desktop while a collaborator joins the same conversation in a browser to discuss the work, add context, and follow the Agent's replies.
 
+![Codex Co² — share the same Codex conversation and collaborate in a browser](assets/promotional_image_en.png)
+
 https://github.com/user-attachments/assets/154ebb78-3f53-4824-bba4-80a52331ef66
 
-[Download the promotional video](assets/promotional_video_en.mp4) · [View the poster](assets/promotional_image_en.png)
+[Download the promotional video](assets/promotional_video_en.mp4)
 
 Codex Co² stands for **Codex Conversation Collaboration**. This is an independent experimental project, not an official OpenAI product or an OpenAI-endorsed integration.
 
