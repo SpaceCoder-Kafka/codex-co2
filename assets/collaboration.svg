@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="440" viewBox="0 0 1120 440" role="img" aria-labelledby="title desc">
+  <title id="title">One conversation, shared progress</title>
+  <desc id="desc">Synthetic illustration. Alex works in official Codex Desktop. Sam joins the selected conversation in a browser after admission. Tool approvals stay with Alex.</desc>
+  <rect width="1120" height="440" rx="24" fill="#f4f5f7"/>
+  <g font-family="system-ui, -apple-system, sans-serif" fill="#16181d">
+    <text x="40" y="55" font-size="26" font-weight="700">One conversation. Work on it together.</text>
+    <text x="40" y="84" font-size="15" fill="#606773">Illustrative flow · synthetic names and content</text>
+    <rect x="40" y="116" width="440" height="250" rx="16" fill="white" stroke="#dfe3e8"/>
+    <text x="64" y="150" font-size="17" font-weight="650">Alex · official Codex Desktop</text>
+    <path d="M64 167H456" stroke="#e7e9ee"/>
+    <text x="64" y="198" font-size="14" fill="#606773">Alex</text>
+    <text x="64" y="222" font-size="17">Let's review the preview together.</text>
+    <rect x="64" y="245" width="392" height="61" rx="10" fill="#edf3ff"/>
+    <text x="80" y="270" font-size="14" fill="#2553a4">Agent · same conversation</text>
+    <text x="80" y="292" font-size="16">Here is a smaller, clearer version.</text>
+    <text x="64" y="343" font-size="14" fill="#606773">Existing tools and native approvals stay here.</text>
+    <path d="M496 226H624M614 218L624 226L614 234M624 254H496M506 246L496 254L506 262" fill="none" stroke="#3266db" stroke-width="2"/>
+    <text x="560" y="199" text-anchor="middle" font-size="13" fill="#2553a4">Admit once</text>
+    <text x="560" y="281" text-anchor="middle" font-size="13" fill="#2553a4">Collaborate live</text>
+    <rect x="640" y="116" width="440" height="250" rx="16" fill="white" stroke="#dfe3e8"/>
+    <text x="664" y="150" font-size="17" font-weight="650">Sam · browser</text>
+    <path d="M664 167H1056" stroke="#e7e9ee"/>
+    <text x="664" y="198" font-size="14" fill="#606773">Sam</text>
+    <text x="664" y="222" font-size="17">Can we simplify the first step?</text>
+    <rect x="664" y="245" width="392" height="61" rx="10" fill="#edf3ff"/>
+    <text x="680" y="270" font-size="14" fill="#2553a4">Agent · same reply</text>
+    <text x="680" y="292" font-size="16">Here is a smaller, clearer version.</text>
+    <text x="664" y="343" font-size="14" fill="#606773">No SSH or local Codex installation needed.</text>
+    <text x="40" y="408" font-size="15" fill="#606773">Codex Co² · Independent experimental project · Message review is optional</text>
+  </g>
+</svg>

@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, interactive-widget=resizes-content">
+    <meta name="referrer" content="no-referrer">
+    <meta name="color-scheme" content="light">
+    <meta name="description" content="Codex Co² — 共享一条 Codex 会话，一起推进工作。">
+    <title>Codex Co² · 共享会话</title>
+    <link rel="stylesheet" href="/style.css">
+    <script defer src="/vendor/markdown-it.min.js"></script>
+    <script defer src="/markdown.js"></script>
+    <script defer src="/images.js"></script>
+    <script type="module" src="/guest.js"></script>
+  </head>
+  <body>
+    <div class="page-shell">
+      <header class="masthead">
+        <a class="brand" href="/" aria-label="Codex Co² 首页">Codex Co²</a>
+        <div class="heading"><h1 id="thread-title">共享会话</h1><span id="agent-status" class="agent-status" hidden>Agent 空闲</span></div>
+        <div id="connection-status" class="status-pill" data-state="neutral" role="status"><span class="status-dot" aria-hidden="true"></span><span id="connection-label">尚未连接</span></div>
+      </header>
+      <main class="workspace">
+        <div class="context-bar reading-width">
+          <div id="notice" class="notice" role="status" hidden></div>
+          <section id="join-panel" class="join-card" aria-labelledby="join-title">
+            <h2 id="join-title">加入这条会话</h2><p class="card-description">共享一条 Codex 会话，一起推进工作。</p>
+            <form id="join-form"><label class="sr-only" for="display-name">显示名称</label><div class="join-row"><input id="display-name" name="display-name" type="text" maxlength="80" placeholder="你的显示名称" autocomplete="nickname" required aria-describedby="name-help"><button id="join-button" class="button button-primary" type="submit">申请加入</button></div><p id="name-help" class="field-help">最多 40 个字符，分享者确认后即可加入。</p><details class="recovery-entry"><summary>换浏览器或换域名？恢复已加入的身份</summary><p class="field-help">同一网站会自动记住你的身份。只有换浏览器、清理存储或更换域名时，才需要恢复。</p><label for="import-recovery">选择此前保存的恢复文件</label><input id="import-recovery" type="file" accept=".json,application/json"><label for="recovery-input">或粘贴备用恢复凭据</label><input id="recovery-input" type="password" maxlength="43" autocomplete="off" placeholder="首次加入无需填写"><p class="field-help">首次加入不用填写。没有恢复文件或凭据也可以填写显示名称，由分享者重新确认加入。</p></details></form>
+            <p id="join-feedback" class="inline-feedback" aria-live="polite"></p>
+          </section>
+          <details id="member-panel" class="member-card" hidden><summary><span id="member-avatar" class="avatar" aria-hidden="true">访</span><span id="member-name"></span><span id="member-title">你已加入</span><span class="details-hint">参与信息</span></summary><p id="member-description" class="card-description"></p><button id="reconnect-button" class="button" type="button" hidden>重新申请连接</button><p class="privacy-note">仅共享这一条会话。邀请仅在当前页面保留，刷新后请重新打开完整邀请链接。</p></details>
+          <p id="identity-notice" class="field-help" role="status" hidden></p>
+          <details id="recovery-panel" class="member-card" hidden><summary>个人身份备份</summary><p id="recovery-note" class="field-help"></p><button id="download-recovery" class="button" type="button">保存备用恢复文件</button><details class="recovery-entry"><summary>手动复制凭据</summary><label class="sr-only" for="recovery-code">个人恢复凭据</label><input id="recovery-code" type="password" readonly autocomplete="off"><button id="copy-recovery" class="button" type="button">复制恢复凭据</button></details><p class="privacy-note">恢复文件只供你本人使用，请勿转发。停止共享、移除协作者或准入到期后失效。</p></details>
+          <details id="proposals-panel" class="proposals-card" hidden><summary>你的建议 <span id="proposal-count" class="count-badge">0</span></summary><p class="field-help">提交状态不代表 Agent 已执行。</p><ol id="proposals" class="proposals"></ol></details>
+          <div id="history-note" class="history-note" hidden></div>
+        </div>
+        <section class="conversation-wrap" aria-labelledby="thread-title">
+          <div id="conversation" class="conversation" tabindex="0" aria-label="已共享的对话记录">
+            <div class="reading-width transcript">
+              <div id="empty-state" class="empty-state"><span class="empty-mark" aria-hidden="true">↗</span><h2 id="empty-title">从一个邀请开始</h2><p id="empty-description">填写显示名称，等待分享者确认。<br>加入后，共享的对话会显示在这里。</p></div>
+              <div id="messages" class="messages"></div>
+            </div>
+          </div>
+          <button id="new-replies-button" class="new-replies-button" type="button" hidden>有新回复，查看 ↓</button>
+        </section>
+        <footer class="composer reading-width">
+          <form id="proposal-form"><label class="sr-only" for="proposal-text">建议内容</label><div class="compose-box"><textarea id="proposal-text" name="proposal-text" rows="2" maxlength="8000" placeholder="补充你的想法…" disabled aria-describedby="proposal-help keyboard-help draft-help"></textarea><div class="compose-meta"><span id="character-count">0 / 8,000</span><button id="send-button" class="button button-primary" type="submit" disabled aria-label="发送建议">↑</button></div></div><p id="proposal-help" class="field-help review-explanation">正在同步消息接收设置…</p><p id="keyboard-help" class="field-help">Enter 发送，Shift+Enter 换行。</p><p id="draft-help" class="field-help">未发送的草稿保存在当前标签页；断线后自动尝试重连，已发送消息不会自动重发。</p></form>
+          <p id="proposal-feedback" class="inline-feedback" aria-live="polite"></p>
+          <div class="conversation-footer"><span>任务在分享者的电脑上执行</span><span aria-hidden="true">·</span><span id="sync-label">等待同步</span></div>
+        </footer>
+      </main>
+    </div>
+  </body>
+</html>

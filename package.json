@@ -1,0 +1,38 @@
+{
+  "name": "codex-co2",
+  "version": "0.3.3",
+  "private": true,
+  "type": "module",
+  "description": "Real-time collaboration for Codex",
+  "engines": {
+    "node": ">=22.23.3"
+  },
+  "scripts": {
+    "doctor": "node bin/coop.mjs doctor",
+    "migrate": "node bin/coop.mjs migrate",
+    "start": "node bin/coop.mjs start",
+    "stop": "node bin/coop.mjs stop",
+    "login": "node bin/coop.mjs login",
+    "probe": "node bin/coop.mjs probe",
+    "probe:desktop": "node scripts/probe-desktop-attach.mjs",
+    "ssh:remove": "node bin/coop.mjs ssh-remove",
+    "test": "node --test test/*.test.mjs",
+    "test:integration": "CODEX_COOP_INTEGRATION=1 node --test test/*.integration.test.mjs",
+    "host": "node bin/share.mjs host",
+    "relay": "node bin/share.mjs relay",
+    "demo": "node bin/share.mjs demo",
+    "build:macos": "node scripts/build-macos.mjs",
+    "check:macos": "node scripts/check-macos-bundle.mjs",
+    "test:integration:required": "node scripts/test-integration.mjs",
+    "check:public": "node scripts/public-source.mjs",
+    "export:public": "node scripts/export-public.mjs",
+    "notices:write": "node scripts/third-party-notices.mjs --write",
+    "notices:check": "node scripts/third-party-notices.mjs",
+    "test:licenses": "python3 -m unittest discover -s test -p test_cloudflared_notices.py"
+  },
+  "dependencies": {
+    "markdown-it": "15.0.3",
+    "ws": "8.22.0"
+  },
+  "license": "MIT"
+}

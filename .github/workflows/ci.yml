@@ -1,0 +1,32 @@
+name: Checks
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  synthetic:
+    runs-on: macos-26
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - run: npm run check:public
+      - run: npm run notices:check
+      - run: npm run test:licenses
+      - run: npm test
+      - name: Install isolated test backend only
+        run: |
+          npm install --prefix "$RUNNER_TEMP/co2-test-cli" --ignore-scripts --no-audit --no-fund --no-save @openai/codex@0.163.0
+          # The isolated fixture PATH deliberately excludes development tools.
+          # Use the native executable, not npm's Node.js launcher.
+          co2_test_binary="$RUNNER_TEMP/co2-test-cli/node_modules/@openai/codex-darwin-arm64/vendor/aarch64-apple-darwin/bin/codex"
+          test "$("$co2_test_binary" --version)" = "codex-cli 0.163.0"
+          printf 'CODEX_COOP_CLI=%s\n' "$co2_test_binary" >> "$GITHUB_ENV"
+      - run: npm run test:integration:required

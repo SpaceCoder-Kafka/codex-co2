@@ -1,0 +1,10 @@
+name: Feature request
+description: Describe the collaboration problem you want to solve.
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem and desired outcome
+      description: Who needs this, and how would it improve collaborating in one conversation?
+    validations:
+      required: true

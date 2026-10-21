@@ -1,0 +1,668 @@
+import assert from 'node:assert/strict';
+import { webcrypto } from 'node:crypto';
+import fs from 'node:fs';
+import { test } from 'node:test';
+import vm from 'node:vm';
+
+// Exercise the real browser script with synthetic UI/transport only. These tests
+// establish rendering decisions, not mobile browser layout or live transport.
+const html = fs.readFileSync(new URL('../public/index.html', import.meta.url), 'utf8');
+const script = fs.readFileSync(new URL('../public/guest.js', import.meta.url), 'utf8');
+const imageScript = fs.readFileSync(new URL('../public/images.js', import.meta.url), 'utf8');
+
+class Element {
+  constructor(tag = 'div') {
+    Object.assign(this, { tag, children: [], dataset: {}, listeners: new Map(),
+      hidden: false, disabled: false, value: '', textContent: '',
+      scrollHeight: 500, scrollTop: 0, clientHeight: 500 });
+  }
+  set innerHTML(_value) { throw new Error('Guest messages must not use innerHTML'); }
+  append(...children) {
+    this.children.push(...children.flatMap(child => child.tag === '#fragment' ? child.children : [child]));
+  }
+  replaceChildren(...children) { this.children = []; this.append(...children); }
+  addEventListener(name, listener) { this.listeners.set(name, listener); }
+  trigger(name, event = {}) { return this.listeners.get(name)?.({ preventDefault() {}, ...event }); }
+  requestSubmit() { if (!this.submitButton?.disabled) this.trigger('submit'); }
+  focus() {}
+  select() { this.selected = true; }
+  click() { this.clicked = true; return this.trigger('click'); }
+  setAttribute(name, value) { this[name] = value; }
+  removeAttribute(name) { delete this[name]; }
+  showModal() { this.open = true; }
+  close() { this.open = false; this.trigger('close'); }
+  pause() { this.paused = true; }
+  play() { this.paused = false; return Promise.resolve(); }
+  load() { this.loadCalls = (this.loadCalls ?? 0) + 1; }
+  remove() { this.removed = true; }
+}
+
+function browser({ storage = new Map(), persistentStorage = new Map(), storageBlocked = false,
+  invitation = `#room=synthetic-room&invite=${'x'.repeat(43)}` } = {}) {
+  const urls = { created: [], revoked: [] };
+  class PreviewURL extends URL {
+    static createObjectURL(blob) { const url = `blob:synthetic-${urls.created.length}`; urls.created.push({ url, size: blob.size, blob }); return url; }
+    static revokeObjectURL(url) { urls.revoked.push(url); }
+  }
+  const elements = Object.fromEntries([...html.matchAll(/<[^>]*\bid="([^"]+)"[^>]*>/g)]
+    .map(match => {
+      const element = new Element();
+      element.hidden = /\shidden(?:\s|>)/.test(match[0]);
+      return [match[1], element];
+    }));
+  const sockets = [];
+  elements['proposal-form'].submitButton = elements['send-button'];
+  class Socket {
+    static OPEN = 1;
+    constructor(url) {
+      Object.assign(this, { url: String(url), readyState: 0, listeners: new Map(), sent: [] });
+      sockets.push(this);
+    }
+    addEventListener(name, listener) { this.listeners.set(name, listener); }
+    send(raw) { assert.equal(this.readyState, 1); this.sent.push(JSON.parse(raw)); }
+    open() { this.readyState = 1; this.listeners.get('open')?.(); }
+    receive(message) { this.listeners.get('message')?.({ data: JSON.stringify(message) }); }
+    close() { this.readyState = 3; this.listeners.get('close')?.(); }
+  }
+  const hash = invitation;
+  let redactedUrl;
+  let reloadCount = 0;
+  const windowListeners = new Map();
+  const location = {
+    hash, pathname: '/', href: `https://synthetic.invalid/${hash}`, protocol: 'https:',
+    reload() { reloadCount++; },
+  };
+  const documentListeners = new Map();
+  const document = {
+    body: new Element('body'),
+    visibilityState: 'visible',
+    addEventListener(name, listener) { documentListeners.set(name, listener); },
+    getElementById(id) { assert.ok(elements[id], `Missing HTML element: ${id}`); return elements[id]; },
+    createElement: tag => new Element(tag),
+    createDocumentFragment: () => new Element('#fragment'),
+  };
+  let clockNow = Date.now(), timerId = 0;
+  const timers = new Map();
+  const schedule = (fn, ms, repeat = false) => {
+    const id = ++timerId; timers.set(id, { fn, due: clockNow + ms, ms, repeat }); return id;
+  };
+  class ClockDate extends Date { static now() { return clockNow; } }
+  const context = { Date: ClockDate,
+    URLSearchParams, URL: PreviewURL, WebSocket: Socket, crypto: webcrypto, Uint8Array, Blob, TextDecoder, atob, btoa,
+    document,
+    window: {
+      location,
+      history: { replaceState(_state, _title, url) { redactedUrl = url; location.hash = ''; } },
+      addEventListener(name, listener) { windowListeners.set(name, listener); },
+      setTimeout: (fn, ms) => schedule(fn, ms), clearTimeout: id => timers.delete(id),
+      setInterval: (fn, ms) => schedule(fn, ms, true), clearInterval: id => timers.delete(id),
+      sessionStorage: { getItem: key => storage.get(key), setItem: (key, value) => storage.set(key, value), removeItem: key => storage.delete(key) },
+      localStorage: { getItem: key => { if (storageBlocked) throw new Error('Storage blocked'); return persistentStorage.get(key); },
+        setItem: (key, value) => { if (storageBlocked) throw new Error('Storage blocked'); persistentStorage.set(key, value); } },
+    },
+  };
+  vm.runInNewContext(imageScript, context);
+  vm.runInNewContext(script, context);
+  assert.equal(redactedUrl, '/');
+  return {
+    elements, sockets, document, urls, storage, persistentStorage,
+    tick(ms) {
+      const until = clockNow + ms;
+      for (;;) {
+        const next = [...timers].filter(([, t]) => t.due <= until).sort((a,b) => a[1].due-b[1].due)[0];
+        if (!next) break;
+        const [id, timer] = next; clockNow = timer.due;
+        if (timer.repeat) timer.due += timer.ms; else timers.delete(id);
+        timer.fn();
+      }
+      clockNow = until;
+    },
+    sleep(ms) { clockNow += ms; },
+    online() { windowListeners.get('online')?.(); },
+    pagehide() { windowListeners.get('pagehide')?.(); },
+    pageshow() { windowListeners.get('pageshow')?.({ persisted: true }); },
+    join({ heartbeat = false } = {}) {
+      elements['display-name'].value = '合成访客';
+      elements['join-form'].trigger('submit');
+      const socket = sockets.at(-1);
+      socket.open();
+      socket.receive({ type: 'pending', guestId: 'synthetic-guest', heartbeat });
+      socket.receive({ type: 'admitted', guestId: 'synthetic-guest' });
+      return socket;
+    },
+    messages() { return elements.messages.children.map(article => article.children[1].textContent); },
+    visibility(state) { document.visibilityState = state; documentListeners.get('visibilitychange')?.(); },
+    navigateHash(hash) { location.hash = hash; windowListeners.get('hashchange')?.(); },
+    get reloadCount() { return reloadCount; },
+    get hash() { return location.hash; },
+  };
+}
+
+function snapshot(socket, revision, items, status = 'running') {
+  socket.receive({ type: 'data', payload: {
+    type: 'snapshot', title: '合成共享会话', status, revision, items,
+  } });
+}
+
+const prompt = { id: 'u-1', role: 'user', text: '只回复 desktop-to-phone-ok，不使用工具' };
+const reply = text => ({ id: 'a-1', role: 'assistant', text });
+
+test('Desktop-originated reply renders live without a guest proposal or reconnect', () => {
+  const page = browser();
+  const socket = page.join();
+  snapshot(socket, 10, [prompt]);
+  assert.deepEqual(page.messages(), [prompt.text]);
+  snapshot(socket, 11, [prompt, reply('desktop-')]);
+  assert.deepEqual(page.messages(), [prompt.text, 'desktop-']);
+  snapshot(socket, 12, [prompt, reply('desktop-to-phone-ok')], 'idle');
+  assert.deepEqual(page.messages(), [prompt.text, 'desktop-to-phone-ok']);
+  assert.equal(page.elements['agent-status'].textContent, 'Agent 空闲');
+  assert.equal(page.sockets.length, 1);
+  assert.deepEqual(socket.sent.map(message => message.type), ['join', 'snapshot-request']);
+});
+
+test('equal revisions still render; older revisions cannot replace a newer reply', () => {
+  const page = browser();
+  const socket = page.join();
+  snapshot(socket, 20, [prompt]);
+  snapshot(socket, 20, [prompt, reply('same-revision-reply')]);
+  assert.deepEqual(page.messages(), [prompt.text, 'same-revision-reply']);
+  snapshot(socket, 19, [prompt, reply('stale-reply')]);
+  assert.deepEqual(page.messages(), [prompt.text, 'same-revision-reply']);
+});
+
+test('a reply off the bottom remains in the DOM even when automatic scrolling is suppressed', () => {
+  const page = browser();
+  const socket = page.join();
+  snapshot(socket, 1, [prompt]);
+  Object.assign(page.elements.conversation, { scrollHeight: 1200, clientHeight: 400, scrollTop: 0 });
+  snapshot(socket, 2, [prompt, reply('new-reply')]);
+  assert.equal(page.elements.conversation.scrollTop, 0);
+  assert.deepEqual(page.messages(), [prompt.text, 'new-reply']);
+  assert.equal(page.elements['new-replies-button'].hidden, false);
+});
+
+test('new reply indicator does not interrupt history reading and clicking it only scrolls', () => {
+  const page = browser();
+  const socket = page.join();
+  snapshot(socket, 1, [prompt, reply('initial')]);
+  assert.equal(page.elements['new-replies-button'].hidden, true);
+  Object.assign(page.elements.conversation, { scrollHeight: 1200, clientHeight: 400, scrollTop: 100 });
+  snapshot(socket, 2, [prompt, reply('initial')], 'idle');
+  assert.equal(page.elements['new-replies-button'].hidden, true, 'status-only change is not a new reply');
+  snapshot(socket, 3, [prompt, reply('initial, updated')], 'idle');
+  assert.equal(page.elements.conversation.scrollTop, 100);
+  assert.equal(page.elements['new-replies-button'].hidden, false);
+  const sent = socket.sent.length;
+  page.elements['new-replies-button'].trigger('click');
+  assert.equal(page.elements.conversation.scrollTop, page.elements.conversation.scrollHeight);
+  assert.equal(page.elements['new-replies-button'].hidden, true);
+  assert.equal(socket.sent.length, sent, 'viewing a reply must not send anything');
+});
+
+test('scrolling to the bottom clears the new reply indicator', () => {
+  const page = browser();
+  const socket = page.join();
+  snapshot(socket, 1, [prompt]);
+  Object.assign(page.elements.conversation, { scrollHeight: 1200, clientHeight: 400, scrollTop: 0 });
+  snapshot(socket, 2, [prompt, reply('new-reply')]);
+  assert.equal(page.elements['new-replies-button'].hidden, false);
+  page.elements.conversation.scrollTop = 800;
+  page.elements.conversation.trigger('scroll');
+  assert.equal(page.elements['new-replies-button'].hidden, true);
+});
+
+test('returning to a visible page requests one snapshot only while admitted and connected', () => {
+  const page = browser();
+  page.visibility('visible');
+  assert.equal(page.sockets.length, 0, 'visibility must not initiate a connection');
+  const socket = page.join();
+  snapshot(socket, 1, [prompt], 'idle');
+  page.elements['proposal-text'].value = '合成建议';
+  page.elements['proposal-form'].trigger('submit');
+  const before = socket.sent.length;
+  page.visibility('hidden');
+  assert.equal(socket.sent.length, before);
+  page.visibility('visible');
+  assert.equal(socket.sent.length, before + 1);
+  assert.deepEqual(socket.sent.at(-1), { type: 'snapshot-request' });
+  assert.equal(socket.sent.filter(message => message.type === 'proposal').length, 1);
+  socket.close();
+  page.visibility('visible');
+  assert.equal(socket.sent.length, before + 1);
+  assert.equal(page.sockets.length, 1, 'visibility must not reconnect or seek readmission');
+});
+
+test('snapshot text is literal and invalid statuses cannot silently change the transcript', () => {
+  const page = browser();
+  const socket = page.join();
+  snapshot(socket, 1, [prompt, reply('<script>unsafe()</script>')]);
+  assert.deepEqual(page.messages(), [prompt.text, '<script>unsafe()</script>']);
+  snapshot(socket, 2, [prompt, reply('ignored-invalid-status')], 'complete');
+  assert.deepEqual(page.messages(), [prompt.text, '<script>unsafe()</script>']);
+});
+
+test('reconnect resets the revision epoch and never automatically replays a guest proposal', () => {
+  const page = browser();
+  const socket = page.join();
+  snapshot(socket, 100, [prompt], 'idle');
+  page.elements['proposal-text'].value = '合成建议';
+  page.elements['proposal-form'].trigger('submit');
+  assert.equal(socket.sent.at(-1).type, 'proposal');
+  socket.close();
+  assert.equal(page.elements['proposal-text'].disabled, true);
+  assert.equal(page.elements.proposals.children[0].children[0].dataset.status, 'unknown');
+  page.elements['reconnect-button'].trigger('click');
+  const reconnected = page.sockets.at(-1);
+  reconnected.open();
+  snapshot(reconnected, 1, [prompt, reply('not-yet-admitted')]);
+  assert.deepEqual(page.messages(), [prompt.text]);
+  reconnected.receive({ type: 'admitted', guestId: 'new-guest' });
+  snapshot(reconnected, 1, [prompt, reply('recovered-reply')]);
+  assert.deepEqual(page.messages(), [prompt.text, 'recovered-reply']);
+  assert.deepEqual(reconnected.sent.map(message => message.type), ['join', 'snapshot-request']);
+});
+
+test('a valid same-document invitation reloads once without sending or mixing old session state', () => {
+  const page = browser();
+  const socket = page.join();
+  snapshot(socket, 1, [prompt], 'idle');
+  page.elements['proposal-text'].value = '不能重发的合成建议';
+  page.elements['proposal-form'].trigger('submit');
+  socket.receive({ type: 'revoked' });
+  const sent = socket.sent.length;
+  const nextHash = `#room=new-synthetic-room&invite=${'n'.repeat(43)}`;
+  assert.equal(page.hash, '', 'startup must scrub the original invitation');
+  page.navigateHash(nextHash);
+  assert.equal(page.reloadCount, 1);
+  assert.equal(page.hash, nextHash, 'the new page must be able to consume the new invitation');
+  page.navigateHash(nextHash);
+  assert.equal(page.reloadCount, 1, 'repeated hash events must not start additional reloads');
+  assert.equal(socket.sent.length, sent, 'invitation navigation must not send a proposal or join');
+  assert.equal(page.sockets.length, 1, 'the old page must not open another socket');
+});
+
+test('hash navigation without a structurally valid invitation does not reload', () => {
+  const page = browser();
+  for (const hash of ['', '#history', '#room=other', '#invite=short', '#room=other&invite=short']) {
+    page.navigateHash(hash);
+  }
+  assert.equal(page.reloadCount, 0);
+  assert.equal(page.sockets.length, 0);
+});
+
+test('human authors display actual room names, roles and distinct bubble classes with honest legacy fallback', () => {
+  const page = browser(); const socket = page.join();
+  snapshot(socket, 1, [
+    { ...prompt, author: { id: 'a', name: '阿明', kind: 'host' } },
+    { id: 'g', role: 'user', text: '建议', author: { id: 'b', name: '小林', kind: 'guest' } },
+    { id: 'unknown', role: 'user', text: '未知' },
+    { id: 'pending', role: 'user', text: '待归属', author: { id: 'unknown', name: '作者待确认', kind: 'unknown' } },
+    reply('回复'),
+  ]);
+  const articles = page.elements.messages.children;
+  assert.deepEqual(articles.map(a => a.children[0].textContent), ['阿明 · 分享者', '小林 · 协作者', '历史消息 · 作者未知', '作者待确认', 'Codex']);
+  assert.match(articles[0].className, /message-host/);
+  assert.match(articles[1].className, /message-guest/);
+  socket.receive({ type: 'revoked' });
+  assert.equal(page.elements.messages.children.length, 0);
+  assert.equal(page.elements['proposal-feedback'].textContent, '访问已结束，旧建议不会自动重发。');
+});
+
+test('processing proposals become uncertain on disconnect and are never replayed', () => {
+  const page = browser(), socket = page.join(); snapshot(socket, 1, [prompt], 'idle');
+  page.elements['proposal-text'].value = '合成执行中建议'; page.elements['proposal-form'].trigger('submit');
+  const proposal = socket.sent.find(m => m.type === 'proposal');
+  socket.receive({ type: 'data', payload: { type: 'proposal-status', requestId: proposal.requestId, status: 'processing' } });
+  assert.equal(page.elements.proposals.children[0].children[0].dataset.status, 'processing');
+  socket.close();
+  assert.equal(page.elements.proposals.children[0].children[0].dataset.status, 'unknown');
+  assert.equal(socket.sent.filter(m => m.type === 'proposal').length, 1);
+});
+
+
+test('guest composer follows host approval policy and submission status without acquiring policy controls', () => {
+  const page = browser(), socket = page.join(); snapshot(socket, 1, []);
+  for (const requireApproval of [false, true, false]) {
+    socket.receive({ type: 'data', payload: { type: 'message-policy', requireApproval } });
+    assert.match(page.elements['proposal-help'].textContent, requireApproval ? /已开启消息审批/ : /无需逐条审批/);
+    page.elements['proposal-text'].value = '合成协作输入'; page.elements['proposal-form'].trigger('submit');
+    const message = socket.sent.at(-1);
+    assert.deepEqual(Object.keys(message).sort(), ['requestId', 'text', 'type']);
+    assert.match(page.elements['proposal-feedback'].textContent, requireApproval ? /等待分享者确认/ : /正在提交给 Agent/);
+    socket.receive({ type: 'data', payload: { type: 'proposal-status', requestId: message.requestId, status: 'accepted' } });
+    assert.equal(page.elements['proposal-feedback'].textContent, '已交给 Agent');
+  }
+  assert.equal(socket.sent.some(m => m.type === 'set-message-policy'), false);
+});
+
+test('Enter sends once through the form; Shift+Enter and IME commit preserve the draft', () => {
+  const page = browser(), socket = page.join(); snapshot(socket, 1, [], 'idle');
+  const input = page.elements['proposal-text'];
+  const compose = text => { input.value = text; input.trigger('input'); };
+  let prevented = 0;
+  const enter = extra => input.trigger('keydown', { key: 'Enter', preventDefault() { prevented++; }, ...extra });
+  compose('第一行\n第二行');
+  for (const extra of [{ shiftKey: true }, { isComposing: true }, { keyCode: 229 }, { ctrlKey: true }, { altKey: true }, { metaKey: true }]) enter(extra);
+  assert.equal(prevented, 0);
+  assert.equal(socket.sent.filter(m => m.type === 'proposal').length, 0);
+  assert.equal(input.value, '第一行\n第二行');
+  enter(); enter();
+  assert.equal(socket.sent.filter(m => m.type === 'proposal').length, 1);
+  assert.equal(socket.sent.at(-1).text, '第一行\n第二行');
+  assert.equal(input.value, '');
+  compose('新草稿'); enter({ repeat: true });
+  assert.equal(input.value, '新草稿');
+  socket.receive({ type: 'offline' }); enter();
+  assert.equal(socket.sent.filter(m => m.type === 'proposal').length, 1);
+  assert.equal(input.value, '新草稿');
+});
+
+test('Enter retains validation and optional message approval', () => {
+  const page = browser(), socket = page.join(); snapshot(socket, 1, [], 'idle');
+  const input = page.elements['proposal-text'];
+  socket.receive({ type: 'data', payload: { type: 'message-policy', requireApproval: true } });
+  for (const text of ['   ', 'x'.repeat(8001)]) {
+    input.value = text; input.trigger('input'); input.trigger('keydown', { key: 'Enter' });
+    assert.equal(socket.sent.filter(m => m.type === 'proposal').length, 0);
+    assert.equal(input.value, text);
+  }
+  input.value = '等待审批'; input.trigger('input'); input.trigger('keydown', { key: 'Enter' });
+  assert.equal(socket.sent.filter(m => m.type === 'proposal').length, 1);
+  assert.equal(page.elements.proposals.children[0].children[0].dataset.status, 'pending');
+});
+
+test('structured images request admitted room bytes once, survive redraw, enlarge and clear on revocation', () => {
+  const page = browser(), socket = page.join(), imageId = 'a'.repeat(64);
+  const item = { ...prompt, images: [{ id: imageId, name: 'example.png' }] };
+  snapshot(socket, 1, [item]);
+  assert.deepEqual(socket.sent.at(-1), { type: 'image-request', imageId });
+  const data = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLttAAAAABJRU5ErkJggg==';
+  socket.receive({ type: 'data', payload: { type: 'image-chunk', imageId, mime: 'image/png', total: 1, index: 0, data } });
+  let button = page.elements.messages.children[0].children[2].children[0];
+  assert.equal(button.children[0].src, 'data:image/png;base64,' + data);
+  button.trigger('click'); const dialog = page.document.body.children[0]; assert.equal(dialog.open, true);
+  snapshot(socket, 2, [item]); button = page.elements.messages.children[0].children[2].children[0];
+  assert.equal(button.children[0].tag, 'img');
+  assert.equal(socket.sent.filter(m => m.type === 'image-request').length, 1);
+  socket.receive({ type: 'revoked' });
+  assert.equal(dialog.open, false); assert.equal(dialog.children[1].src, undefined);
+  assert.equal(page.elements.messages.children.length, 0);
+});
+
+test('unavailable images, unsafe MIME, unsolicited chunks and disconnect cannot create an image preview', () => {
+  for (const invalid of [
+    { type: 'image-unavailable' },
+    { type: 'image-chunk', mime: 'image/svg+xml', index: 0, total: 1, data: 'PHN2Zy8+' },
+    { type: 'image-chunk', mime: 'image/png', index: 1, total: 1, data: 'aAAA' },
+    { type: 'image-chunk', mime: 'image/png', index: 0, total: 9999, data: 'aAAA' },
+  ]) {
+    const page = browser(), socket = page.join(), imageId = 'a'.repeat(64);
+    snapshot(socket, 1, [{ ...prompt, images: [{ id: imageId, name: '<script>.png' }] }]);
+    socket.receive({ type: 'data', payload: { ...invalid, imageId } });
+    const button = page.elements.messages.children[0].children[2].children[0];
+    assert.match(button.textContent, /无法预览/); assert.equal(button.children.length, 0);
+    socket.close(); button.trigger('click'); assert.equal(socket.sent.filter(m => m.type === 'image-request').length, 1);
+  }
+});
+
+test('text previews load only by click, render HTML as code, handle empty files and preserve the message', () => {
+  for (const text of ['# 标题\n<script>bad()</script>\n{"name":"合成"}', '']) {
+    const page = browser(), socket = page.join(), fileId = 'c'.repeat(64);
+    snapshot(socket, 1, [{ ...prompt, files: [{ id: fileId, name: 'example.html', kind: 'text' }] }]);
+    assert.equal(socket.sent.some(m => m.type === 'file-request'), false);
+    const figure = page.elements.messages.children[0].children[2]; figure.children[0].trigger('click');
+    assert.deepEqual(socket.sent.at(-1), { type: 'file-request', fileId });
+    socket.receive({ type: 'data', payload: { type: 'file-chunk', fileId, mime: 'text/plain; charset=utf-8', index: 0, total: 1, data: Buffer.from(text).toString('base64') } });
+    assert.equal(figure.children[2].tag, 'pre');
+    assert.equal(figure.children[2].children[0].tag, 'code');
+    assert.equal(figure.children[2].children[0].textContent, text || '（空文件）');
+    assert.deepEqual(page.messages(), [prompt.text]);
+  }
+});
+
+test('MP4 controls and media element survive snapshot redraw; revocation stops video and revokes its Blob URL', () => {
+  const page = browser(), socket = page.join(), fileId = 'd'.repeat(64);
+  const item = { ...prompt, files: [{ id: fileId, name: 'clip.mp4', kind: 'video' }] };
+  snapshot(socket, 1, [item]);
+  page.elements.messages.children[0].children[2].children[0].trigger('click');
+  socket.receive({ type: 'data', payload: { type: 'file-chunk', fileId, mime: 'video/mp4', index: 0, total: 1, data: Buffer.from('synthetic MP4').toString('base64') } });
+  const video = page.elements.messages.children[0].children[2].children[2];
+  assert.equal(video.tag, 'video'); assert.equal(video.controls, true); assert.equal(video.playsInline, true);
+  assert.equal(video.src, 'blob:synthetic-0'); video.currentTime = 4; video.paused = false;
+  snapshot(socket, 2, [item, reply('正在流式回复')]);
+  assert.equal(page.elements.messages.children[0].children[2].children[2], video);
+  assert.equal(video.currentTime, 4); assert.equal(socket.sent.filter(m => m.type === 'file-request').length, 1);
+  socket.receive({ type: 'revoked' });
+  assert.equal(video.paused, true); assert.equal(video.src, undefined); assert.deepEqual(page.urls.revoked, ['blob:synthetic-0']);
+});
+
+test('file MIME cannot cross preview types and forged packet IDs never create media', () => {
+  const page = browser(), socket = page.join(), fileId = 'e'.repeat(64);
+  snapshot(socket, 1, [{ ...prompt, files: [{ id: fileId, name: 'note.txt', kind: 'text' }] }]);
+  const figure = page.elements.messages.children[0].children[2]; figure.children[0].trigger('click');
+  socket.receive({ type: 'data', payload: { type: 'file-chunk', fileId: 'f'.repeat(64), mime: 'text/plain; charset=utf-8', index: 0, total: 1, data: 'b2s=' } });
+  assert.equal(figure.children.length, 2);
+  socket.receive({ type: 'data', payload: { type: 'file-chunk', fileId, mime: 'text/html', index: 0, total: 1, data: 'b2s=' } });
+  assert.match(figure.children[0].textContent, /无法预览/); assert.equal(figure.children.length, 2);
+});
+
+test('automatic reconnect retains unsent tab draft, seeks fresh admission and never replays submitted messages', () => {
+  const page = browser(), socket = page.join(); snapshot(socket, 1, [], 'idle');
+  page.elements['proposal-text'].value = 'Already submitted'; page.elements['proposal-form'].trigger('submit');
+  page.elements['proposal-text'].value = 'Still a draft'; page.elements['proposal-text'].trigger('input');
+  socket.close(); page.tick(1000);
+  const next = page.sockets.at(-1); assert.notEqual(next, socket); next.open();
+  next.receive({ type: 'pending', guestId: 'new-guest' });
+  assert.equal(page.elements['proposal-text'].value, 'Still a draft');
+  assert.equal(page.elements['send-button'].disabled, true);
+  assert.deepEqual(next.sent.map(m => m.type), ['join']);
+  next.receive({ type: 'admitted', guestId: 'new-guest' }); snapshot(next, 1, [], 'idle');
+  assert.equal(page.elements['send-button'].disabled, false);
+  assert.deepEqual(next.sent.map(m => m.type), ['join', 'snapshot-request']);
+  assert.equal(page.elements.proposals.children[0].children[0].dataset.status, 'unknown');
+  assert.ok(![...page.storage.values()].join().includes('Already submitted'));
+  assert.ok(![...page.storage.values()].join().includes('invite'));
+});
+
+test('drafts survive reopening the same invitation in a tab but never cross rooms, persist sent messages or submit automatically', () => {
+  const storage = new Map(), first = browser({ storage }); first.join();
+  first.elements['proposal-text'].value = 'Unsent draft'; first.elements['proposal-text'].trigger('input');
+  const same = browser({ storage }); assert.equal(same.elements['proposal-text'].value, 'Unsent draft');
+  assert.equal(same.sockets.length, 0);
+  const other = browser({ storage, invitation: `#room=other-room&invite=${'y'.repeat(43)}` });
+  assert.equal(other.elements['proposal-text'].value, '');
+  const socket = same.join(); snapshot(socket, 1, [], 'idle'); same.elements['proposal-form'].trigger('submit');
+  assert.equal(storage.size, 0); assert.equal(socket.sent.filter(m => m.type === 'proposal').length, 1);
+  same.elements['proposal-form'].trigger('submit'); assert.equal(socket.sent.filter(m => m.type === 'proposal').length, 1);
+});
+
+test('wake detects a half-open browser connection, retries the same URL and sends no proposal', () => {
+  const page = browser(), first = page.join({ heartbeat: true }); snapshot(first, 1, [], 'idle');
+  page.tick(25000); assert.deepEqual(first.sent.at(-1), { type: 'ping' }); first.receive({ type: 'pong' });
+  page.sleep(80000); page.visibility('visible'); assert.equal(first.readyState, 3);
+  page.tick(1000); const next = page.sockets.at(-1); next.open();
+  assert.equal(next.url, first.url); assert.deepEqual(next.sent.map(m => m.type), ['join']);
+});
+
+test('revocation and expiry cancel retries; temporary rejection backs off and eventually stops automatic attempts', () => {
+  for (const type of ['revoked', 'expired', 'denied']) {
+    const page = browser(), socket = page.join(); socket.receive({ type });
+    page.tick(300000); page.online(); assert.equal(page.sockets.length, 1);
+    assert.equal(page.elements['send-button'].disabled, true);
+  }
+  const page = browser(), first = page.join(); first.close();
+  for (let i = 0; i < 8; i++) {
+    page.tick(i < 5 ? 1000 * 2 ** i : 30000);
+    const current = page.sockets.at(-1); current.open(); current.receive({ type: 'join-rejected' });
+  }
+  const attempts = page.sockets.length; page.tick(300000);
+  assert.equal(page.sockets.length, attempts); assert.match(page.elements.notice.textContent, /自动重连未成功/);
+});
+
+test('page suspension cancels retries and bfcache restoration only rejoins after the original user initiated a connection', () => {
+  const page = browser(), socket = page.join(); page.pagehide(); page.tick(60000);
+  assert.equal(page.sockets.length, 1); assert.equal(socket.readyState, 3);
+  page.pageshow(); assert.equal(page.sockets.length, 2); page.sockets.at(-1).open();
+  assert.deepEqual(page.sockets.at(-1).sent.map(m => m.type), ['join']);
+  const fresh = browser(); fresh.pageshow(); fresh.online(); assert.equal(fresh.sockets.length, 0);
+});
+
+test('remembered personal identity automatically rejoins the same invitation without storing the invitation or replaying messages', () => {
+  const storage = new Map(), first = browser({ storage }), socket = first.join();
+  socket.receive({ type: 'data', payload: { type: 'visitor-recovery', expiresAt: Date.now() + 60000, name: '已确认同伴', resumed: false } });
+  const identity = JSON.parse(storage.get('co2.visitor-identity'));
+  assert.equal(identity.token, socket.sent.find(m => m.type === 'join').sessionId);
+  assert.equal(identity.name, '已确认同伴');
+  assert.ok(!JSON.stringify(identity).includes('invite'));
+  const sent = socket.sent.length; first.elements['copy-recovery'].trigger('click');
+  assert.equal(first.elements['recovery-code'].value, identity.token);
+  assert.equal(first.elements['recovery-code'].selected, true);
+  assert.equal(socket.sent.length, sent, 'copying a personal credential sends no network message');
+  socket.receive({ type: 'data', payload: { type: 'share-paused' } });
+  assert.equal(first.elements['connection-label'].textContent, '共享已暂停');
+  assert.equal(first.elements['recovery-code'].value, identity.token);
+  socket.receive({ type: 'revoked' });
+  assert.equal(first.elements['connection-label'].textContent, '共享已暂停');
+  const refreshed = browser({ storage }); assert.equal(refreshed.sockets.length, 1);
+  refreshed.sockets[0].open(); assert.equal(refreshed.sockets[0].sent[0].sessionId, identity.token);
+  assert.deepEqual(refreshed.sockets[0].sent.map(m => m.type), ['join']);
+  assert.equal(refreshed.elements['send-button'].disabled, true);
+});
+
+test('new temporary origin accepts an explicit recovery credential; it remains separate from the public invitation', () => {
+  const page = browser(), credential = 'r'.repeat(42) + 'A';
+  page.elements['recovery-input'].value = credential;
+  page.elements['recovery-input'].trigger('input'); assert.equal(page.elements['display-name'].required, false);
+  page.elements['join-form'].trigger('submit'); page.sockets[0].open();
+  const join = page.sockets[0].sent[0]; assert.equal(join.sessionId, credential);
+  assert.equal(join.name, '恢复中的同伴'); assert.equal(page.hash, '');
+  assert.equal(page.elements['recovery-input'].value, '');
+  const bad = browser(); bad.elements['recovery-input'].value = 'invalid'; bad.elements['join-form'].trigger('submit');
+  assert.equal(bad.sockets.length, 0);
+});
+
+const scopedInvitation = (scope, room = 'synthetic-room') => `#room=${room}&invite=${'x'.repeat(43)}&scope=${scope}`;
+function confirmIdentity(socket, scopeId = 'scope-one') {
+  socket.receive({ type: 'data', payload: { type: 'visitor-recovery', scopeId,
+    expiresAt: Date.now() + 60000, name: '已确认同伴', resumed: false } });
+}
+
+test('approved identity survives a closed tab and matches a replacement room by stable scope, without replay', () => {
+  const persistentStorage = new Map();
+  const first = browser({ persistentStorage, invitation: scopedInvitation('scope-one') });
+  const socket = first.join(), token = socket.sent[0].sessionId;
+  assert.equal(persistentStorage.size, 0, 'unapproved identities are not remembered');
+  confirmIdentity(socket);
+  const stored = JSON.parse(persistentStorage.get('co2.visitor-identities'));
+  assert.equal(stored[0].scopeId, 'scope-one'); assert.equal(stored[0].token, token);
+  assert.equal(first.elements['identity-notice'].hidden, false);
+  assert.match(first.elements['identity-notice'].textContent, /自动保存/);
+  assert.ok(!JSON.stringify(stored).includes('invite'));
+  const next = browser({ persistentStorage, invitation: scopedInvitation('scope-one', 'replacement-room') });
+  assert.equal(next.elements['recovery-input'].value, token, 'the matched credential is automatically filled');
+  assert.equal(next.sockets.length, 1); next.sockets[0].open();
+  assert.equal(next.sockets[0].sent[0].sessionId, token);
+  assert.equal(next.sockets[0].sent[0].roomId, 'replacement-room');
+  assert.deepEqual(next.sockets[0].sent.map(m => m.type), ['join']);
+  assert.equal(next.elements['send-button'].disabled, true, 'local identity is not local admission');
+});
+
+test('multiple sharing scopes keep separate identities; unknown, stopped and expired scopes do not auto-join', () => {
+  const persistentStorage = new Map();
+  const first = browser({ persistentStorage, invitation: scopedInvitation('scope-one') });
+  confirmIdentity(first.join());
+  const other = browser({ persistentStorage, invitation: scopedInvitation('scope-two', 'other-room') });
+  assert.equal(other.sockets.length, 0); confirmIdentity(other.join(), 'scope-two');
+  assert.equal(JSON.parse(persistentStorage.get('co2.visitor-identities')).length, 2);
+  const restored = browser({ persistentStorage, invitation: scopedInvitation('scope-one', 'new-room') });
+  assert.equal(restored.sockets.length, 1);
+  const stopped = browser({ persistentStorage, invitation: scopedInvitation('new-scope', 'new-room') });
+  assert.equal(stopped.sockets.length, 0);
+  const entries = JSON.parse(persistentStorage.get('co2.visitor-identities'));
+  entries.forEach(entry => { entry.expiresAt = Date.now() - 1; });
+  persistentStorage.set('co2.visitor-identities', JSON.stringify(entries));
+  assert.equal(browser({ persistentStorage, invitation: scopedInvitation('scope-one') }).sockets.length, 0);
+});
+
+test('revocation deletes only the current remembered identity, while pausing retains it for replacement invitations', () => {
+  const persistentStorage = new Map();
+  const first = browser({ persistentStorage, invitation: scopedInvitation('scope-one') });
+  const socket = first.join(); confirmIdentity(socket);
+  socket.receive({ type: 'data', payload: { type: 'share-paused' } });
+  assert.equal(JSON.parse(persistentStorage.get('co2.visitor-identities')).length, 1);
+  const next = browser({ persistentStorage, invitation: scopedInvitation('scope-one', 'new-room') });
+  const resumed = next.sockets[0]; resumed.open(); resumed.receive({ type: 'admitted' }); confirmIdentity(resumed);
+  resumed.receive({ type: 'revoked' });
+  assert.equal(JSON.parse(persistentStorage.get('co2.visitor-identities')).length, 0);
+  assert.equal(next.elements['recovery-code'].value, '');
+  assert.equal(next.elements['recovery-panel'].hidden, true);
+  assert.equal(browser({ persistentStorage, invitation: scopedInvitation('scope-one', 'third-room') }).sockets.length, 0);
+});
+
+test('blocked persistent storage leaves admission usable and visibly prompts the guest to save a backup', () => {
+  const page = browser({ storageBlocked: true, invitation: scopedInvitation('scope-one') });
+  const socket = page.join(); confirmIdentity(socket);
+  assert.equal(page.elements['send-button'].disabled, true, 'a snapshot is still required');
+  assert.match(page.elements['identity-notice'].textContent, /未能长期保存/);
+  assert.equal(page.elements['recovery-panel'].open, true);
+  assert.equal(page.elements['recovery-code'].value, socket.sent[0].sessionId);
+});
+
+test('backup file can be imported in a new origin for the matching scope, but grants no local admission', async () => {
+  const page = browser({ invitation: scopedInvitation('scope-one', 'new-room') });
+  const record = { type: 'codex-co2-recovery', version: 1, approved: true,
+    scopeId: 'scope-one', roomId: 'original-room', name: '原来的同伴', token: 'r'.repeat(43), expiresAt: Date.now() + 60000 };
+  const input = page.elements['import-recovery'];
+  input.files = [{ size: 300, text: async () => JSON.stringify(record) }];
+  await input.trigger('change');
+  assert.equal(page.elements['recovery-input'].value, record.token);
+  assert.equal(page.elements['display-name'].value, record.name);
+  assert.equal(page.elements['join-button'].textContent, '恢复连接');
+  assert.equal(page.sockets.length, 0, 'reading a backup never sends a request on its own');
+  assert.equal(page.persistentStorage.size, 0, 'only host confirmation may persist an imported identity');
+  page.elements['join-form'].trigger('submit'); page.sockets[0].open();
+  assert.equal(page.sockets[0].sent[0].sessionId, record.token);
+  assert.equal(page.elements['send-button'].disabled, true);
+  const other = browser({ invitation: scopedInvitation('scope-two') });
+  other.elements['import-recovery'].files = input.files; await other.elements['import-recovery'].trigger('change');
+  assert.match(other.elements['join-feedback'].textContent, /不属于当前共享/);
+  assert.equal(other.elements['recovery-input'].value, ''); assert.equal(other.sockets.length, 0);
+  record.expiresAt = Date.now() - 1;
+  const expired = browser({ invitation: scopedInvitation('scope-one') });
+  expired.elements['import-recovery'].files = input.files; await expired.elements['import-recovery'].trigger('change');
+  assert.match(expired.elements['join-feedback'].textContent, /无效或已到期/);
+});
+
+test('only a host-confirmed scope is remembered; the fragment alone cannot rebind an identity', () => {
+  const page = browser({ invitation: scopedInvitation('forged-scope') });
+  const socket = page.join(); confirmIdentity(socket, 'actual-scope');
+  const saved = JSON.parse(page.persistentStorage.get('co2.visitor-identities'))[0];
+  assert.equal(saved.scopeId, 'actual-scope');
+  assert.equal(browser({ persistentStorage: page.persistentStorage, invitation: scopedInvitation('forged-scope', 'new-room') }).sockets.length, 0);
+});
+
+test('a backup download contains only confirmed identity data and remains available after a pause', async () => {
+  const page = browser({ invitation: scopedInvitation('scope-one') });
+  const socket = page.join(); confirmIdentity(socket);
+  socket.receive({ type: 'data', payload: { type: 'share-paused' } });
+  page.elements['download-recovery'].trigger('click');
+  const record = JSON.parse(await page.urls.created[0].blob.text());
+  assert.equal(record.type, 'codex-co2-recovery'); assert.equal(record.version, 1);
+  assert.equal(record.scopeId, 'scope-one'); assert.equal(record.token, socket.sent[0].sessionId);
+  assert.deepEqual(Object.keys(record).sort(), ['approved', 'expiresAt', 'name', 'roomId', 'scopeId', 'token', 'type', 'version']);
+  assert.equal(socket.sent.filter(m => m.type === 'proposal').length, 0);
+  page.tick(1000); assert.deepEqual(page.urls.revoked, [page.urls.created[0].url]);
+});
+
+test('legacy tab identities migrate on host confirmation and corrupt tab data cannot hide a valid persistent identity', () => {
+  const storage = new Map([['co2.visitor-identity', JSON.stringify({ roomId: 'synthetic-room',
+    token: 'l'.repeat(43), name: '旧访客', approved: true })]]), persistentStorage = new Map();
+  const page = browser({ storage, persistentStorage, invitation: scopedInvitation('scope-one') });
+  assert.equal(page.sockets.length, 1); const socket = page.sockets[0]; socket.open();
+  socket.receive({ type: 'admitted' }); confirmIdentity(socket);
+  storage.set('co2.visitor-identity', '{broken-json');
+  const returning = browser({ storage, persistentStorage, invitation: scopedInvitation('scope-one', 'new-room') });
+  assert.equal(returning.sockets.length, 1); returning.sockets[0].open();
+  assert.equal(returning.sockets[0].sent[0].sessionId, 'l'.repeat(43));
+});

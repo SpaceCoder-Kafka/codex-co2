@@ -1,0 +1,25 @@
+name: Bug report
+description: Report a reproducible problem with synthetic or redacted data.
+body:
+  - type: markdown
+    attributes:
+      value: "For vulnerabilities, use Security → Advisories. Never paste invitations, recovery credentials, authentication, raw conversations or private paths."
+  - type: input
+    id: versions
+    attributes:
+      label: Versions and platform
+      description: Co² app/build, Codex Desktop version, macOS/chip, guest browser.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      description: Use synthetic content. Explain expected and actual behavior.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Redacted evidence
+      description: Optional minimal error or screenshot. Remove private paths, names, messages and credentials.

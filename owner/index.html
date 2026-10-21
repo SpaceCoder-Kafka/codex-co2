@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>Codex Co²</title>
+  <link rel="stylesheet" href="/owner.css">
+  <script defer src="/i18n.js"></script>
+  <script defer src="/owner.js"></script>
+</head>
+<body>
+  <svg class="icon-definitions" aria-hidden="true"><defs>
+    <symbol id="icon-sessions" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="4"/><path d="m7 9 3 3-3 3m6 0h4"/></symbol>
+    <symbol id="icon-share" viewBox="0 0 24 24"><rect x="3" y="3" width="13" height="13" rx="4"/><path d="M9 16v2a3 3 0 0 0 3 3h6a3 3 0 0 0 3-3v-6a3 3 0 0 0-3-3h-2m-6 3V7m0 0L7 10m3-3 3 3"/></symbol>
+    <symbol id="icon-settings" viewBox="0 0 24 24"><path d="m9 3-.6 2.1-2 .9-2-.6-2 3.4L4 10.4v2.3l-1.6 1.5 2 3.4 2-.5 2 1L9 20h4l.6-1.9 2-1 2 .5 2-3.4-1.6-1.5v-2.3l1.6-1.6-2-3.4-2 .6-2-.9L13 3z"/><circle cx="11" cy="11.5" r="3"/></symbol>
+    <symbol id="icon-arrow" viewBox="0 0 24 24"><path d="M5 12h14m-6-6 6 6-6 6"/></symbol>
+    <symbol id="icon-check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></symbol>
+    <symbol id="icon-lock" viewBox="0 0 24 24"><rect x="5" y="10" width="14" height="11" rx="3"/><path d="M8 10V7a4 4 0 0 1 8 0v3m-4 5v2"/></symbol>
+  </defs></svg>
+  <div class="app-shell">
+    <aside class="sidebar" aria-label="应用导航" data-i18n-aria-label="应用导航">
+      <div class="brand" aria-label="Codex Co²">Co<span>²</span><i></i></div>
+      <div class="nav-tabs" role="tablist" aria-label="工作空间" data-i18n-aria-label="工作空间" aria-orientation="vertical">
+        <button id="tab-sessions" class="nav-tab" role="tab" aria-selected="true" aria-controls="panel-sessions" tabindex="0"><svg><use href="#icon-sessions"/></svg><span><span data-i18n="选择会话">选择会话</span></span></button>
+        <button id="tab-shared" class="nav-tab" role="tab" aria-selected="false" aria-controls="panel-shared" tabindex="-1"><svg><use href="#icon-share"/></svg><span><span data-i18n="共享会话">共享会话</span></span><span id="nav-pending" class="nav-count" hidden>0</span></button>
+        <button id="tab-settings" class="nav-tab nav-settings" role="tab" aria-selected="false" aria-controls="panel-settings" tabindex="-1"><svg><use href="#icon-settings"/></svg><span><span data-i18n="设置">设置</span></span></button>
+      </div>
+      <div class="sidebar-caption"><span data-i18n="一起，向前。">一起，向前。</span><span>Real-time collaboration</span></div>
+    </aside>
+    <main id="workspace">
+      <header class="page-header">
+        <div><p class="eyebrow">CODEX CONVERSATION COLLABORATION</p><h1 id="page-title"><span data-i18n="选择会话">选择会话</span></h1><p id="page-description"><span data-i18n="共享一条 Codex 会话，一起推进工作。">共享一条 Codex 会话，一起推进工作。</span></p></div>
+        <div class="connection" role="status"><span class="connection-dot" aria-hidden="true"></span><span id="notice"><span data-i18n="正在连接…">正在连接…</span></span></div>
+      </header>
+      <div id="share-limit-alert" class="share-limit-alert" role="alert" hidden><p id="share-limit-message"></p><button id="edit-share-limit" data-i18n="调整共享上限">调整共享上限</button></div>
+      <section id="attention" class="attention" aria-label="协作通知" data-i18n-aria-label="协作通知" hidden>
+        <button id="attention-toggle" class="attention-toggle" aria-expanded="false" aria-controls="attention-list"><span id="attention-summary" role="status" aria-live="polite"></span><span aria-hidden="true">↗</span></button>
+        <div id="attention-list" class="attention-list" hidden></div>
+      </section>
+      <section id="public-connection" class="public-connection" role="status" hidden>
+        <p id="public-status"></p><div class="row"><button id="check-connection" data-i18n="检查连接">检查连接</button><button id="rebuild-relay" class="danger" data-i18n="重建入口…">重建入口…</button></div>
+      </section>
+
+      <div id="panel-sessions" class="tab-panel sessions-panel" role="tabpanel" aria-labelledby="tab-sessions">
+        <div class="overview">
+          <div class="welcome"><div><span class="eyebrow">BETTER, TOGETHER</span><h2><span data-i18n="让想法汇合，让工作向前。">让想法汇合，让工作向前。</span></h2><p><span data-i18n="从一条会话开始，邀请同伴加入协作。">从一条会话开始，邀请同伴加入协作。</span></p></div><svg class="collaboration-art" viewBox="0 0 172 104" aria-hidden="true"><path d="M36 51h99M85 30v48" stroke="#c9c9ce" stroke-dasharray="3 5"/><rect x="7" y="21" width="65" height="48" rx="13" fill="white" stroke="#dedee2"/><path d="m25 37 7 7-7 7m14 0h14" fill="none" stroke="#111" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/><rect x="102" y="42" width="60" height="45" rx="13" fill="#171717"/><path d="M118 57h28m-28 9h17" stroke="white" stroke-width="2" stroke-linecap="round"/><circle cx="85" cy="22" r="12" fill="#3b82f6"/><path d="M81 22h8m-4-4v8" stroke="white" stroke-width="1.7" stroke-linecap="round"/></svg></div>
+          <div class="stat"><strong id="active-count">0</strong><span><span data-i18n="正在共享">正在共享</span></span><svg><use href="#icon-share"/></svg></div>
+          <div class="stat"><strong id="guest-count">0</strong><span><span data-i18n="已加入的同伴">已加入的同伴</span></span><div class="stat-avatar" aria-hidden="true">↗</div></div>
+        </div>
+        <div class="session-layout">
+          <section class="catalog" aria-label="Codex 会话列表" data-i18n-aria-label="Codex 会话列表">
+            <div class="section-heading"><h2><span data-i18n="所有会话">所有会话</span><span id="thread-count" class="count"></span></h2><button id="refresh" class="icon-button" aria-label="刷新会话" data-i18n-aria-label="刷新会话" title="刷新会话" data-i18n-title="刷新会话"><svg viewBox="0 0 24 24"><path d="M19 9a7 7 0 1 0 .3 5M19 4v5h-5"/></svg></button></div>
+            <div class="search-field"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4 4"/></svg><input id="thread-search" type="search" maxlength="200" placeholder="搜索会话或项目" data-i18n-placeholder="搜索会话或项目" autocomplete="off" aria-label="搜索会话或项目" data-i18n-aria-label="搜索会话或项目"></div>
+            <div class="catalog-scroll"><div id="threads" class="thread-list" role="list" aria-label="Codex 会话" data-i18n-aria-label="Codex 会话" aria-describedby="thread-hint"><p class="catalog-empty"><span data-i18n="正在加载会话…">正在加载会话…</span></p></div><button id="load-more" class="load-more" hidden><span data-i18n="加载更多会话">加载更多会话</span></button></div>
+            <p id="thread-hint" class="field-hint"><span data-i18n="选择会话后生成邀请，也可右键快捷分享。">选择会话后生成邀请，也可右键快捷分享。</span></p>
+          </section>
+          <aside class="selection-column" aria-label="分享所选会话" data-i18n-aria-label="分享所选会话">
+            <section class="selection-card">
+              <span class="eyebrow"><span data-i18n="开始协作">开始协作</span></span><div class="selection-icon"><svg><use href="#icon-sessions"/></svg></div>
+              <h2 id="selected-title"><span data-i18n="选择一条会话">选择一条会话</span></h2><p id="selected-project" class="selected-project"><span data-i18n="从左侧选择你想一起推进的工作。">从左侧选择你想一起推进的工作。</span></p>
+              <div class="selection-meta"><span><span data-i18n="分享者">分享者</span></span><button id="edit-profile" class="text-button"><span id="profile-name"><span data-i18n="前往设置填写名称">前往设置填写名称</span></span><span aria-hidden="true">↗</span></button></div>
+              <button id="share" class="primary share-button" disabled><span data-i18n="生成邀请 ↗">生成邀请 ↗</span></button>
+              <p class="scope-note"><svg><use href="#icon-lock"/></svg><span data-i18n="访客仅能访问这一条会话">访客仅能访问这一条会话</span></p>
+            </section>
+            <section class="guide-card"><h3><span data-i18n="为协作留好边界">为协作留好边界</span></h3><div><span class="step">01</span><p><span data-i18n="由你确认同伴加入">由你确认同伴加入</span></p></div><div><span class="step">02</span><p id="policy-summary"><span data-i18n="加入后，消息直接交给 Agent">加入后，消息直接交给 Agent</span></p></div><div><span class="step">03</span><p><span data-i18n="工具审批仍在 Codex 中处理">工具审批仍在 Codex 中处理</span></p></div><button id="edit-policy" class="text-button"><span data-i18n="管理协作设置">管理协作设置</span><span aria-hidden="true">→</span></button></section>
+          </aside>
+        </div>
+      </div>
+
+      <div id="panel-shared" class="tab-panel" role="tabpanel" aria-labelledby="tab-shared" hidden>
+        <div class="section-heading panel-heading"><h2 id="rooms-title"><span data-i18n="共享会话">共享会话</span><span id="room-count" class="count">0</span></h2><button id="new-share"><span data-i18n="分享新会话">分享新会话</span><span aria-hidden="true">＋</span></button></div>
+        <div id="rooms" class="panel-scroll" aria-labelledby="rooms-title">
+          <div class="empty-state"><div class="empty-icon"><svg><use href="#icon-share"/></svg></div><h3><span data-i18n="下一次协作，从这里开始">下一次协作，从这里开始</span></h3><p><span data-i18n="在「选择会话」中生成邀请，即可与同伴一起推进工作。">在「选择会话」中生成邀请，即可与同伴一起推进工作。</span></p><button id="empty-browse" class="primary"><span data-i18n="选择会话">选择会话</span><span aria-hidden="true">→</span></button></div>
+        </div>
+      </div>
+
+      <div id="panel-settings" class="tab-panel" role="tabpanel" aria-labelledby="tab-settings" hidden>
+        <div class="panel-scroll settings-scroll">
+          <section id="share-limit-setting" class="settings-card"><div class="settings-heading"><h2 data-i18n="共享数量">共享数量</h2><p data-i18n="默认最多同时共享 10 条会话，可自定义或选择无限制。">默认最多同时共享 10 条会话，可自定义或选择无限制。</p></div><div class="settings-row"><div><label for="share-limit-mode" data-i18n="同时共享上限">同时共享上限</label><p id="share-limit-hint" class="muted" data-i18n="保存后立即生效并保留；调低上限不会停止已有共享。">保存后立即生效并保留；调低上限不会停止已有共享。</p></div><div class="share-limit-controls"><select id="share-limit-mode" aria-label="共享上限模式" data-i18n-aria-label="共享上限模式" aria-describedby="share-limit-hint"><option value="limited" data-i18n="自定义数量">自定义数量</option><option value="unlimited" data-i18n="无限制">无限制</option></select><input id="share-limit" type="number" min="1" step="1" value="10" required aria-label="共享会话数量" data-i18n-aria-label="共享会话数量" aria-describedby="share-limit-hint"><button id="save-share-limit" data-i18n="保存">保存</button></div></div><p id="share-limit-status" class="muted" role="status" aria-live="polite"></p></section>
+          <section class="settings-card"><div class="settings-heading"><h2 data-i18n="协作通知">协作通知</h2><p data-i18n="访客申请、消息审批与协作异常会及时提醒；点击可查看对应事项。">访客申请、消息审批与协作异常会及时提醒；点击可查看对应事项。</p></div><div class="settings-row"><p class="muted" data-i18n="应用内提醒始终可用。系统通知需要 macOS 授权，通知中不包含消息正文。">应用内提醒始终可用。系统通知需要 macOS 授权，通知中不包含消息正文。</p><button id="notification-settings" data-i18n="启用系统通知…" hidden>启用系统通知…</button></div></section>
+          <section class="settings-card"><div class="settings-heading"><h2><span data-i18n="语言与地区">语言与地区</span></h2><p><span data-i18n="选择你偏好的界面语言。">选择你偏好的界面语言。</span></p></div><div class="settings-row"><div><label for="language"><span data-i18n="界面语言">界面语言</span></label><p class="muted"><span data-i18n="切换后立即生效，并在下次打开应用时保留。">切换后立即生效，并在下次打开应用时保留。</span></p></div><select id="language" aria-label="界面语言" data-i18n-aria-label="界面语言"><option value="zh-CN" lang="zh-CN">简体中文</option><option value="zh-TW" lang="zh-TW">繁體中文</option><option value="en" lang="en">English</option></select></div></section>
+          <section class="settings-card"><div class="settings-heading"><h2><span data-i18n="个人资料">个人资料</span></h2><p><span data-i18n="让同伴知道正在和谁一起工作。">让同伴知道正在和谁一起工作。</span></p></div><div class="settings-row"><div><label for="owner-name"><span data-i18n="显示名称">显示名称</span></label><p class="muted" id="name-hint"><span data-i18n="用于新共享会话中的消息署名，1–40 个字符。">用于新共享会话中的消息署名，1–40 个字符。</span></p></div><input id="owner-name" type="text" maxlength="80" autocomplete="nickname" placeholder="填写你的名字" data-i18n-placeholder="填写你的名字" required aria-describedby="name-hint"></div></section>
+          <section class="settings-card"><div class="settings-heading"><h2><span data-i18n="消息与审批">消息与审批</span></h2><p><span data-i18n="决定同伴加入后，消息如何进入共享会话。">决定同伴加入后，消息如何进入共享会话。</span></p></div><div class="settings-row"><div><label for="require-approval"><span data-i18n="新共享的消息需审批后接收">新共享的消息需审批后接收</span></label><p class="muted" id="approval-hint"><span data-i18n="默认关闭。同伴加入后，新消息直接交给 Agent。">默认关闭。同伴加入后，新消息直接交给 Agent。</span></p></div><input id="require-approval" class="switch" type="checkbox" role="switch" aria-describedby="approval-hint"></div><div class="settings-note"><span data-i18n="此选项用于接下来创建的共享。已有共享可在下方单独调整。">此选项用于接下来创建的共享。已有共享可在下方单独调整。</span></div><div id="room-policies" class="room-policies"><p class="muted"><span data-i18n="暂无正在共享的会话。">暂无正在共享的会话。</span></p></div></section>
+          <div class="settings-footnote"><svg><use href="#icon-lock"/></svg><p><span data-i18n="切换消息策略仅影响新消息；已待审批的消息仍需逐条确认。">切换消息策略仅影响新消息；已待审批的消息仍需逐条确认。</span><br><span data-i18n="工具执行审批始终由你在 Codex 中处理。">工具执行审批始终由你在 Codex 中处理。</span></p></div>
+          <div class="about-line"><strong>Codex Co²</strong><span>Real-time collaboration for Codex</span></div>
+        </div>
+      </div>
+    </main>
+  </div>
+  <div id="thread-menu" class="thread-menu" role="menu" aria-label="会话操作" data-i18n-aria-label="会话操作" hidden><button id="menu-share" role="menuitem"><span data-i18n="分享会话">分享会话</span></button></div>
+</body>
+</html>
