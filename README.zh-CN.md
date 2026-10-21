@@ -14,17 +14,26 @@ Codex Co² 全称 **Codex Conversation Collaboration**。这是独立实验项�
 
 分享者需要 Apple Silicon Mac 和已运行的官方 Codex Desktop。安装包最低要求 macOS **15.0**；原生检查仅记录于 macOS **26.4.1**、Desktop **26.1007.30912**，其他组合尚未验证。协作者使用支持 JavaScript 和 WebSocket 的浏览器；手机真机验收仍待完成。双方网络需能访问生成的公网地址。
 
-发布后，DMG 和对应 `.sha256` 文件会放在本仓库 **Releases**。当前尚未配置公开下载地址。下载后可执行：
+通过 [Homebrew](https://github.com/SpaceCoder-Kafka/homebrew-tap) 安装：
+
+```sh
+brew tap SpaceCoder-Kafka/tap
+brew install --cask SpaceCoder-Kafka/tap/codex-co2
+```
+
+如果你的 Homebrew 版本提示需要显式信任 Cask，先检查定义，再执行 `brew trust --cask SpaceCoder-Kafka/tap/codex-co2`，随后重试安装。
+
+也可以从 [Releases](https://github.com/SpaceCoder-Kafka/codex-co2/releases/tag/v0.3.3-preview.10) 下载 DMG 和对应 `.sha256` 文件，下载后执行：
 
 ```sh
 shasum -a 256 -c Codex-Co2-0.3.3-build10-arm64-preview.dmg.sha256
 ```
 
-预览包采用临时签名，**未经 Apple 公证**，首次打开可能受系统拦截。请阅读 DMG 中的安装说明及 [Apple 指引](https://support.apple.com/zh-cn/102445)，只为确认来源可信的应用放行。摘要能检查下载是否变化，不能证明发布者身份。
+预览包采用临时签名，**未经 Apple 公证**，首次打开可能受系统拦截。先尝试从 Applications 打开 Co²，再到「系统设置 → 隐私与安全性 → 仍要打开」确认。Homebrew 会直接安装应用，不会展示 DMG 的安装引导窗口。请参考 [Apple 指引](https://support.apple.com/zh-cn/102445)，只为确认来源可信的应用放行。摘要能检查下载是否变化，不能证明发布者身份。
 
 ### 分享者操作
 
-1. 将 DMG 中的 Codex Co² 拖入 Applications。升级前先停止共享并退出旧版 Co²。
+1. 通过 Homebrew 安装，或将 DMG 中的 Codex Co² 拖入 Applications。升级前先停止共享，并从菜单栏退出旧版 Co²。
 2. 保持官方 Desktop 运行，从 Applications 启动 Co²。
 3. 在设置中检查显示名称和消息审批选项。
 4. 选择已有消息的会话，生成邀请。需要加载目标会话时，Codex 可能出现在前台。

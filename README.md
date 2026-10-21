@@ -20,17 +20,26 @@ The macOS preview attaches to your **already running official Codex Desktop**, k
 - **Guest:** a browser with JavaScript and WebSocket support. Real mobile-device acceptance remains pending.
 - **Network:** both participants need access to the generated public address. The default temporary entry uses Cloudflare Quick Tunnels.
 
-When published, the DMG and matching `.sha256` file will be in this repository's **Releases** section. No public download URL has been configured yet. Download from the project's release page, then check the file:
+Install with [Homebrew](https://github.com/SpaceCoder-Kafka/homebrew-tap):
+
+```sh
+brew tap SpaceCoder-Kafka/tap
+brew install --cask SpaceCoder-Kafka/tap/codex-co2
+```
+
+If your Homebrew version requests explicit cask trust, review the cask and run `brew trust --cask SpaceCoder-Kafka/tap/codex-co2`, then retry installation.
+
+Alternatively, download the DMG and matching `.sha256` file from [Releases](https://github.com/SpaceCoder-Kafka/codex-co2/releases/tag/v0.3.3-preview.10), then check the file:
 
 ```sh
 shasum -a 256 -c Codex-Co2-0.3.3-build10-arm64-preview.dmg.sha256
 ```
 
-The preview is **ad-hoc signed and not notarized by Apple**. macOS may block its first launch. Read the DMG's installation instructions and [Apple's guidance](https://support.apple.com/en-us/102445). Only approve an app whose source you trust. A checksum detects a changed download; it does not establish publisher identity.
+The preview is **ad-hoc signed and not notarized by Apple**. macOS may block its first launch. Attempt to open Co² from Applications, then go to **System Settings → Privacy & Security → Open Anyway** and confirm. Homebrew installs the app directly without showing the DMG's installation window. See [Apple's guidance](https://support.apple.com/en-us/102445); only approve an app whose source you trust. A checksum detects a changed download; it does not establish publisher identity.
 
 ### Host: share a conversation
 
-1. Open the DMG and drag **Codex Co²** into **Applications**. For an update, stop sharing and quit the old Co² app first.
+1. Install through Homebrew, or open the DMG and drag **Codex Co²** into **Applications**. For an update, stop sharing and quit the old Co² app from its menu bar menu first.
 2. Keep official Codex Desktop running, then open Co² from Applications.
 3. Review your display name and message approval preference in **Settings**.
 4. Select an existing conversation with at least one message and generate an invitation. Codex may come to the foreground if that conversation needs loading.
