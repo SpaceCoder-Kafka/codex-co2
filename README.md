@@ -6,9 +6,9 @@ Share a Codex conversation and move the work forward together.
 
 Keep working in the official Codex Desktop while a collaborator joins the same conversation in a browser. Discuss a change, add context while the Agent is busy, and follow its replies together. Your collaborator does not need SSH access or a local Codex installation.
 
-![Illustrative flow: one Codex conversation shared with a browser collaborator](assets/collaboration.svg)
+[![Codex Co² — share one Codex session and collaborate in a browser](assets/promotional_image_en.png)](assets/promotional_video_en.mp4)
 
-*Illustration with synthetic content; not a screenshot or native acceptance evidence.*
+▶ [Watch the promotional video](assets/promotional_video_en.mp4)
 
 Codex Co² means **Codex Conversation Collaboration**. This is an independent experimental project, not an official OpenAI product or an OpenAI-endorsed integration.
 
