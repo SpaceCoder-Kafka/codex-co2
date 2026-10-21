@@ -2,22 +2,22 @@
 
 **Real-time collaboration for Codex** · [简体中文](README.zh-CN.md)
 
-Share a Codex conversation and move the work forward together.
+Share the same Codex conversation and move the work forward together.
 
-Keep working in the official Codex Desktop while a collaborator joins the same conversation in a browser. Discuss a change, add context while the Agent is busy, and follow its replies together. Your collaborator does not need SSH access or a local Codex installation.
+As the host, you can keep working in Codex Desktop while a collaborator joins the same conversation in a browser to discuss the work, add context, and follow the Agent's replies.
 
 [![Codex Co² — share one Codex session and collaborate in a browser](assets/promotional_image_en.png)](assets/promotional_video_en.mp4)
 
 ▶ [Watch the promotional video](assets/promotional_video_en.mp4)
 
-Codex Co² means **Codex Conversation Collaboration**. This is an independent experimental project, not an official OpenAI product or an OpenAI-endorsed integration.
+Codex Co² stands for **Codex Conversation Collaboration**. This is an independent experimental project, not an official OpenAI product or an OpenAI-endorsed integration.
 
 ## Try the preview
 
 The macOS preview attaches to your **already running official Codex Desktop**, keeping its existing Agent, login and tool approval settings.
 
 - **Host:** Apple Silicon Mac. Current bundle requires macOS **15.0+**. Native checks have only been recorded on macOS **26.4.1** with Codex Desktop **26.1007.30912**; other combinations are unverified.
-- **Guest:** a browser with JavaScript and WebSocket support. Real mobile-device acceptance remains pending.
+- **Guest:** a browser with JavaScript and WebSocket support.
 - **Network:** both participants need access to the generated public address. The default temporary entry uses Cloudflare Quick Tunnels.
 
 ### New users: install with Homebrew
@@ -43,14 +43,14 @@ Alternatively, download the DMG and matching `.sha256` file from [Releases](http
 shasum -a 256 -c Codex-Co2-0.3.3-build10-arm64-preview.dmg.sha256
 ```
 
-The preview is **ad-hoc signed and not notarized by Apple**. macOS may block its first launch. Attempt to open Co² from Applications, then go to **System Settings → Privacy & Security → Open Anyway** and confirm. Homebrew installs the app directly without showing the DMG's installation window. See [Apple's guidance](https://support.apple.com/en-us/102445); only approve an app whose source you trust. A checksum detects a changed download; it does not establish publisher identity.
+The preview is **ad-hoc signed and not notarized by Apple**. macOS may block its first launch. Attempt to open Co² from Applications, then go to **System Settings → Privacy & Security → Open Anyway** and confirm. Homebrew installs the app directly without showing the DMG's installation window. See [Apple's guidance](https://support.apple.com/en-us/102445).
 
 ### Host: share a conversation
 
 1. Install through Homebrew, or open the DMG and drag **Codex Co²** into **Applications**. For an update, stop sharing and quit the old Co² app from its menu bar menu first.
 2. Keep official Codex Desktop running, then open Co² from Applications.
 3. Review your display name and message approval preference in **Settings**.
-4. Select an existing conversation with at least one message and generate an invitation. Codex may come to the foreground if that conversation needs loading.
+4. Select an existing conversation with at least one message and generate an invitation. If Codex comes to the foreground to load the conversation, simply switch back to Co².
 5. Send the invitation privately and approve your collaborator's request to join.
 
 ### Guest: join and collaborate
