@@ -1,7 +1,7 @@
 const $ = s => document.querySelector(s);
 const i18n = window.Co2I18n, t = i18n.t;
 let activeTab = 'sessions', lastState = null, lastAttached, disconnected = false;
-let connectionBusy = false, rebuildArmed = false;
+let connectionAction = '', rebuildArmed = false;
 let shareLimitDirty = false, shareLimitSaving = false, shareLimitStatus = '', shareLimitAlert = null;
 let nameHint = '用于新共享会话中的消息署名，1–40 个字符。';
 let noticeState = { text: '正在连接…', tone: 'ready', values: {} };
@@ -237,10 +237,20 @@ function copyInvite(url, input) {
   navigator.clipboard.writeText(url).then(() => notice('邀请链接已复制')).catch(() => { input?.select(); notice('请手动复制链接'); });
 }
 function reshare(threadId) {
-  if (busyThreadId || disconnected) return;
+  if (busyThreadId || disconnected || connectionAction || lastState?.connection?.state === 'connecting') return;
   busyThreadId = threadId; updateShare();
   notice('正在重新分享，完成后将复制新邀请…');
   send({ type: 'reshare', threadId });
+}
+function reshareButton(threadId, cls) {
+  const connecting = lastState?.connection?.state === 'connecting';
+  const label = connectionAction === 'rebuild' ? '入口重建中，稍后可重新分享…'
+    : connecting ? '入口建立中，稍后可重新分享…'
+    : connectionAction === 'check' ? '正在检查连接，请稍候…' : '重新分享并复制邀请';
+  const restore = button(label, () => reshare(threadId), cls);
+  restore.disabled = disconnected || Boolean(busyThreadId) || Boolean(connectionAction) || connecting;
+  restore.setAttribute('aria-busy', String(Boolean(connectionAction) || connecting));
+  return restore;
 }
 function renderHistory(m) {
   const activeIds = new Set(m.rooms.filter(room => room.state !== 'revoked').map(room => room.threadId));
@@ -253,8 +263,7 @@ function renderHistory(m) {
     info.append(el('strong', entry.title), el('p', t('未共享 · 旧邀请已失效'), 'muted'),
       el('p', t('上次分享：{time}', { time: new Date(entry.lastSharedAt).toLocaleString(i18n.language) }), 'muted'),
       el('p', t(entry.requireApproval ? '新消息需逐条确认' : '新消息直接交给 Agent'), 'muted'));
-    const restore = button('重新分享并复制邀请', () => reshare(entry.threadId), 'primary');
-    restore.disabled = disconnected || Boolean(busyThreadId) || connectionBusy;
+    const restore = reshareButton(entry.threadId, 'primary');
     row.append(info, restore); section.append(row);
   }
   $('#rooms').append(section);
@@ -266,20 +275,32 @@ const connectionLabels = {
 };
 function renderConnection(m) {
   const state = m.connection?.state;
+  const rebuilding = connectionAction === 'rebuild';
   if (!connectionLabels[state]) rebuildArmed = false;
-  $('#public-connection').hidden = !connectionLabels[state];
+  $('#public-connection').hidden = !connectionLabels[state] && !rebuilding;
   $('#public-connection').dataset.state = state || '';
-  $('#public-status').textContent = t(connectionLabels[state] || '');
-  $('#check-connection').disabled = disconnected || connectionBusy || state === 'connecting';
-  $('#rebuild-relay').disabled = disconnected || connectionBusy || Boolean(busyThreadId) || state === 'connecting';
-  $('#rebuild-relay').textContent = t(rebuildArmed ? '确认重建（旧邀请将失效）' : '重建入口…');
+  $('#public-status').textContent = t(rebuilding ? '入口重建中，稍后可重新分享…' : connectionLabels[state] || '');
+  $('#check-connection').disabled = disconnected || Boolean(connectionAction) || state === 'connecting';
+  const checkLabel = connectionAction === 'check' ? '正在检查…' : '检查连接';
+  $('#check-connection').setAttribute('data-i18n', checkLabel);
+  $('#check-connection').textContent = t(checkLabel);
+  $('#check-connection').setAttribute('aria-busy', String(connectionAction === 'check'));
+  $('#rebuild-relay').disabled = disconnected || Boolean(connectionAction) || Boolean(busyThreadId) || state === 'connecting';
+  const rebuildLabel = rebuilding ? '正在重建…' : rebuildArmed ? '确认重建（旧邀请将失效）' : '重建入口…';
+  $('#rebuild-relay').setAttribute('data-i18n', rebuildLabel);
+  $('#rebuild-relay').textContent = t(rebuildLabel);
+  $('#rebuild-relay').setAttribute('aria-busy', String(rebuilding));
 }
 $('#check-connection').onclick = () => {
-  connectionBusy = true; renderConnection(lastState ?? {}); send({ type: 'check-connection' });
+  if (disconnected || connectionAction || lastState?.connection?.state === 'connecting') return;
+  connectionAction = 'check'; if (lastState) renderRooms(lastState);
+  notice('正在检查公网连接…'); send({ type: 'check-connection' });
 };
 $('#rebuild-relay').onclick = () => {
+  if (disconnected || connectionAction || busyThreadId || lastState?.connection?.state === 'connecting') return;
   if (!rebuildArmed) { rebuildArmed = true; renderConnection(lastState ?? {}); return; }
-  rebuildArmed = false; connectionBusy = true; renderConnection(lastState ?? {}); send({ type: 'rebuild-relay' });
+  rebuildArmed = false; connectionAction = 'rebuild'; if (lastState) renderRooms(lastState);
+  notice('入口重建中，稍后可重新分享…'); send({ type: 'rebuild-relay' });
 };
 ws.onopen = () => {
   if (!token) { notice('缺少本机管理凭据，请重新打开助手生成的管理链接。', 'error'); ws.close(); return; }
@@ -345,7 +366,7 @@ ws.onmessage = event => {
   let m; try { m = JSON.parse(event.data); } catch { return; }
   if (m.type === 'error') {
     if (['share', 'reshare'].includes(m.operation)) { busyThreadId = ''; updateShare(); }
-    if (['check-connection', 'rebuild-relay'].includes(m.operation)) connectionBusy = false;
+    if (['check-connection', 'rebuild-relay'].includes(m.operation)) connectionAction = '';
     if (lastState) renderRooms(lastState);
     if (m.operation === 'set-share-limit') { shareLimitSaving = false; shareLimitStatus = '共享上限未能保存，请重试。'; }
     if (m.code === 'SHARE_LIMIT_REACHED') shareLimitAlert = { limit: m.values.limit };
@@ -356,8 +377,10 @@ ws.onmessage = event => {
     renderShareLimit(m.settings); notice('共享上限已保存'); return;
   }
   if (m.type === 'connection-result') {
-    connectionBusy = false; if (lastState) renderRooms(lastState);
+    connectionAction = ''; if (lastState) renderRooms(lastState);
     if (m.rebuilt) notice('入口已重建，请从分享历史重新分享并发送新邀请');
+    else if (['online', 'local'].includes(lastState?.connection?.state)) notice('检查完成，公网入口连接正常');
+    else notice('检查完成，公网入口仍不可用，请检查网络或重建入口。', 'error');
     return;
   }
   if (m.type === 'share-result') {
@@ -422,8 +445,7 @@ function renderRooms(m) {
       if (room.state === 'offline') {
         invite.append(el('p', t('连接中断，正在恢复原邀请；也可重新分享，新邀请需重新发送。'), 'muted'));
         if (room.threadId && (m.history ?? []).some(entry => entry.threadId === room.threadId)) {
-          const restore = button('重新分享并复制邀请', () => reshare(room.threadId));
-          restore.disabled = Boolean(busyThreadId) || connectionBusy; row.append(restore);
+          row.append(reshareButton(room.threadId));
         }
       }
       const policyRow = el('div', null, 'policy-row'), policyTitle = el('div');

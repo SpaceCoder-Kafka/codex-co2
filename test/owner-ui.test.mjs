@@ -338,6 +338,89 @@ test('connection diagnosis and rebuilding are distinct local actions with an exp
   assert.equal(page.sent.some(m => m.type === 'reshare'), false, 'rebuilding must never reopen history by itself');
 });
 
+test('rebuilding immediately labels every reshare button and keeps them disabled until completion', () => {
+  const page = browser(), e = page.elements;
+  const history = ['old-1', 'old-2', 'offline'].map(threadId => ({ threadId, title: threadId, lastSharedAt: 1 }));
+  const offline = { ...room(), threadId: 'offline', state: 'offline' };
+  const state = { type: 'state', rooms: [offline], history, connection: { state: 'unavailable' } };
+  const restores = () => page.nodes().filter(n => n.tag === 'button' && /重新分享/.test(n.textContent));
+  page.receive(state);
+  e['rebuild-relay'].onclick();
+  assert.equal(restores().length, 3);
+  assert.ok(restores().every(b => !b.disabled && b.textContent === '重新分享并复制邀请'));
+  e['rebuild-relay'].onclick();
+  const count = page.sent.length;
+  const assertRebuilding = () => {
+    assert.equal(restores().length, 3);
+    assert.ok(restores().every(b => b.disabled && b.textContent === '入口重建中，稍后可重新分享…' && b['aria-busy'] === 'true'));
+    assert.equal(e['rebuild-relay'].textContent, '正在重建…');
+    assert.equal(e['public-connection'].hidden, false);
+  };
+  assertRebuilding();
+  e.language.value = 'en'; e.language.onchange();
+  assert.equal(e['rebuild-relay'].textContent, 'Rebuilding…');
+  assert.equal(page.nodes().filter(n => n.tag === 'button' && n.textContent === 'Rebuilding connection; you can share again shortly…' && n.disabled).length, 3);
+  e.language.value = 'zh-CN'; e.language.onchange();
+  assertRebuilding();
+  restores()[0].onclick(); e['check-connection'].onclick(); e['rebuild-relay'].onclick();
+  assert.equal(page.sent.length, count, 'pending actions must not be submitted again');
+  for (const connectionState of ['connecting', 'online']) {
+    page.receive({ ...state, rooms: [], connection: { state: connectionState } });
+    assertRebuilding();
+  }
+  page.receive({ type: 'connection-result', rebuilt: true });
+  assert.ok(restores().every(b => !b.disabled && b.textContent === '重新分享并复制邀请' && b['aria-busy'] === 'false'));
+  assert.equal(e['public-connection'].hidden, true);
+  assert.equal(page.sent.some(m => m.type === 'reshare'), false);
+});
+
+test('connection checks show progress and a result even when reachability remains unchanged', () => {
+  const page = browser(), e = page.elements;
+  const state = { type: 'state', rooms: [], history: [{ threadId: 'old', title: 'Synthetic', lastSharedAt: 1 }], connection: { state: 'unavailable' } };
+  const restore = () => page.nodes().find(n => n.tag === 'button' && /重新分享|正在检查连接/.test(n.textContent));
+  page.receive(state); e['check-connection'].onclick();
+  assert.equal(e['check-connection'].textContent, '正在检查…');
+  assert.equal(e['check-connection'].disabled, true);
+  assert.equal(e.notice.textContent, '正在检查公网连接…');
+  assert.equal(restore().textContent, '正在检查连接，请稍候…');
+  assert.equal(restore().disabled, true);
+  page.receive(state);
+  assert.equal(e['check-connection'].textContent, '正在检查…');
+  page.receive({ type: 'connection-result' });
+  assert.equal(e['check-connection'].textContent, '检查连接');
+  assert.equal(e['check-connection'].disabled, false);
+  assert.equal(e.notice.textContent, '检查完成，公网入口仍不可用，请检查网络或重建入口。');
+  assert.equal(restore().disabled, false);
+  e['check-connection'].onclick();
+  page.receive({ ...state, connection: { state: 'online' } });
+  page.receive({ type: 'connection-result' });
+  assert.equal(e.notice.textContent, '检查完成，公网入口连接正常');
+});
+
+test('failed network actions restore reshare controls; connecting state also blocks another manager window', () => {
+  const page = browser(), e = page.elements;
+  const state = { type: 'state', rooms: [], history: [{ threadId: 'old', title: 'Synthetic', lastSharedAt: 1 }], connection: { state: 'unavailable' } };
+  const restore = () => page.nodes().find(n => n.tag === 'button' && /重新分享|正在检查连接/.test(n.textContent));
+  for (const operation of ['check-connection', 'rebuild-relay']) {
+    page.receive(state); e[operation].onclick();
+    if (operation === 'rebuild-relay') e[operation].onclick();
+    page.receive({ type: 'error', operation, message: 'Synthetic failure' });
+    assert.equal(restore().textContent, '重新分享并复制邀请');
+    assert.equal(restore().disabled, false);
+    assert.equal(e['check-connection'].disabled, false);
+    assert.equal(e['rebuild-relay'].disabled, false);
+    assert.equal(e.notice.textContent, 'Synthetic failure');
+  }
+  page.receive({ ...state, connection: { state: 'connecting' } });
+  assert.equal(restore().textContent, '入口建立中，稍后可重新分享…');
+  assert.equal(restore().disabled, true);
+  const count = page.sent.length; restore().onclick();
+  assert.equal(page.sent.length, count);
+  page.receive({ ...state, connection: { state: 'online' } });
+  assert.equal(restore().textContent, '重新分享并复制邀请');
+  assert.equal(restore().disabled, false);
+});
+
 test('healthy and ordinary startup states keep network controls hidden; recovery dismisses an armed rebuild', () => {
   const page = browser(), e = page.elements;
   for (const state of ['not-started', 'local', 'connecting', 'online']) {

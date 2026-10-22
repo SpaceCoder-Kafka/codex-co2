@@ -256,7 +256,15 @@
     "共享上限已保存": "共享上限已保存",
     "已达到同时共享上限（{limit} 条）": "已达到同时共享上限（{limit} 条）",
     "共享上限必须为正整数或无限制": "共享上限必须为正整数或无限制",
-    "此安装包仅支持连接日常 Codex。隔离实验请从源码运行。": "此安装包仅支持连接日常 Codex。隔离实验请从源码运行。"
+    "此安装包仅支持连接日常 Codex。隔离实验请从源码运行。": "此安装包仅支持连接日常 Codex。隔离实验请从源码运行。",
+    "入口重建中，稍后可重新分享…": "入口重建中，稍后可重新分享…",
+    "入口建立中，稍后可重新分享…": "入口建立中，稍后可重新分享…",
+    "正在检查连接，请稍候…": "正在检查连接，请稍候…",
+    "正在检查…": "正在检查…",
+    "正在重建…": "正在重建…",
+    "正在检查公网连接…": "正在检查公网连接…",
+    "检查完成，公网入口连接正常": "检查完成，公网入口连接正常",
+    "检查完成，公网入口仍不可用，请检查网络或重建入口。": "检查完成，公网入口仍不可用，请检查网络或重建入口。"
   },
   "zh-TW": {
     "应用导航": "應用程式導覽",
@@ -515,7 +523,15 @@
     "共享上限已保存": "共用上限已儲存",
     "已达到同时共享上限（{limit} 条）": "已達到同時共用上限（{limit} 段）",
     "共享上限必须为正整数或无限制": "共用上限必須為正整數或無限制",
-    "此安装包仅支持连接日常 Codex。隔离实验请从源码运行。": "此安裝套件僅支援連接日常 Codex。隔離實驗請從原始碼執行。"
+    "此安装包仅支持连接日常 Codex。隔离实验请从源码运行。": "此安裝套件僅支援連接日常 Codex。隔離實驗請從原始碼執行。",
+    "入口重建中，稍后可重新分享…": "入口重建中，稍後可重新分享…",
+    "入口建立中，稍后可重新分享…": "入口建立中，稍後可重新分享…",
+    "正在检查连接，请稍候…": "正在檢查連線，請稍候…",
+    "正在检查…": "正在檢查…",
+    "正在重建…": "正在重建…",
+    "正在检查公网连接…": "正在檢查公網連線…",
+    "检查完成，公网入口连接正常": "檢查完成，公網入口連線正常",
+    "检查完成，公网入口仍不可用，请检查网络或重建入口。": "檢查完成，公網入口仍無法使用，請檢查網路或重建入口。"
   },
   "en": {
     "应用导航": "App navigation",
@@ -774,6 +790,14 @@
     "共享上限已保存": "Sharing limit saved",
     "已达到同时共享上限（{limit} 条）": "Concurrent sharing limit reached ({limit} sessions)",
     "共享上限必须为正整数或无限制": "The sharing limit must be a positive whole number or unlimited",
-    "此安装包仅支持连接日常 Codex。隔离实验请从源码运行。": "This package only connects to your existing Codex Desktop. Run isolated experiments from source."
+    "此安装包仅支持连接日常 Codex。隔离实验请从源码运行。": "This package only connects to your existing Codex Desktop. Run isolated experiments from source.",
+    "入口重建中，稍后可重新分享…": "Rebuilding connection; you can share again shortly…",
+    "入口建立中，稍后可重新分享…": "Preparing connection; you can share again shortly…",
+    "正在检查连接，请稍候…": "Checking connection; please wait…",
+    "正在检查…": "Checking…",
+    "正在重建…": "Rebuilding…",
+    "正在检查公网连接…": "Checking public connection…",
+    "检查完成，公网入口连接正常": "Check complete. The public connection is working.",
+    "检查完成，公网入口仍不可用，请检查网络或重建入口。": "Check complete. The public address is still unreachable. Check your network or rebuild the connection."
   }
 }
