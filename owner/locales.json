@@ -265,7 +265,12 @@
     "正在检查公网连接…": "正在检查公网连接…",
     "检查完成，公网入口连接正常": "检查完成，公网入口连接正常",
     "检查完成，公网入口仍不可用，请检查网络或重建入口。": "检查完成，公网入口仍不可用，请检查网络或重建入口。",
-    "消息作者信息未能保存，重新分享后部分署名可能无法恢复。": "消息作者信息未能保存，重新分享后部分署名可能无法恢复。"
+    "消息作者信息未能保存，重新分享后部分署名可能无法恢复。": "消息作者信息未能保存，重新分享后部分署名可能无法恢复。",
+    "我知道了": "我知道了",
+    "连接正常时自动续期": "连接正常时自动续期",
+    "当前中继不支持自动续期": "当前中继不支持自动续期",
+    "无效的共享标识": "无效的共享标识",
+    "共享尚未结束，无法移除": "共享尚未结束，无法移除"
   },
   "zh-TW": {
     "应用导航": "應用程式導覽",
@@ -533,7 +538,12 @@
     "正在检查公网连接…": "正在檢查公網連線…",
     "检查完成，公网入口连接正常": "檢查完成，公網入口連線正常",
     "检查完成，公网入口仍不可用，请检查网络或重建入口。": "檢查完成，公網入口仍無法使用，請檢查網路或重建入口。",
-    "消息作者信息未能保存，重新分享后部分署名可能无法恢复。": "訊息作者資訊未能儲存，重新分享後部分署名可能無法恢復。"
+    "消息作者信息未能保存，重新分享后部分署名可能无法恢复。": "訊息作者資訊未能儲存，重新分享後部分署名可能無法恢復。",
+    "我知道了": "我知道了",
+    "连接正常时自动续期": "連線正常時自動續期",
+    "当前中继不支持自动续期": "目前中繼不支援自動續期",
+    "无效的共享标识": "無效的共享識別碼",
+    "共享尚未结束，无法移除": "共享尚未結束，無法移除"
   },
   "en": {
     "应用导航": "App navigation",
@@ -801,6 +811,11 @@
     "正在检查公网连接…": "Checking public connection…",
     "检查完成，公网入口连接正常": "Check complete. The public connection is working.",
     "检查完成，公网入口仍不可用，请检查网络或重建入口。": "Check complete. The public address is still unreachable. Check your network or rebuild the connection.",
-    "消息作者信息未能保存，重新分享后部分署名可能无法恢复。": "Message authors could not be saved. Some names may be unavailable after sharing again."
+    "消息作者信息未能保存，重新分享后部分署名可能无法恢复。": "Message authors could not be saved. Some names may be unavailable after sharing again.",
+    "我知道了": "Got it",
+    "连接正常时自动续期": "Renews automatically while connected",
+    "当前中继不支持自动续期": "This relay does not support automatic renewal",
+    "无效的共享标识": "Invalid sharing identifier",
+    "共享尚未结束，无法移除": "Sharing is still active and cannot be dismissed"
   }
 }

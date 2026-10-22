@@ -134,7 +134,7 @@ stream_max_retries = 0
   assert.equal(baselineRequests, 2);
   const registrationSecret = secret();
   relay = await startRelay({ registrationSecret, publicDir: assets });
-  owner = await startOwner({ socketPath, relayUrl: relay.url, registrationSecret, ownerDir: assets });
+  owner = await startOwner({ socketPath, relayUrl: relay.url, registrationSecret, ownerDir: assets, connection: { state: 'local' } });
   const ownerWsUrl = owner.baseUrl.replace(/^http/, 'ws') + '/owner';
   const ownerToken = new URLSearchParams(new URL(owner.url).hash.slice(1)).get('owner');
 
@@ -180,6 +180,27 @@ stream_max_retries = 0
     assert.equal(JSON.stringify(guest.peer.messages).includes(selected.threadId), false);
     assert.equal(JSON.stringify(guest.peer.messages).includes(other.threadId), false);
     assert.equal(JSON.stringify(guest.peer.messages).includes(workspace), false);
+  });
+
+  await t.test('automatic renewal preserves the original invitation and admission without new model requests', async renewalTest => {
+    const oldExpiry = room.expiresAt, invite = room.view().inviteUrl, startedAt = room.startedAt;
+    const calls = fixture.requests.length;
+    let now = oldExpiry - 300000;
+    const clock = renewalTest.mock.method(Date, 'now', () => now);
+    try {
+      room.lastHeartbeat = now; room.maybeRenew();
+      await until(() => room.expiresAt === oldExpiry + 3600000, 'acknowledged lease renewal');
+      now = oldExpiry + 1;
+      assert.equal(room.closed, false);
+      const arriving = await join('Synthetic guest after original expiry');
+      local.send({ type: 'deny', roomId: room.roomId, guestId: arriving.id });
+      await until(() => arriving.peer.closed, 'new arrival denied without read access');
+      assert.equal(room.guests.get(guest.id).status, 'admitted');
+      assert.equal(room.view().inviteUrl, invite); assert.equal(room.startedAt, startedAt);
+      assert.equal(fixture.requests.length, calls);
+    } finally {
+      clock.mock.restore(); room.lastHeartbeat = Date.now(); room.scheduleExpiry();
+    }
   });
 
   await t.test('other-thread events, tool output and metadata stay out of guest transport', async () => {

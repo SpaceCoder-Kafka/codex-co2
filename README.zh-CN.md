@@ -15,7 +15,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/SpaceCoder-Kafka/codex-co2/releases/tag/v0.3.3-preview.11"><img src="https://img.shields.io/badge/preview-v0.3.3--preview.11-2563eb" alt="预览版本 v0.3.3-preview.11"></a>
+  <a href="https://github.com/SpaceCoder-Kafka/codex-co2/releases/tag/v0.3.3-preview.12"><img src="https://img.shields.io/badge/preview-v0.3.3--preview.12-2563eb" alt="预览版本 v0.3.3-preview.12"></a>
   <img src="https://img.shields.io/badge/host-macOS%2015%2B%20%C2%B7%20Apple%20Silicon-555555" alt="分享者：macOS 15+，Apple Silicon">
   <img src="https://img.shields.io/badge/guest-browser-2563eb" alt="协作者：浏览器">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-22c55e" alt="许可：MIT"></a>
@@ -26,7 +26,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/SpaceCoder-Kafka/codex-co2/releases/tag/v0.3.3-preview.11">下载</a> ·
+  <a href="https://github.com/SpaceCoder-Kafka/codex-co2/releases/tag/v0.3.3-preview.12">下载</a> ·
   <a href="#新用户使用homebrew">快速开始</a> ·
   <a href="#应用截图">应用截图</a> ·
   <a href="#共享前需要知道">共享须知</a> ·
@@ -89,10 +89,10 @@ brew install --cask SpaceCoder-Kafka/tap/codex-co2 && open "$(brew --repository 
 
 ### 通过 DMG 安装
 
-也可以从 [Releases](https://github.com/SpaceCoder-Kafka/codex-co2/releases/tag/v0.3.3-preview.11) 下载 DMG 和对应 `.sha256` 文件，下载后执行：
+也可以从 [Releases](https://github.com/SpaceCoder-Kafka/codex-co2/releases/tag/v0.3.3-preview.12) 下载 DMG 和对应 `.sha256` 文件，下载后执行：
 
 ```sh
-shasum -a 256 -c Codex-Co2-0.3.3-build11-arm64-preview.dmg.sha256
+shasum -a 256 -c Codex-Co2-0.3.3-build12-arm64-preview.dmg.sha256
 ```
 
 预览包采用临时签名，**未经 Apple 公证**，首次打开可能受系统拦截。先尝试从 Applications 打开 Co²，再到「系统设置 → 隐私与安全性 → 仍要打开」确认。Homebrew 会直接安装应用，不会展示 DMG 的安装引导窗口。请参考 [Apple 指引](https://support.apple.com/zh-cn/102445)。
@@ -129,7 +129,7 @@ shasum -a 256 -c Codex-Co2-0.3.3-build11-arm64-preview.dmg.sha256
 
 **无法连接？** 确认官方 Desktop 正在运行、至少有一条非空会话且接口兼容。接口不可用时停止接入，不重启 Desktop、不替换 profile，也不创建备用后端。Desktop 更新可能影响兼容性。
 
-**邀请失效或连接中断？** 分享会过期，断线与撤权可能要求重新准入或新邀请。回到 Co² 明确重新分享。发送结果不确定时，先在 Desktop 核对，避免重复发送。
+**邀请失效或连接中断？** 中继支持且连接正常时，Co² 会自动续期并保留原链接。真正过期、停止共享、退出应用或重建入口后需按提示重新分享。已结束卡片可点「我知道了」移除，分享历史仍保留。发送结果不确定时，先在 Desktop 核对，避免重复发送。
 
 **验证到哪一步？** 合成测试覆盖准入、消息策略、会话传输和撤权；此前人工验证过部分本机与公网协作。当前候选仍需完成最终安装包的官方 Desktop、原生工具审批及干净 Mac 下载与安装验收。RPC 测试不能证明原生窗口行为。
 

@@ -55,8 +55,8 @@ async function register(relay, existing = {}) {
   const credentials = { type: 'register', registrationSecret: relay.registrationSecret, roomId: randomUUID(), hostToken: secret(), inviteToken: secret(), expiresAt: Date.now() + 60_000, ...existing };
   const host = await connect(relay, '/host');
   host.send(credentials);
-  await host.next('registered');
-  return { host, credentials };
+  const registered = await host.next('registered');
+  return { host, credentials, registered };
 }
 
 async function join(relay, credentials, name = 'Bob', extra = {}) {
@@ -253,4 +253,120 @@ test('names use 40 Unicode characters; only exact fixed Markdown asset routes ar
   assert.match(asset.headers.get('content-type'), /javascript/);
   assert.ok((await asset.text()).length > 1000);
   for (const suffix of ['/vendor/package.json', '/vendor/markdown-it.min.js?x=1', '/node_modules/markdown-it/package.json']) assert.equal((await fetch(relay.url + suffix)).status, 404);
+});
+
+test('host renewal is idempotent, keeps the invitation and admissions, and still expires at the new deadline', async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.now() });
+  const relay = await fixture(t), { host, credentials, registered } = await register(relay);
+  assert.equal(registered.renewalSupported, true);
+  const { guest, guestId } = await admit(relay, host, credentials);
+  const proposal = { type: 'proposal', requestId: randomUUID(), text: 'Do not replay across renewal' };
+  guest.send(proposal); await host.next('guest-message');
+  const request = { type: 'renew', requestId: randomUUID(), previousExpiresAt: credentials.expiresAt,
+    expiresAt: credentials.expiresAt + 3600000 };
+  host.send(request);
+  const expected = { type: 'renewed', roomId: credentials.roomId, requestId: request.requestId, expiresAt: request.expiresAt };
+  assert.deepEqual(await host.next('renewed'), expected);
+  host.send(request); assert.deepEqual(await host.next('renewed'), expected);
+  guest.send(proposal); assert.equal((await guest.next('duplicate')).requestId, proposal.requestId);
+  t.mock.timers.tick(60001);
+  const arriving = await join(relay, credentials); await arriving.next('pending'); await host.next('join-request');
+  host.send({ type: 'deliver', guestId, payload: { type: 'notice', text: 'Original admission still works' } });
+  assert.equal((await guest.next('data')).payload.text, 'Original admission still works');
+  t.mock.timers.tick(3600000);
+  host.send(request);
+  await host.next('expired'); await guest.next('expired'); await arriving.next('expired');
+});
+
+test('only the current authenticated host may renew; guests and competing host connections cannot', async t => {
+  const relay = await fixture(t), { host, credentials } = await register(relay);
+  const request = { type: 'renew', requestId: randomUUID(), previousExpiresAt: credentials.expiresAt,
+    expiresAt: credentials.expiresAt + 3600000 };
+  const unauthenticated = await connect(relay, '/host');
+  unauthenticated.send(request); await unauthenticated.next('registration-rejected');
+  const competing = await connect(relay, '/host');
+  competing.send(credentials); await competing.next('registration-rejected');
+  const pending = await join(relay, credentials); await pending.next('pending'); await host.next('join-request');
+  pending.send(request); await pending.next('not-admitted');
+  const { guest } = await admit(relay, host, credentials);
+  guest.send(request); await guest.next('invalid-message');
+  host.send(request); assert.equal((await host.next('renewed')).expiresAt, request.expiresAt);
+});
+
+test('renewal rejects malformed, stale, non-increasing, excessive and conflicting requests', async t => {
+  const relay = await fixture(t);
+  const invalid = [
+    request => ({ ...request, requestId: 'not-a-uuid' }),
+    request => ({ ...request, previousExpiresAt: String(request.previousExpiresAt) }),
+    request => ({ ...request, expiresAt: 'later' }),
+    request => ({ ...request, expiresAt: request.expiresAt + 0.5 }),
+    request => ({ ...request, previousExpiresAt: request.previousExpiresAt - 1 }),
+    request => ({ ...request, expiresAt: request.previousExpiresAt }),
+    request => ({ ...request, expiresAt: request.previousExpiresAt - 1 }),
+    request => ({ ...request, expiresAt: Date.now() + 86400000 + 60000 }),
+    request => ({ ...request, threadId: 'another-thread' }),
+    request => { const { previousExpiresAt, ...rest } = request; return rest; },
+  ];
+  for (const change of invalid) {
+    const { host, credentials } = await register(relay);
+    const request = { type: 'renew', requestId: randomUUID(), previousExpiresAt: credentials.expiresAt,
+      expiresAt: credentials.expiresAt + 3600000 };
+    host.send(change(request)); await host.next('invalid-message');
+    assert.equal(host.messages.some(message => message.type === 'renewed'), false);
+  }
+  for (const field of ['expiresAt', 'previousExpiresAt']) {
+    const { host, credentials } = await register(relay);
+    const request = { type: 'renew', requestId: randomUUID(), previousExpiresAt: credentials.expiresAt,
+      expiresAt: credentials.expiresAt + 3600000 };
+    host.send(request); await host.next('renewed');
+    host.send({ ...request, [field]: request[field] + 1 }); await host.next('invalid-message');
+  }
+});
+
+test('lost renewal acknowledgements reconcile only the last committed lease on authenticated reconnect', async t => {
+  const relay = await fixture(t), { host, credentials } = await register(relay);
+  const request = { type: 'renew', requestId: randomUUID(), previousExpiresAt: credentials.expiresAt,
+    expiresAt: credentials.expiresAt + 3600000 };
+  host.send(request); await host.next('renewed');
+  const closed = once(host.ws, 'close'); host.ws.close(); await closed;
+  for (const overrides of [{ expiresAt: credentials.expiresAt + 1 }, { expiresAt: request.expiresAt + 1 },
+    { hostToken: secret() }, { inviteToken: secret() }]) {
+    const rejected = await connect(relay, '/host'); rejected.send({ ...credentials, ...overrides });
+    await rejected.next('registration-rejected');
+  }
+  const reconnect = await register(relay, credentials);
+  assert.equal(reconnect.registered.expiresAt, request.expiresAt);
+  reconnect.host.send(request); assert.equal((await reconnect.host.next('renewed')).expiresAt, request.expiresAt);
+  const second = { type: 'renew', requestId: randomUUID(), previousExpiresAt: request.expiresAt,
+    expiresAt: request.expiresAt + 3600000 };
+  reconnect.host.send(second); await reconnect.host.next('renewed');
+  const secondClosed = once(reconnect.host.ws, 'close'); reconnect.host.ws.close(); await secondClosed;
+  const tooOld = await connect(relay, '/host'); tooOld.send(credentials); await tooOld.next('registration-rejected');
+  const final = await register(relay, { ...credentials, expiresAt: request.expiresAt });
+  assert.equal(final.registered.expiresAt, second.expiresAt);
+});
+
+test('registration cannot revive an expired relay lease by supplying a future deadline', async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.now() });
+  const relay = await fixture(t), { host, credentials } = await register(relay);
+  const closed = once(host.ws, 'close'); host.ws.close(); await closed;
+  t.mock.timers.tick(60001);
+  const revived = await connect(relay, '/host'); revived.send({ ...credentials, expiresAt: Date.now() + 60000 });
+  await revived.next('registration-rejected');
+});
+
+test('rolling leases may outlive 24 hours in total but explicit revocation remains final', async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.now() });
+  const relay = await fixture(t), { host, credentials } = await register(relay);
+  let expiresAt = credentials.expiresAt;
+  for (let i = 0; i < 26; i++) {
+    const request = { type: 'renew', requestId: randomUUID(), previousExpiresAt: expiresAt, expiresAt: expiresAt + 3600000 };
+    host.send(request); assert.equal((await host.next('renewed')).expiresAt, request.expiresAt);
+    expiresAt = request.expiresAt;
+    t.mock.timers.tick(3600000);
+  }
+  assert.ok(expiresAt - credentials.expiresAt > 86400000);
+  host.send({ type: 'revoke' }); await host.next('revoked');
+  const revival = await connect(relay, '/host'); revival.send({ ...credentials, expiresAt });
+  await revival.next('registration-rejected');
 });

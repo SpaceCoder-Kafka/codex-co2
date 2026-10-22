@@ -480,3 +480,68 @@ test('unexpected stopped share remains reachable from a notification; connection
   assert.equal(page.elements['public-connection'].focused, true);
   assert.equal(page.sent.length, 2);
 });
+
+test('acknowledging an ended share sends only its room decision and preserves share history', () => {
+  for (const expired of [true, false]) {
+    const page = browser(), r = room();
+    Object.assign(r, { threadId: 'old-thread', state: 'revoked', guests: [], proposals: [],
+      ...(expired ? { endReason: 'expired' } : { lastError: '本地 Codex 已断开' }) });
+    const saved = { threadId: r.threadId, title: 'Synthetic history', ownerName: 'A', requireApproval: false, lastSharedAt: 1 };
+    const attention = [{ id: `${r.roomId}:share-stopped`, kind: 'share-stopped', roomId: r.roomId, itemId: 'stopped', count: 1 }];
+    page.receive({ type: 'state', rooms: [r], history: [saved], attention });
+    assert.ok(page.nodes().some(n => n.className === 'room'));
+    assert.ok(page.nodes().some(n => n.tag === 'button' && n.textContent === '重新分享并复制邀请'));
+    page.click('我知道了');
+    assert.deepEqual(page.sent.slice(2), [{ type: 'dismiss-room', roomId: r.roomId }]);
+    assert.ok(page.nodes().some(n => n.className === 'room'), 'the server confirms dismissal before removing the card');
+    page.receive({ type: 'state', rooms: [], history: [saved], attention: [] });
+    assert.ok(!page.nodes().some(n => n.className === 'room'));
+    assert.equal(page.elements.attention.hidden, true);
+    assert.ok(page.nodes().some(n => n.textContent === saved.title));
+    page.click('重新分享并复制邀请');
+    assert.deepEqual(page.sent.at(-1), { type: 'reshare', threadId: r.threadId });
+  }
+  for (const state of ['online', 'offline', 'connecting']) {
+    const page = browser(), r = room(); r.state = state;
+    page.receive({ type: 'state', rooms: [r] });
+    assert.ok(!page.nodes().some(n => n.tag === 'button' && n.textContent === '我知道了'), state);
+  }
+});
+
+test('renewal capability is explicit and deadline updates preserve invitations and server share order', () => {
+  const page = browser();
+  const newest = { ...room(), roomId: 'newest', title: 'Newest', startedAt: 20, renewalSupported: true };
+  const older = { ...room(), roomId: 'older', title: 'Older', startedAt: 10, renewalSupported: false,
+    inviteUrl: 'https://example.invalid/#invite=older' };
+  const titles = () => page.nodes().filter(n => n.tag === 'h2').map(n => n.textContent);
+  page.receive({ type: 'state', rooms: [newest, older] });
+  assert.deepEqual(titles(), ['Newest', 'Older']);
+  assert.equal(page.nodes().filter(n => n.textContent === '连接正常时自动续期').length, 1);
+  assert.equal(page.nodes().filter(n => n.textContent === '当前中继不支持自动续期').length, 1);
+  const originalDeadline = page.nodes().find(n => n.textContent.startsWith('有效至 ')).textContent;
+  page.click('复制邀请');
+  newest.expiresAt += 3600000;
+  page.receive({ type: 'state', rooms: [newest, older] });
+  assert.deepEqual(titles(), ['Newest', 'Older']);
+  assert.notEqual(page.nodes().find(n => n.textContent.startsWith('有效至 ')).textContent, originalDeadline);
+  page.click('复制邀请');
+  assert.deepEqual(page.copies, [newest.inviteUrl, newest.inviteUrl]);
+  assert.deepEqual(page.sent.map(m => m.type), ['auth', 'threads'], 'renewal is driven by the host, never the management page');
+  page.receive({ type: 'state', rooms: [{ ...room(), state: 'connecting' }] });
+  assert.ok(!page.nodes().some(n => /自动续期/.test(n.textContent)), 'unknown capability is not reported as unsupported');
+});
+
+test('ended-share acknowledgement and renewal status translate with the management language', () => {
+  for (const [language, acknowledgement, renewal] of [
+    ['zh-TW', '我知道了', '連線正常時自動續期'],
+    ['en', 'Got it', 'Renews automatically while connected'],
+  ]) {
+    const page = browser({ nativeLanguage: language }), r = room(); r.renewalSupported = true;
+    page.receive({ type: 'state', rooms: [r] });
+    assert.ok(page.nodes().some(n => n.textContent === renewal));
+    r.state = 'revoked'; r.endReason = 'expired'; r.guests = []; r.proposals = [];
+    page.receive({ type: 'state', rooms: [r], attention: [{ id: 'stopped', kind: 'share-stopped', roomId: r.roomId, itemId: 'stopped', count: 1 }] });
+    page.click(acknowledgement);
+    assert.deepEqual(page.sent.at(-1), { type: 'dismiss-room', roomId: r.roomId });
+  }
+});

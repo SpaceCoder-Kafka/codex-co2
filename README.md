@@ -15,7 +15,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/SpaceCoder-Kafka/codex-co2/releases/tag/v0.3.3-preview.11"><img src="https://img.shields.io/badge/preview-v0.3.3--preview.11-2563eb" alt="Preview v0.3.3-preview.11"></a>
+  <a href="https://github.com/SpaceCoder-Kafka/codex-co2/releases/tag/v0.3.3-preview.12"><img src="https://img.shields.io/badge/preview-v0.3.3--preview.12-2563eb" alt="Preview v0.3.3-preview.12"></a>
   <img src="https://img.shields.io/badge/host-macOS%2015%2B%20%C2%B7%20Apple%20Silicon-555555" alt="Host: macOS 15+ on Apple Silicon">
   <img src="https://img.shields.io/badge/guest-browser-2563eb" alt="Guest: browser">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-22c55e" alt="License: MIT"></a>
@@ -26,7 +26,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/SpaceCoder-Kafka/codex-co2/releases/tag/v0.3.3-preview.11">Download</a> ·
+  <a href="https://github.com/SpaceCoder-Kafka/codex-co2/releases/tag/v0.3.3-preview.12">Download</a> ·
   <a href="#new-users-install-with-homebrew">Quick start</a> ·
   <a href="#screenshots">Screenshots</a> ·
   <a href="#what-sharing-grants">Sharing boundaries</a> ·
@@ -93,10 +93,10 @@ The command opens a local first-launch guide after successful installation. Use 
 
 ### Install from a DMG
 
-Alternatively, download the DMG and matching `.sha256` file from [Releases](https://github.com/SpaceCoder-Kafka/codex-co2/releases/tag/v0.3.3-preview.11), then check the file:
+Alternatively, download the DMG and matching `.sha256` file from [Releases](https://github.com/SpaceCoder-Kafka/codex-co2/releases/tag/v0.3.3-preview.12), then check the file:
 
 ```sh
-shasum -a 256 -c Codex-Co2-0.3.3-build11-arm64-preview.dmg.sha256
+shasum -a 256 -c Codex-Co2-0.3.3-build12-arm64-preview.dmg.sha256
 ```
 
 The preview is **ad-hoc signed and not notarized by Apple**. macOS may block its first launch. Attempt to open Co² from Applications, then go to **System Settings → Privacy & Security → Open Anyway** and confirm. Homebrew installs the app directly without showing the DMG's installation window. See [Apple's guidance](https://support.apple.com/en-us/102445).
@@ -135,7 +135,7 @@ Review history and attachments before sharing. Avoid disclosing secrets or mater
 
 **Why can't I connect?** Confirm official Desktop is running, has a nonempty conversation, and exposes a compatible local interface. Co² fails closed if unavailable or incompatible. It does not restart Desktop, replace a profile or create a fallback backend. Desktop updates may affect compatibility.
 
-**Why has my invitation stopped working?** Shares expire; disconnects and revocation can require fresh admission or a new invitation. Explicitly share again in Co². Check uncertain submissions in Desktop before resending.
+**Why has my invitation stopped working?** With a compatible relay and healthy connections, Co² automatically renews the current invitation without changing its link. Actual expiry, stopping sharing, quitting the app or rebuilding the public entry can require a new invitation. Share again from history; choose “Got it” to dismiss an ended share while keeping its history. Check uncertain submissions in Desktop before resending.
 
 **What has been verified?** Synthetic tests cover admission, message policy, scoped transport and revocation. Earlier manual sessions verified individual local/public paths. The current release candidate still needs final-package native Desktop, native tool approval and clean-Mac download/install acceptance. Scripted RPC tests do not prove native UI behavior.
 

@@ -437,7 +437,13 @@ function renderRooms(m) {
     section.dataset.state = room.state;
     const mark = el('span', '↗', 'session-icon'); mark.setAttribute('aria-hidden', 'true');
     title.append(el('h2', room.title), el('p', t('分享者：{name}', { name: room.ownerName || t('分享者') }), 'muted'));
-    identity.append(mark, title); heading.append(identity, badge(room.state)); section.append(heading);
+    identity.append(mark, title); heading.append(identity);
+    if (room.state === 'revoked') {
+      const actions = el('div', null, 'row');
+      actions.append(badge(room.state), button('我知道了', () => send({ type: 'dismiss-room', roomId: room.roomId })));
+      heading.append(actions);
+    } else heading.append(badge(room.state));
+    section.append(heading);
     if (room.state !== 'revoked') {
       const invite = el('div', null, 'invite'), row = el('div', null, 'invite-row');
       const link = el('input', null, 'link'); link.value = room.inviteUrl; link.readOnly = true; link.setAttribute('aria-label', t('访客邀请链接'));
@@ -456,7 +462,10 @@ function renderRooms(m) {
       policy.setAttribute('aria-label', t('{title}：{action}消息审批', { title: room.title, action: t(room.requireApproval ? '关闭' : '开启') }));
       policy.disabled = room.state !== 'online';
       policyRow.append(policyTitle, policy); $('#room-policies').append(policyRow);
-      invite.append(row, el('p', t('有效至 {time} · 包含本会话中已展示的文本记录', { time: new Date(room.expiresAt).toLocaleTimeString(i18n.language) }), 'muted')); section.append(invite);
+      invite.append(row, el('p', t('有效至 {time} · 包含本会话中已展示的文本记录', { time: new Date(room.expiresAt).toLocaleTimeString(i18n.language) }), 'muted'));
+      if (room.renewalSupported === true) invite.append(el('p', t('连接正常时自动续期'), 'muted'));
+      else if (room.renewalSupported === false) invite.append(el('p', t('当前中继不支持自动续期'), 'muted'));
+      section.append(invite);
     }
     const body = el('div', null, 'room-body');
     body.append(group('访客', room.guests, guest => guestCard(room, guest), room.state === 'revoked' ? '访客访问已结束' : '等待访客申请加入'), group('协作建议', [...room.proposals].reverse(), p => proposalCard(room, p), room.state === 'revoked' ? '此共享已结束' : room.requireApproval ? '新消息需你逐条确认后交给 Agent。' : '新消息直接交给 Agent；切换前待审批的消息仍需逐条确认。'));
