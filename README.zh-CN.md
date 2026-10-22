@@ -1,16 +1,72 @@
-# Codex Co²
+<h1 align="center">Codex Co²</h1>
 
-**共享同一条 Codex 会话，一起推进工作。** · [English](README.md)
+<p align="center">
+  <strong>多人共享同一条 Codex 会话，一起推进工作。</strong><br>
+  Real-time collaboration for Codex
+</p>
 
-作为分享者，你可以继续在 Codex Desktop 工作，协作者则通过浏览器加入同一条会话，一起讨论、补充上下文、跟进 Agent 的回复。
+<p align="center">
+  分享者一方可以继续在 Codex Desktop 工作，另外几方的协作者则可以通过浏览器加入同一条会话，<br>
+  一起讨论、补充上下文、跟进 Agent 的回复。
+</p>
 
-![Codex Co²：共享同一条 Codex 会话，一起推进工作](assets/promotional_image_cn.png)
+<p align="center">
+  <img src="assets/promotional_banner_cn.png" alt="Codex Co²：共享一条 Codex 会话，一起推进工作" width="100%">
+</p>
+
+<p align="center">
+  <a href="https://github.com/SpaceCoder-Kafka/codex-co2/releases/tag/v0.3.3-preview.11"><img src="https://img.shields.io/badge/preview-v0.3.3--preview.11-2563eb" alt="预览版本 v0.3.3-preview.11"></a>
+  <img src="https://img.shields.io/badge/host-macOS%2015%2B%20%C2%B7%20Apple%20Silicon-555555" alt="分享者：macOS 15+，Apple Silicon">
+  <img src="https://img.shields.io/badge/guest-browser-2563eb" alt="协作者：浏览器">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-22c55e" alt="许可：MIT"></a>
+</p>
+
+<p align="center">
+  <a href="README.md">English</a> · <strong>简体中文</strong>
+</p>
+
+<p align="center">
+  <a href="https://github.com/SpaceCoder-Kafka/codex-co2/releases/tag/v0.3.3-preview.11">下载</a> ·
+  <a href="#新用户使用homebrew">快速开始</a> ·
+  <a href="#应用截图">应用截图</a> ·
+  <a href="#共享前需要知道">共享须知</a> ·
+  <a href="#常见问题">常见问题</a>
+</p>
+
+Codex Co² 全称是 **Codex Conversation Collaboration**。这是独立实验项目，并非 OpenAI 官方产品，也未获 OpenAI 背书。
+
+## 应用截图
+
+从选择会话、管理共享，到协作者通过浏览器与同一个 Agent 一起推进工作。以下为中文界面的示例内容，点击图片可查看大图。
+
+<table>
+  <tr>
+    <td align="center" width="50%">
+      <strong>选择会话</strong><br>
+      <a href="assets/screenshot-session-picker-demo-cn.png"><img src="assets/screenshot-session-picker-demo-cn.png" alt="分享者在主机应用中选择要共享的 Codex 会话" width="100%"></a>
+    </td>
+    <td align="center" width="50%">
+      <strong>管理共享</strong><br>
+      <a href="assets/screenshot-sharing-demo-cn.png"><img src="assets/screenshot-sharing-demo-cn.png" alt="分享者管理邀请、访客和正在共享的会话" width="100%"></a>
+    </td>
+  </tr>
+  <tr>
+    <td align="center" width="50%">
+      <strong>浏览器协作</strong><br>
+      <a href="assets/screenshot-web-conversation-demo-cn-v2.png"><img src="assets/screenshot-web-conversation-demo-cn-v2.png" alt="协作者在浏览器阅读共享会话，向 Agent 补充需求" width="100%"></a>
+    </td>
+    <td align="center" width="50%">
+      <strong>通知与使用帮助</strong><br>
+      <a href="assets/screenshot-web-debug-demo-cn.png"><img src="assets/screenshot-web-debug-demo-cn.png" alt="浏览器中的协作帮助、通知设置和连接状态" width="100%"></a>
+    </td>
+  </tr>
+</table>
+
+## 演示视频
 
 https://github.com/user-attachments/assets/b1c2f544-3684-432e-9e03-f32ac15b9370
 
 [下载宣传视频](assets/promotional_video_cn.mp4)
-
-Codex Co² 全称是 **Codex Conversation Collaboration**。这是独立实验项目，并非 OpenAI 官方产品，也未获 OpenAI 背书。
 
 ## 体验预览版
 

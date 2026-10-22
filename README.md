@@ -1,18 +1,72 @@
-# Codex Co²
+<h1 align="center">Codex Co²</h1>
 
-**Real-time collaboration for Codex** · [简体中文](README.zh-CN.md)
+<p align="center">
+  <strong>Real-time collaboration for Codex</strong><br>
+  Share the same Codex conversation and move the work forward together.
+</p>
 
-Share the same Codex conversation and move the work forward together.
+<p align="center">
+  Keep working in Codex Desktop while collaborators join in a browser to discuss the work,<br>
+  add context, and follow the Agent's replies.
+</p>
 
-As the host, you can keep working in Codex Desktop while a collaborator joins the same conversation in a browser to discuss the work, add context, and follow the Agent's replies.
+<p align="center">
+  <img src="assets/promotional_banner_en.png" alt="Codex Co² — share the same Codex conversation and collaborate in a browser" width="100%">
+</p>
 
-![Codex Co² — share the same Codex conversation and collaborate in a browser](assets/promotional_image_en.png)
+<p align="center">
+  <a href="https://github.com/SpaceCoder-Kafka/codex-co2/releases/tag/v0.3.3-preview.11"><img src="https://img.shields.io/badge/preview-v0.3.3--preview.11-2563eb" alt="Preview v0.3.3-preview.11"></a>
+  <img src="https://img.shields.io/badge/host-macOS%2015%2B%20%C2%B7%20Apple%20Silicon-555555" alt="Host: macOS 15+ on Apple Silicon">
+  <img src="https://img.shields.io/badge/guest-browser-2563eb" alt="Guest: browser">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-22c55e" alt="License: MIT"></a>
+</p>
 
-https://github.com/user-attachments/assets/154ebb78-3f53-4824-bba4-80a52331ef66
+<p align="center">
+  <strong>English</strong> · <a href="README.zh-CN.md">简体中文</a>
+</p>
 
-[Download the promotional video](assets/promotional_video_en.mp4)
+<p align="center">
+  <a href="https://github.com/SpaceCoder-Kafka/codex-co2/releases/tag/v0.3.3-preview.11">Download</a> ·
+  <a href="#new-users-install-with-homebrew">Quick start</a> ·
+  <a href="#screenshots">Screenshots</a> ·
+  <a href="#what-sharing-grants">Sharing boundaries</a> ·
+  <a href="#common-questions">FAQ</a>
+</p>
 
 Codex Co² stands for **Codex Conversation Collaboration**. This is an independent experimental project, not an official OpenAI product or an OpenAI-endorsed integration.
+
+## Screenshots
+
+Choose a conversation in the host app, manage sharing, and collaborate with the same Agent from a browser. The screenshots below show the Chinese interface with demo content; click an image to view it at full size.
+
+<table>
+  <tr>
+    <td align="center" width="50%">
+      <strong>Choose a conversation</strong><br>
+      <a href="assets/screenshot-session-picker-demo-cn.png"><img src="assets/screenshot-session-picker-demo-cn.png" alt="Host app: choose a Codex conversation to share" width="100%"></a>
+    </td>
+    <td align="center" width="50%">
+      <strong>Manage sharing</strong><br>
+      <a href="assets/screenshot-sharing-demo-cn.png"><img src="assets/screenshot-sharing-demo-cn.png" alt="Host app: manage invitations, visitors and shared conversations" width="100%"></a>
+    </td>
+  </tr>
+  <tr>
+    <td align="center" width="50%">
+      <strong>Collaborate in a browser</strong><br>
+      <a href="assets/screenshot-web-conversation-demo-cn-v2.png"><img src="assets/screenshot-web-conversation-demo-cn-v2.png" alt="Guest browser: read the shared conversation and send a follow-up to the Agent" width="100%"></a>
+    </td>
+    <td align="center" width="50%">
+      <strong>Notifications and help</strong><br>
+      <a href="assets/screenshot-web-debug-demo-cn.png"><img src="assets/screenshot-web-debug-demo-cn.png" alt="Guest browser: collaboration help, notification settings and connection status" width="100%"></a>
+    </td>
+  </tr>
+</table>
+
+## Demo video
+
+https://github.com/user-attachments/assets/743766be-3549-4928-9f1e-d720314f8989
+
+[Download the promotional video](assets/promotional_video_en.mp4)
 
 ## Try the preview
 
