@@ -135,3 +135,58 @@ test('a late live event confirms only its own message and cannot relabel unrelat
   assert.equal(f.author('loaded-b').kind, 'unknown');
   assert.equal(f.author('history').kind, 'unknown');
 });
+
+test('private checkpoints recover known authors without storing text or inventing authors for old and late history', () => {
+  const f = fixture();
+  f.add('owner', '来自 Desktop 的私有正文');
+  const record = f.authors.begin('request', '访客的私有正文', guest);
+  f.add('guest', '访客的私有正文');
+  f.authors.complete(record, { id: 'busy', clientUserMessageId: 'guest' });
+  const checkpoint = JSON.parse(JSON.stringify(f.authors.checkpoint()));
+  assert.ok(!JSON.stringify(checkpoint).includes('私有正文'));
+  f.authors.clear();
+  const restored = new MessageAuthors('新分享者名称', { evidence: checkpoint });
+  const items = [...f.items, user('late', '只在重新分享后读到的正文')];
+  const turns = new Map(items.map(i => [i.id, ['history', 'late'].includes(i.id) ? 'old' : 'busy']));
+  restored.observe(items, turns);
+  const names = Object.fromEntries(restored.decorate(items).map(i => [i.id, i.author.name]));
+  assert.deepEqual(names, { history: '历史消息 · 作者未知', owner: '阿明', guest: '小林', late: '历史消息 · 作者未知' });
+  items.push(user('new-owner', '重新分享后的输入')); turns.set('new-owner', 'next');
+  restored.observe(items, turns, 'new-owner');
+  assert.equal(restored.decorate(items).at(-1).author.name, '新分享者名称');
+});
+
+test('recovered correlations still revoke ambiguous text matches, while exact response IDs disambiguate', () => {
+  for (const exact of [false, true]) {
+    const f = fixture(), record = f.authors.begin('request', '相同正文', guest);
+    f.add('first', '相同正文');
+    f.authors.complete(record, { id: 'busy', ...(exact ? { clientUserMessageId: 'first' } : {}) });
+    const restored = new MessageAuthors('阿明', { evidence: f.authors.checkpoint() });
+    const items = [...f.items, user('duplicate', '相同正文')];
+    restored.observe(items, new Map(items.map(i => [i.id, i.id === 'history' ? 'old' : 'busy'])));
+    const first = restored.decorate(items).find(i => i.id === 'first');
+    assert.equal(first.author.kind, exact ? 'guest' : 'unknown');
+    assert.equal(restored.decorate(items).at(-1).author.kind, 'unknown');
+  }
+});
+
+test('recovery handles acceptance before the item arrives and keeps uncertain submissions unknown', () => {
+  for (const accepted of [true, false]) {
+    const f = fixture(), record = f.authors.begin('request', '未及时读到的正文', guest);
+    if (accepted) f.authors.complete(record, { id: 'busy', clientUserMessageId: 'delayed' });
+    else f.authors.uncertain(record);
+    const restored = new MessageAuthors('阿明', { evidence: f.authors.checkpoint() });
+    const items = [...f.items, user('delayed', '未及时读到的正文')];
+    restored.observe(items, new Map([['history', 'old'], ['delayed', 'busy']]));
+    assert.equal(restored.decorate(items).at(-1).author.kind, accepted ? 'guest' : 'unknown');
+  }
+});
+
+test('a reused item ID with changed text or turn cannot inherit a persisted author', () => {
+  const f = fixture(); f.add('owner', '旧正文');
+  for (const [text, turn] of [['新正文', 'busy'], ['旧正文', 'other-turn']]) {
+    const restored = new MessageAuthors('阿明', { evidence: f.authors.checkpoint() });
+    const items = [user('owner', text)]; restored.observe(items, new Map([['owner', turn]]));
+    assert.equal(restored.decorate(items)[0].author.kind, 'unknown');
+  }
+});

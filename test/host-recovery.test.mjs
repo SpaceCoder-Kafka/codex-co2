@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter, once } from 'node:events';
+import { randomUUID } from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -9,6 +10,7 @@ import { startOwner, secret } from '../lib/host.mjs';
 import { startRelay } from '../lib/relay.mjs';
 import { openShareHistory } from '../lib/share-history.mjs';
 import { GuestPermissions } from '../lib/guest-permissions.mjs';
+import { openMessageAuthorHistory } from '../lib/message-author-history.mjs';
 
 const until = async predicate => {
   for (let i = 0; i < 300; i++) { if (predicate()) return; await delay(10); }
@@ -73,6 +75,73 @@ test('restart exposes only history metadata; explicit re-sharing checks catalog 
   local.send({ type: 'reshare', threadId: 'synthetic' }); await until(() => local.messages.some(m => m.type === 'share-result'));
   const fresh = [...second.rooms.values()][0]; assert.notEqual(fresh.view().inviteUrl, oldInvite);
   assert.equal(fresh.requireApproval, true); assert.equal(fresh.guests.size, 0); assert.equal(fresh.proposals.size, 0);
+});
+
+test('replacement invitations and owner restart recover authors through admitted snapshots without replaying input', async t => {
+  const dir = await fs.mkdtemp('/tmp/co2-author-recovery-'); t.after(() => fs.rm(dir, { recursive: true, force: true }));
+  const file = path.join(dir, 'authors.json'), registrationSecret = secret();
+  const relay = await startRelay({ registrationSecret }); t.after(() => relay.close());
+  const raw = (id, text) => ({ id, type: 'userMessage', content: [{ type: 'text', text }] });
+  const native = { id: 'one', name: 'Synthetic author recovery', status: { type: 'idle' },
+    turns: [{ id: 'old', status: 'completed', items: [raw('old-user', 'Unobserved historical text')] }] };
+  let submissions = 0;
+  class AuthorRpc extends EventEmitter {
+    async request(method, params) {
+      assert.equal(params.threadId, 'one');
+      if (['thread/read', 'thread/resume'].includes(method)) return { thread: structuredClone(native) };
+      assert.equal(method, 'turn/start'); submissions++;
+      const item = raw('guest-user', params.input[0].text); native.turns.at(-1).items.push(item);
+      this.emit('notification', { method: 'item/started', params: { threadId: 'one', turnId: 'live', item } });
+      return { turn: { id: 'live', clientUserMessageId: 'guest-user' } };
+    }
+    close() {}
+  }
+  const history = await openShareHistory(path.join(dir, 'history.json'));
+  const authorHistory = await openMessageAuthorHistory(file);
+  const options = { relayUrl: relay.url, registrationSecret, history, authorHistory, rpcFactory: async () => new AuthorRpc(),
+    listThreads: async () => [{ id: 'one' }], ownerDir: new URL('../owner', import.meta.url).pathname };
+  const owner = await startOwner(options); t.after(() => owner.close());
+  const local = await manager(t, owner);
+  local.send({ type: 'share', threadId: 'one', ownerName: '阿明' });
+  await until(() => local.messages.some(m => m.type === 'share-result'));
+  const first = [...owner.rooms.values()][0], oldInvite = first.view().inviteUrl;
+  const ownerInput = raw('owner-user', 'Observed Desktop input');
+  native.turns.push({ id: 'live', status: 'inProgress', items: [ownerInput] });
+  first.rpc.emit('notification', { method: 'turn/started', params: { threadId: 'one', turn: { id: 'live' } } });
+  first.rpc.emit('notification', { method: 'item/started', params: { threadId: 'one', turnId: 'live', item: ownerInput } });
+  first.guests.set('guest', { id: 'guest', participantId: 'participant', name: '小林', status: 'admitted' });
+  first.receive({ type: 'guest-message', guestId: 'guest', payload: { type: 'proposal', requestId: randomUUID(), text: 'Observed guest input' } });
+  await until(() => [...first.proposals.values()].some(p => p.status === 'accepted'));
+  const assertAuthors = snapshot => {
+    const names = Object.fromEntries(snapshot.items.map(i => [i.id, i.author?.name]));
+    assert.deepEqual(names, { 'old-user': '历史消息 · 作者未知', 'owner-user': '阿明', 'guest-user': '小林' });
+  };
+  assertAuthors(first.thread.snapshot);
+  owner.pauseAll(); local.send({ type: 'reshare', threadId: 'one' });
+  await until(() => local.messages.filter(m => m.type === 'share-result').length === 2);
+  const replaced = [...owner.rooms.values()].find(r => !r.closed);
+  assert.notEqual(replaced.view().inviteUrl, oldInvite); assertAuthors(replaced.thread.snapshot);
+  assert.equal(replaced.guests.size, 0); assert.equal(replaced.proposals.size, 0);
+  await owner.close(); await history.flush(); await authorHistory.flush();
+  const recovered = await openMessageAuthorHistory(file);
+  const restarted = await startOwner({ ...options, authorHistory: recovered }); t.after(() => restarted.close());
+  const second = await manager(t, restarted);
+  assert.equal(restarted.rooms.size, 0);
+  assert.ok(!JSON.stringify(second.messages).includes('owner-user'), 'recovery evidence must not enter manager metadata');
+  second.send({ type: 'reshare', threadId: 'one' }); await until(() => second.messages.some(m => m.type === 'share-result'));
+  const fresh = [...restarted.rooms.values()][0]; assertAuthors(fresh.thread.snapshot);
+  const guest = new WebSocket(relay.url.replace('http:', 'ws:') + '/guest', { origin: relay.url }), messages = [];
+  guest.on('message', bytes => messages.push(JSON.parse(bytes))); t.after(() => guest.terminate()); await once(guest, 'open');
+  guest.send(JSON.stringify({ type: 'join', roomId: fresh.roomId, inviteToken: fresh.inviteToken, name: '小林', sessionId: secret() }));
+  await until(() => messages.some(m => m.type === 'pending'));
+  const guestId = messages.find(m => m.type === 'pending').guestId;
+  await until(() => fresh.guests.has(guestId));
+  assert.equal(fresh.guests.get(guestId).status, 'pending');
+  assert.equal(messages.some(m => m.type === 'data'), false);
+  second.send({ type: 'admit', roomId: fresh.roomId, guestId });
+  await until(() => messages.some(m => m.payload?.type === 'snapshot'));
+  assertAuthors(messages.find(m => m.payload?.type === 'snapshot').payload);
+  assert.equal(submissions, 1, 'recovering authors must never submit or replay Agent input');
 });
 
 test('personal credential resumes admission across reconnect and replaced invitations, but never crosses stop, removal or thread scope', async t => {

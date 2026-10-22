@@ -264,7 +264,8 @@
     "正在重建…": "正在重建…",
     "正在检查公网连接…": "正在检查公网连接…",
     "检查完成，公网入口连接正常": "检查完成，公网入口连接正常",
-    "检查完成，公网入口仍不可用，请检查网络或重建入口。": "检查完成，公网入口仍不可用，请检查网络或重建入口。"
+    "检查完成，公网入口仍不可用，请检查网络或重建入口。": "检查完成，公网入口仍不可用，请检查网络或重建入口。",
+    "消息作者信息未能保存，重新分享后部分署名可能无法恢复。": "消息作者信息未能保存，重新分享后部分署名可能无法恢复。"
   },
   "zh-TW": {
     "应用导航": "應用程式導覽",
@@ -531,7 +532,8 @@
     "正在重建…": "正在重建…",
     "正在检查公网连接…": "正在檢查公網連線…",
     "检查完成，公网入口连接正常": "檢查完成，公網入口連線正常",
-    "检查完成，公网入口仍不可用，请检查网络或重建入口。": "檢查完成，公網入口仍無法使用，請檢查網路或重建入口。"
+    "检查完成，公网入口仍不可用，请检查网络或重建入口。": "檢查完成，公網入口仍無法使用，請檢查網路或重建入口。",
+    "消息作者信息未能保存，重新分享后部分署名可能无法恢复。": "訊息作者資訊未能儲存，重新分享後部分署名可能無法恢復。"
   },
   "en": {
     "应用导航": "App navigation",
@@ -798,6 +800,7 @@
     "正在重建…": "Rebuilding…",
     "正在检查公网连接…": "Checking public connection…",
     "检查完成，公网入口连接正常": "Check complete. The public connection is working.",
-    "检查完成，公网入口仍不可用，请检查网络或重建入口。": "Check complete. The public address is still unreachable. Check your network or rebuild the connection."
+    "检查完成，公网入口仍不可用，请检查网络或重建入口。": "Check complete. The public address is still unreachable. Check your network or rebuild the connection.",
+    "消息作者信息未能保存，重新分享后部分署名可能无法恢复。": "Message authors could not be saved. Some names may be unavailable after sharing again."
   }
 }

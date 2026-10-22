@@ -245,6 +245,12 @@ test('Desktop author evidence survives input persistence, repeated text and late
   assert.equal(scoped.snapshot.items.some(i => i.id === 'owner-live'), false);
   assert.equal(f.requests.filter(r => r.method === 'thread-follower-start-turn').length, 2);
   assert.ok(!JSON.stringify(scoped.snapshot).includes('clientUserMessageId'));
+  const evidence = scoped._authors.checkpoint(); scoped.close();
+  const reopened = new ScopedThread({ rpc, threadId: THREAD, ownerName: '新分享者', authorEvidence: evidence });
+  t.after(() => reopened.close()); await reopened.start();
+  assert.deepEqual(reopened.snapshot.items.filter(i => i.author?.kind === 'guest').map(i => i.author.name), ['小林', '小周']);
+  assert.equal(reopened.snapshot.items.find(i => i.id === 'late-history').author.kind, 'unknown');
+  assert.equal(f.requests.filter(r => r.method === 'thread-follower-start-turn').length, 2, 'reopening must not replay inputs');
 });
 
 test('native approvals pending at attachment are local-only and clear while the turn remains active', async t => {

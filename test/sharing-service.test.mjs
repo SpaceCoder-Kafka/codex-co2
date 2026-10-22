@@ -49,6 +49,17 @@ test('host reloads its persisted sharing limit after service restart without sta
   assert.deepEqual(settings, { shareLimit: null }); assert.equal(f.counts.tunnel, 0);
 });
 
+test('host wires private author evidence through service restart without opening a conversation or public relay', async t => {
+  const f = await fixture(t); await f.service.start();
+  const evidence = { sequence: 0, entries: [], submissions: [] };
+  f.ownerOptions.authorHistory.remember('selected-synthetic-thread', evidence); await f.service.close();
+  let recovered;
+  const restarted = new SharingService(f.service.options, { ...f.service.dependencies,
+    startOwner: async options => { recovered = options.authorHistory.get('selected-synthetic-thread'); return { url: 'http://127.0.0.1:1', revokeAll() {}, close: async () => {} }; } });
+  t.after(() => restarted.close()); await restarted.start();
+  assert.deepEqual(recovered, evidence); assert.equal(f.counts.tunnel, 0);
+});
+
 test('failed public startup is retryable and does not prevent the local management service', async t => {
   const f = await fixture(t, 1); await f.service.start();
   await assert.rejects(f.ownerOptions.ensureRelay(), /offline/);

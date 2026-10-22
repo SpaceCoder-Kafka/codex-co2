@@ -428,6 +428,7 @@ function renderRooms(m) {
     $('#empty-browse').onclick = () => selectTab('sessions', true);
     renderHistory(m);
     if (m.historyFailed) $('#rooms').append(el('p', t('分享历史未能保存，请检查本机运行目录权限。'), 'muted'));
+    if (m.authorHistoryFailed) $('#rooms').append(el('p', t('消息作者信息未能保存，重新分享后部分署名可能无法恢复。'), 'muted'));
     return;
   }
   for (const room of visible) {
@@ -470,6 +471,7 @@ function renderRooms(m) {
   }
   renderHistory(m);
   if (m.historyFailed) $('#rooms').append(el('p', t('分享历史未能保存，请检查本机运行目录权限。'), 'muted'));
+  if (m.authorHistoryFailed) $('#rooms').append(el('p', t('消息作者信息未能保存，重新分享后部分署名可能无法恢复。'), 'muted'));
 };
 
 function updateThreadHint() {

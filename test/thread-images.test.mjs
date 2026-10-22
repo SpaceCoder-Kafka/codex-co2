@@ -4,6 +4,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { EventEmitter, once } from 'node:events';
+import { createHash } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
 import WebSocket from 'ws';
 import { imageInputParts, imageRefs, assistantImageRefs, readImage, imageMessageText, MAX_IMAGE_BYTES } from '../lib/thread-images.mjs';
@@ -79,7 +80,8 @@ test('snapshot cleanup preserves raw native messages and author matching while r
   assert.equal(thread.snapshot.items[0].text, '准备源码快照是什么意思？');
   assert.equal(thread.snapshot.items[0].images.length, 1);
   assert.equal(thread._snapshot.items[0].text, raw);
-  assert.equal(thread._authors.entries.get('user').text, raw);
+  assert.equal(thread._authors.entries.get('user').digest, createHash('sha256').update(raw).digest('hex'));
+  assert.ok(!JSON.stringify(thread._authors.checkpoint()).includes(raw));
   assert.equal(rpc.thread.turns[0].items[0].content[0].text, raw);
   assert.equal((await thread.readImage(thread.snapshot.items[0].images[0].id)).mime, 'image/png');
 });
