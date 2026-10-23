@@ -18,12 +18,14 @@ class Element {
   setAttribute(name, value) { this[name] = value; }
   getAttribute(name) { return this[name]; }
   removeAttribute(name) { delete this[name]; }
-  focus() { this.focused = true; }
+  focus() { this.focused = true; if (this.document) this.document.activeElement = this; }
+  showModal() { assert.ok(!this.open, 'a second modal must not be opened'); this.open = true; }
+  close() { this.open = false; this.onclose?.(); }
   scrollIntoView() { this.scrolledIntoView = true; }
   select() { this.selected = true; }
   contains(node) { return this === node || this.children.some(c => c.contains(node)); }
 }
-function browser({ storage = new Map(), nativeLanguage, nativeUpdater = false, appInfo, updateState } = {}) {
+function browser({ storage = new Map(), nativeLanguage, nativeCopy = 'success', browserClipboard, nativeUpdater = false, appInfo, updateState } = {}) {
   const elements = Object.fromEntries([...html.matchAll(/<(\w+)[^>]*\bid="([^"]+)"[^>]*>/g)].map(m => {
     const node = new Element(m[1]); node.id = m[2];
     for (const attr of m[0].matchAll(/([\w-]+)="([^"]*)"/g)) node.setAttribute(attr[1], attr[2]);
@@ -31,7 +33,8 @@ function browser({ storage = new Map(), nativeLanguage, nativeUpdater = false, a
     return [m[2], node];
   }));
   elements.rooms.append(new Element());
-  const connection = new Element(), sent = [], copies = [], preferences = [], updates = [], links = [];
+  const connection = new Element(), sent = [], copies = [], copyRequests = [], copyTimeouts = new Map(), preferences = [], updates = [], links = [];
+  let copyTimerSequence = 0;
   let socket, redacted;
   class Socket {
     static OPEN = 1;
@@ -40,22 +43,47 @@ function browser({ storage = new Map(), nativeLanguage, nativeUpdater = false, a
     close() { this.readyState = 3; this.onclose(); }
   }
   const descendants = e => [e, ...e.children.flatMap(descendants)];
+  for (const match of html.matchAll(/<select[^>]*\bid="([^"]+)"[^>]*>(.*?)<\/select>/gs)) {
+    for (const option of match[2].matchAll(/<option\b([^>]*)>([^<]*)<\/option>/g)) {
+      const node = new Element('option'); node.textContent = option[2];
+      for (const attr of option[1].matchAll(/([\w-]+)="([^"]*)"/g)) node.setAttribute(attr[1], attr[2]);
+      elements[match[1]].append(node);
+    }
+  }
+  const document = {
+    documentElement: new Element('html'), activeElement: null,
+    querySelector: s => s === '.connection' ? connection : elements[s.slice(1)],
+    querySelectorAll: selector => {
+      const all = Object.values(elements).flatMap(descendants);
+      if (selector === 'button') return all.filter(e => e.tag === 'button');
+      const attribute = selector.match(/^\[([^\]]+)\]$/)?.[1];
+      return attribute ? all.filter(e => e.getAttribute(attribute) != null) : [];
+    },
+    createElement: tag => { const node = new Element(tag); node.document = document; return node; },
+    addEventListener() {},
+  };
+  for (const node of Object.values(elements).flatMap(descendants)) node.document = document;
   const window = { Co2Messages: messages, co2Language: nativeLanguage, co2AppInfo: appInfo, co2UpdateState: updateState,
     innerWidth: 1024, innerHeight: 768, addEventListener() {}, open: (...args) => links.push(args), webkit: { messageHandlers: {
-    copyInvite: { postMessage: value => copies.push(value) }, languagePreference: { postMessage: value => preferences.push(value) },
+    copyInvite: { postMessage: value => {
+      copyRequests.push(JSON.parse(JSON.stringify(value)));
+      if (nativeCopy === 'throw') throw new Error('Synthetic native bridge failure');
+      copies.push(value.url);
+      if (nativeCopy === 'success') window.co2InviteCopyResult({ requestId: value.requestId, ok: true });
+    } }, languagePreference: { postMessage: value => preferences.push(value) },
   } } };
+  if (nativeCopy === false) delete window.webkit.messageHandlers.copyInvite;
   if (nativeUpdater) window.webkit.messageHandlers.appUpdates = { postMessage: value => updates.push(JSON.parse(JSON.stringify(value))) };
   vm.runInNewContext(languageScript + '\n' + script, {
-    document: {
-      documentElement: new Element('html'),
-      querySelector: s => s === '.connection' ? connection : elements[s.slice(1)],
-      querySelectorAll: selector => Object.values(elements).flatMap(descendants).filter(e => selector === 'button' ? e.tag === 'button' : e.getAttribute(selector.slice(1, -1)) != null),
-      createElement: tag => new Element(tag),
-      addEventListener() {},
-    },
+    document,
     WebSocket: Socket, URLSearchParams, location: { hash: '#owner=synthetic-only', pathname: '/' },
     history: { replaceState(_state, _title, url) { redacted = url; } },
-    window, navigator: {}, setTimeout, clearTimeout,
+    window, navigator: browserClipboard ? { clipboard: browserClipboard } : {},
+    setTimeout: (fn, delay) => {
+      if (delay !== 3000) return setTimeout(fn, delay);
+      const id = `synthetic-copy-${++copyTimerSequence}`; copyTimeouts.set(id, fn); return id;
+    },
+    clearTimeout: id => { if (!copyTimeouts.delete(id)) clearTimeout(id); },
     localStorage: { getItem: key => storage.get(key), setItem: (key, value) => storage.set(key, value) },
   });
   socket.readyState = 1; socket.onopen();
@@ -64,12 +92,352 @@ function browser({ storage = new Map(), nativeLanguage, nativeUpdater = false, a
   const nodes = () => [...descendants(elements.rooms), ...descendants(elements['room-policies'])];
   const click = text => { const b = nodes().find(e => e.tag === 'button' && e.textContent === text); assert.ok(b, `Missing ${text}`); b.onclick(); };
   const threadRows = () => descendants(elements.threads).filter(e => e.className === 'thread-row');
-  return { elements, socket, sent, copies, preferences, updates, links, receive, nodes, click, threadRows, window };
+  return { elements, socket, sent, copies, copyRequests, copyTimeouts, preferences, updates, links, receive, nodes, click, threadRows, window,
+    expireCopies() { for (const [id, fn] of [...copyTimeouts]) { copyTimeouts.delete(id); fn(); } },
+    acknowledgeCopy(ok, request = copyRequests.at(-1)) { window.co2InviteCopyResult({ requestId: request.requestId, ok }); } };
 }
 const room = () => ({ roomId: 'room-1', title: '<script>synthetic title</script>', ownerName: 'A', state: 'online',
   expiresAt: Date.now() + 3600000, inviteUrl: 'https://example.invalid/#invite=synthetic',
   guests: [{ id: 'guest-1', name: '<img onerror=synthetic>', status: 'pending' }],
   proposals: [{ id: 'proposal-1', name: 'B', status: 'pending', text: '<script>synthetic proposal</script>' }], approvalPending: false });
+const network = (overrides = {}) => ({ intranetOnly: false, lanAddress: null, configurable: true,
+  interfaces: [{ name: 'synthetic-en0', address: '192.168.40.20' }], ...overrides });
+const lanState = (overrides = {}) => ({ type: 'state', rooms: [], connection: { state: 'local' },
+  network: network({ intranetOnly: true, lanAddress: '192.168.40.20' }), ...overrides });
+function lifetimePage(options) {
+  const page = browser(options);
+  page.receive(lanState());
+  page.receive({ type: 'threads', threads: [{ id: 'synthetic-thread', name: 'Synthetic session' }] });
+  page.elements['owner-name'].value = 'A';
+  return page;
+}
+const selectedLifetime = page => ['1h', '1d', '7d', 'permanent'].find(value => page.elements[`invite-lifetime-${value}`].checked);
+function chooseLifetime(page, value) {
+  for (const option of ['1h', '1d', '7d', 'permanent']) page.elements[`invite-lifetime-${option}`].checked = option === value;
+  page.elements[`invite-lifetime-${value}`]?.onchange();
+}
+
+test('each intranet invitation lifetime requires confirmation and sends its exact value once', () => {
+  for (const lifetime of ['1h', '1d', '7d', 'permanent']) {
+    const page = lifetimePage(), e = page.elements;
+    e.share.focus(); e.share.onclick();
+    assert.equal(e['invite-lifetime-dialog'].open, true);
+    assert.equal(e['invite-lifetime-dialog'].getAttribute('aria-labelledby'), 'invite-lifetime-title');
+    assert.equal(e['invite-lifetime-dialog'].getAttribute('aria-describedby'), 'invite-lifetime-description');
+    assert.equal(e['invite-lifetime'].getAttribute('aria-describedby'), 'invite-lifetime-hint');
+    assert.equal(selectedLifetime(page), '1h');
+    assert.equal(e['invite-lifetime-1h'].focused, true);
+    assert.equal(e.share.disabled, true); assert.equal(e['intranet-only'].disabled, true);
+    assert.equal(page.sent.some(m => m.type === 'share'), false);
+    e.share.onclick();
+    chooseLifetime(page, lifetime);
+    assert.ok(e['invite-lifetime-hint'].textContent.includes(lifetime === 'permanent' ? '需保持应用和共享运行' : '访客也会断开'));
+    e['invite-lifetime-confirm'].onclick(); e['invite-lifetime-confirm'].onclick(); e.share.onclick();
+    assert.equal(e['invite-lifetime-dialog'].open, false);
+    assert.deepEqual(page.sent.filter(m => m.type === 'share'), [{ type: 'share', threadId: 'synthetic-thread',
+      ownerName: 'A', requireApproval: false, inviteLifetime: lifetime }]);
+  }
+});
+
+test('cancel and Escape generate no invitation, restore focus and reset the next choice to one hour', () => {
+  const page = lifetimePage(), e = page.elements;
+  e.share.focus(); e.share.onclick();
+  chooseLifetime(page, 'permanent');
+  e['invite-lifetime-cancel'].onclick();
+  assert.equal(e['invite-lifetime-dialog'].open, false); assert.equal(e.share.disabled, false);
+  assert.equal(e.share.focused, true); assert.equal(e['intranet-only'].disabled, false);
+  e.share.onclick(); assert.equal(selectedLifetime(page), '1h');
+  let prevented = false;
+  e['invite-lifetime-dialog'].oncancel({ preventDefault() { prevented = true; } });
+  assert.equal(prevented, true); assert.equal(e['invite-lifetime-dialog'].open, false);
+  assert.equal(page.sent.some(m => m.type === 'share'), false);
+});
+
+test('public share and history restore bypass the lifetime picker and omit intranet fields', () => {
+  const page = browser(), e = page.elements;
+  page.receive({ type: 'state', rooms: [], network: network(),
+    history: [{ threadId: 'past', title: 'Synthetic history', lastSharedAt: 1 }] });
+  page.receive({ type: 'threads', threads: [{ id: 'synthetic-thread', name: 'Synthetic session' }] });
+  e['owner-name'].value = 'A'; e.share.onclick();
+  assert.deepEqual(page.sent.at(-1), { type: 'share', threadId: 'synthetic-thread', ownerName: 'A', requireApproval: false });
+  assert.ok(!e['invite-lifetime-dialog'].open);
+  page.receive({ type: 'share-result', threadId: 'synthetic-thread' });
+  page.click('重新分享并复制邀请');
+  assert.deepEqual(page.sent.at(-1), { type: 'reshare', threadId: 'past' });
+  assert.ok(!e['invite-lifetime-dialog'].open);
+});
+
+test('context menu, history and offline restore share the intranet lifetime picker and copy only after native acknowledgement', () => {
+  for (const entry of ['context', 'history', 'offline']) {
+    const page = lifetimePage({ nativeCopy: 'manual' }), e = page.elements;
+    const saved = { threadId: 'synthetic-thread', title: 'Synthetic history', lastSharedAt: 1 };
+    const old = { ...room(), threadId: saved.threadId, state: 'offline', intranetOnly: true, inviteLifetime: '1h', inviteExpiresAt: Date.now() + 3600000 };
+    page.receive(lanState({ rooms: entry === 'offline' ? [old] : [], history: [saved] }));
+    if (entry === 'context') {
+      page.threadRows()[0].oncontextmenu({ preventDefault() {}, clientX: 100, clientY: 100 });
+      e['menu-share'].onclick();
+    } else page.click('重新分享并复制邀请');
+    assert.equal(e['invite-lifetime-dialog'].open, true, entry);
+    assert.equal(page.sent.some(m => ['share', 'reshare'].includes(m.type)), false, entry);
+    chooseLifetime(page, '7d'); e['invite-lifetime-confirm'].onclick();
+    assert.equal(page.sent.at(-1).inviteLifetime, '7d');
+    assert.equal(page.sent.at(-1).threadId, saved.threadId);
+    assert.equal(page.sent.at(-1).type, entry === 'context' ? 'share' : 'reshare');
+    if (entry === 'context') continue;
+    const fresh = { ...old, roomId: 'new-room', state: 'online', inviteLifetime: '7d', inviteExpiresAt: Date.now() + 7 * 86400000,
+      inviteUrl: 'http://192.168.40.20:47830/#room=22222222-2222-4222-8222-222222222222&invite=' + 'B'.repeat(43) };
+    page.receive(lanState({ rooms: [fresh], history: [saved] }));
+    assert.equal(page.copyRequests.length, 0);
+    page.receive({ type: 'share-result', roomId: fresh.roomId, threadId: saved.threadId, restored: true });
+    assert.equal(page.copyRequests[0].url, fresh.inviteUrl);
+    assert.equal(e.notice.textContent, '正在复制邀请…');
+    page.acknowledgeCopy(entry === 'history');
+    assert.equal(e.notice.textContent, entry === 'history' ? '邀请链接已复制' : '请手动复制链接');
+    if (entry === 'offline') assert.equal(page.nodes().find(n => n.tag === 'input' && n.className === 'link').selected, true);
+  }
+});
+
+test('intranet validity displays the fixed deadline or permanent state independently of rolling leases', () => {
+  for (const [lifetime, duration] of [['1h', 3600000], ['1d', 86400000], ['7d', 7 * 86400000], ['permanent', null]]) {
+    const page = browser(), r = { ...room(), intranetOnly: true, inviteLifetime: lifetime,
+      expiresAt: Date.UTC(2030, 0, 1, 1), inviteExpiresAt: duration === null ? null : Date.UTC(2030, 0, 1) + duration,
+      renewalSupported: true };
+    page.receive(lanState({ rooms: [r] }));
+    const expected = duration === null ? '不设固定到期时间 · 包含本会话中已展示的文本记录'
+      : `有效至 ${new Date(r.inviteExpiresAt).toLocaleString('zh-CN')} · 到期后自动结束共享`;
+    assert.ok(page.nodes().some(n => n.textContent === expected), lifetime);
+    assert.ok(!page.nodes().some(n => /自动续期/.test(n.textContent)));
+    if (duration === null) assert.ok(page.nodes().some(n => n.textContent.includes('停止共享、退出应用或更换入口后失效')));
+    r.expiresAt += 3600000; page.receive(lanState({ rooms: [r] }));
+    assert.ok(page.nodes().some(n => n.textContent === expected), 'lease renewal must not move the invitation deadline');
+  }
+});
+
+test('intranet lifetime dialog and fixed or permanent validity translate without losing the selected value', () => {
+  for (const language of ['zh-CN', 'zh-TW', 'en']) {
+    const page = lifetimePage(), e = page.elements;
+    e.share.onclick(); chooseLifetime(page, 'permanent');
+    e.language.value = language; e.language.onchange();
+    assert.equal(e['invite-lifetime-dialog'].open, true);
+    assert.equal(selectedLifetime(page), 'permanent');
+    assert.equal(e['invite-lifetime-title'].textContent, messages[language]['内网邀请有效期']);
+    assert.deepEqual(['1h', '1d', '7d', 'permanent'].map(value => e[`invite-lifetime-label-${value}`].textContent), ['1 小时', '1 天', '7 天', '永久'].map(key => messages[language][key]));
+    assert.equal(e['invite-lifetime-permanent'].getAttribute('type'), 'radio');
+    assert.equal(e['invite-lifetime-permanent'].getAttribute('aria-describedby'), 'invite-permanent-tooltip');
+    assert.equal(e['invite-permanent-tooltip'].getAttribute('role'), 'tooltip');
+    assert.equal(e['invite-permanent-tooltip'].textContent, messages[language]['永久表示不设固定到期时间，但停止共享、退出应用或更换入口后，仍需生成新链接。']);
+    assert.equal(e['invite-lifetime-hint'].textContent, messages[language]['不设固定到期时间，需保持应用和共享运行；停止共享、退出应用或更换入口后失效。']);
+    e['invite-lifetime-cancel'].onclick();
+    const r = { ...room(), intranetOnly: true, inviteExpiresAt: Date.UTC(2030, 0, 2), inviteLifetime: '1d' };
+    page.receive(lanState({ rooms: [r] }));
+    assert.ok(page.nodes().some(n => n.textContent === messages[language]['有效至 {time} · 到期后自动结束共享'].replace('{time}', new Date(r.inviteExpiresAt).toLocaleString(language))));
+    r.inviteExpiresAt = null; r.inviteLifetime = 'permanent'; page.receive(lanState({ rooms: [r] }));
+    assert.ok(page.nodes().some(n => n.textContent === messages[language]['不设固定到期时间 · 包含本会话中已展示的文本记录']));
+  }
+});
+
+test('a network change, another window sharing the chosen session or disconnect cancels pending intranet generation', () => {
+  for (const change of ['public', 'address', 'shared', 'disconnect']) {
+    const page = lifetimePage(), e = page.elements;
+    e.share.onclick(); chooseLifetime(page, 'permanent');
+    if (change === 'public') page.receive({ type: 'state', rooms: [], network: network() });
+    if (change === 'address') page.receive(lanState({ network: network({ intranetOnly: true, lanAddress: '10.5.0.20' }) }));
+    if (change === 'shared') page.receive(lanState({ rooms: [{ ...room(), threadId: 'synthetic-thread' }] }));
+    if (change === 'disconnect') page.socket.close();
+    assert.equal(e['invite-lifetime-dialog'].open, false, change);
+    e['invite-lifetime-confirm'].onclick();
+    assert.equal(page.sent.some(m => ['share', 'reshare'].includes(m.type)), false, change);
+    if (change === 'public' || change === 'address') assert.ok(e.notice.textContent.includes('访问范围已变更'));
+    if (change === 'shared') assert.ok(e.notice.textContent.includes('此会话已在共享'));
+  }
+});
+
+test('network work, connecting and invalid choices cannot confirm a pending intranet invitation', () => {
+  const page = lifetimePage(), e = page.elements;
+  e.share.onclick();
+  page.receive(lanState({ networkBusy: true }));
+  assert.equal(e['invite-lifetime-confirm'].disabled, true); e['invite-lifetime-confirm'].onclick();
+  page.receive(lanState({ connection: { state: 'connecting' } }));
+  assert.equal(e['invite-lifetime-confirm'].disabled, true); e['invite-lifetime-confirm'].onclick();
+  page.receive(lanState()); assert.equal(e['invite-lifetime-confirm'].disabled, false);
+  chooseLifetime(page, 'invalid'); e['invite-lifetime-confirm'].onclick();
+  assert.equal(page.sent.some(m => m.type === 'share'), false);
+  chooseLifetime(page, '1d'); e['invite-lifetime-confirm'].onclick();
+  assert.equal(page.sent.at(-1).inviteLifetime, '1d');
+});
+
+test('native LAN invitation copy waits for a matching successful clipboard acknowledgement', () => {
+  const page = browser({ nativeCopy: 'manual' }), r = room();
+  r.inviteUrl = 'http://192.168.40.20:47830/#room=11111111-1111-4111-8111-111111111111&invite=' + 'A'.repeat(43);
+  page.receive({ type: 'state', rooms: [r] });
+  page.click('复制邀请');
+  assert.equal(page.elements.notice.textContent, '正在复制邀请…');
+  assert.match(page.copyRequests[0].requestId, /^copy-\d+$/);
+  assert.equal(page.copyRequests[0].url, r.inviteUrl);
+  assert.equal(page.copyTimeouts.size, 1);
+  page.acknowledgeCopy(true);
+  assert.equal(page.elements.notice.textContent, '邀请链接已复制');
+  assert.equal(page.copyTimeouts.size, 0);
+});
+
+test('native copy rejection selects the currently rendered invitation for manual copying', () => {
+  const page = browser({ nativeCopy: 'manual' }), r = room();
+  page.receive({ type: 'state', rooms: [r] }); page.click('复制邀请');
+  const previous = page.nodes().find(node => node.tag === 'input' && node.className === 'link');
+  page.receive({ type: 'state', rooms: [r] });
+  const current = page.nodes().find(node => node.tag === 'input' && node.className === 'link');
+  assert.notEqual(current, previous);
+  page.acknowledgeCopy(false);
+  assert.equal(current.focused, true); assert.equal(current.selected, true);
+  assert.equal(previous.selected, undefined);
+  assert.equal(page.elements.notice.textContent, '请手动复制链接');
+  assert.equal(page.copyTimeouts.size, 0);
+});
+
+test('a throwing native bridge falls back immediately instead of reporting a successful copy', () => {
+  const page = browser({ nativeCopy: 'throw' }); page.receive({ type: 'state', rooms: [room()] }); page.click('复制邀请');
+  assert.equal(page.copyRequests.length, 1); assert.equal(page.copies.length, 0);
+  assert.equal(page.elements.notice.textContent, '请手动复制链接');
+  assert.equal(page.nodes().find(node => node.tag === 'input' && node.className === 'link').selected, true);
+  assert.equal(page.copyTimeouts.size, 0);
+});
+
+test('superseded and timed-out native copy acknowledgements cannot overwrite the latest result', () => {
+  const page = browser({ nativeCopy: 'manual' }); page.receive({ type: 'state', rooms: [room()] });
+  page.click('复制邀请'); const oldRequest = page.copyRequests[0];
+  page.click('复制邀请'); const currentRequest = page.copyRequests[1];
+  assert.notEqual(oldRequest.requestId, currentRequest.requestId);
+  assert.equal(page.copyTimeouts.size, 1);
+  page.acknowledgeCopy(true, oldRequest);
+  assert.equal(page.elements.notice.textContent, '正在复制邀请…');
+  page.expireCopies();
+  assert.equal(page.elements.notice.textContent, '请手动复制链接');
+  assert.equal(page.nodes().find(node => node.tag === 'input' && node.className === 'link').selected, true);
+  page.acknowledgeCopy(true, currentRequest);
+  assert.equal(page.elements.notice.textContent, '请手动复制链接');
+  assert.equal(page.copyTimeouts.size, 0);
+});
+
+test('ordinary browser copying still reports actual clipboard success and preserves manual fallback', async () => {
+  const written = [], clipboard = { writeText: async value => { written.push(value); } };
+  const page = browser({ nativeCopy: false, browserClipboard: clipboard }), r = room();
+  page.receive({ type: 'state', rooms: [r] }); page.click('复制邀请');
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(written, [r.inviteUrl]);
+  assert.equal(page.elements.notice.textContent, '邀请链接已复制');
+  clipboard.writeText = async () => { throw new Error('Synthetic clipboard denial'); };
+  page.click('复制邀请'); await new Promise(resolve => setImmediate(resolve));
+  assert.equal(page.elements.notice.textContent, '请手动复制链接');
+  assert.equal(page.nodes().find(node => node.tag === 'input' && node.className === 'link').selected, true);
+  const unsupported = browser({ nativeCopy: false }); unsupported.receive({ type: 'state', rooms: [room()] }); unsupported.click('复制邀请');
+  assert.equal(unsupported.elements.notice.textContent, '请手动复制链接');
+});
+
+test('access scope stays a draft until saved, then locks all entry operations until the server responds', () => {
+  const page = browser(), e = page.elements;
+  const state = { type: 'state', rooms: [], connection: { state: 'local' }, network: network(),
+    history: [{ threadId: 'past', title: 'Synthetic history', lastSharedAt: Date.now() }] };
+  page.receive(state); page.receive({ type: 'threads', threads: [{ id: 'selected', name: 'Synthetic' }] });
+  e['owner-name'].value = 'A';
+  assert.equal(e['network-current'].textContent, '当前：公网分享');
+  assert.equal(e['save-network'].disabled, true);
+  const before = page.sent.length;
+  e['intranet-only'].checked = true; e['intranet-only'].onchange();
+  assert.equal(page.sent.length, before);
+  assert.equal(e['lan-address-row'].hidden, false);
+  assert.equal(e['lan-address'].value, '192.168.40.20');
+  assert.equal(e['network-current'].textContent, '当前：公网分享');
+  assert.ok(e['network-note'].textContent.includes('尚未保存'));
+  e['save-network'].onclick();
+  assert.deepEqual(page.sent.at(-1), { type: 'set-network-mode', intranetOnly: true, lanAddress: '192.168.40.20' });
+  assert.equal(e['save-network'].disabled, true); assert.equal(e['intranet-only'].disabled, true);
+  assert.equal(e.share.disabled, true); assert.equal(e['menu-share'].disabled, true);
+  const saving = page.sent.length;
+  e.share.onclick(); e['check-connection'].onclick(); e['rebuild-relay'].onclick(); e['rebuild-relay'].onclick();
+  page.click('重新分享并复制邀请');
+  assert.equal(page.sent.length, saving);
+  page.receive({ ...state, networkBusy: true });
+  assert.equal(e['intranet-only'].checked, true); assert.equal(e['network-current'].textContent, '当前：公网分享');
+  page.receive({ ...state, network: network({ intranetOnly: true, lanAddress: '192.168.40.20' }), networkBusy: false });
+  page.receive({ type: 'network-result', network: network({ intranetOnly: true, lanAddress: '192.168.40.20' }) });
+  assert.equal(e['network-current'].textContent, '当前：仅内网可访问');
+  assert.equal(e['network-status'].textContent, '访问范围已保存');
+  assert.equal(e.share.disabled, false); assert.equal(e['intranet-only'].disabled, false);
+  e['intranet-only'].checked = false; e['intranet-only'].onchange(); e['save-network'].onclick();
+  assert.deepEqual(page.sent.at(-1), { type: 'set-network-mode', intranetOnly: false });
+});
+
+test('multiple intranet addresses require an explicit choice and failed saves retain the draft for correction', () => {
+  const page = browser(), e = page.elements;
+  const interfaces = [{ name: 'synthetic-en0', address: '192.168.40.20' }, { name: 'synthetic-en1', address: '10.5.0.20' }];
+  page.receive({ type: 'state', rooms: [], network: network({ interfaces }) });
+  e['intranet-only'].checked = true; e['intranet-only'].onchange();
+  assert.equal(e['lan-address'].value, '');
+  e['save-network'].onclick();
+  assert.equal(page.sent.filter(m => m.type === 'set-network-mode').length, 0);
+  assert.ok(e['network-status'].textContent.includes('请选择'));
+  e['lan-address'].value = '10.5.0.20'; e['lan-address'].onchange(); e['save-network'].onclick();
+  assert.equal(page.sent.at(-1).lanAddress, '10.5.0.20');
+  page.receive({ type: 'error', operation: 'set-network-mode', message: 'Synthetic write failure' });
+  assert.equal(e['intranet-only'].checked, true); assert.equal(e['lan-address'].value, '10.5.0.20');
+  assert.equal(e['save-network'].disabled, false); assert.ok(e['network-status'].textContent.includes('未能保存'));
+  page.receive({ type: 'state', rooms: [], network: network() });
+  assert.equal(e['lan-address'].value, '10.5.0.20');
+  assert.ok(e['lan-address'].children.some(option => option.textContent.includes('已不可用')));
+  e['save-network'].onclick();
+  assert.equal(page.sent.filter(m => m.type === 'set-network-mode').length, 1);
+});
+
+test('server access scope synchronizes across windows while drafts remain separate and busy or active shares forbid changes', () => {
+  const page = browser(), e = page.elements;
+  page.receive({ type: 'state', rooms: [], network: network() });
+  page.receive({ type: 'state', rooms: [], network: network({ intranetOnly: true, lanAddress: '192.168.40.20' }) });
+  assert.equal(e['intranet-only'].checked, true);
+  e['intranet-only'].checked = false; e['intranet-only'].onchange();
+  page.receive({ type: 'state', rooms: [], network: network({ intranetOnly: true, lanAddress: '192.168.40.20' }), networkBusy: true });
+  assert.equal(e['intranet-only'].checked, false);
+  assert.equal(e['network-current'].textContent, '当前：仅内网可访问');
+  assert.equal(e['save-network'].disabled, true); assert.equal(e['intranet-only'].disabled, true);
+  const before = page.sent.length; e['save-network'].onclick(); assert.equal(page.sent.length, before);
+  page.receive({ type: 'state', rooms: [room()], network: network({ intranetOnly: true, lanAddress: '192.168.40.20' }) });
+  assert.equal(e['intranet-only'].disabled, true); assert.ok(e['network-note'].textContent.includes('先结束所有共享'));
+  e['save-network'].onclick(); assert.equal(page.sent.length, before);
+  page.receive({ type: 'state', rooms: [], network: network({ intranetOnly: true, lanAddress: '192.168.40.20' }) });
+  assert.equal(e['intranet-only'].disabled, false); assert.equal(e['intranet-only'].checked, false);
+});
+
+test('startup-managed access scope and disconnected managers cannot change the network even through direct handlers', () => {
+  const page = browser(), e = page.elements;
+  page.receive({ type: 'state', rooms: [], network: network({ configurable: false }) });
+  assert.equal(e['intranet-only'].disabled, true); assert.ok(e['network-note'].textContent.includes('启动参数'));
+  e['intranet-only'].checked = true; e['intranet-only'].onchange(); e['save-network'].onclick();
+  assert.equal(e['intranet-only'].checked, false);
+  assert.equal(page.sent.filter(m => m.type === 'set-network-mode').length, 0);
+  page.receive({ type: 'state', rooms: [], network: network() });
+  page.socket.close();
+  assert.equal(e['intranet-only'].disabled, true); assert.equal(e['lan-address'].disabled, true); assert.equal(e['save-network'].disabled, true);
+  e.language.value = 'en'; e.language.onchange();
+  assert.equal(e['intranet-only'].disabled, true); assert.equal(e['save-network'].disabled, true);
+});
+
+test('intranet repair uses intranet labels, preserves its address during language changes and confirms invitation replacement', () => {
+  const page = browser(), e = page.elements;
+  const state = { type: 'state', rooms: [], network: network({ intranetOnly: true, lanAddress: '192.168.40.20' }), connection: { state: 'unavailable' } };
+  page.receive(state);
+  assert.ok(e['public-status'].textContent.includes('内网入口')); assert.ok(!e['public-status'].textContent.includes('公网'));
+  assert.equal(e['rebuild-relay'].textContent, '更新内网入口…');
+  e['check-connection'].onclick(); assert.equal(e.notice.textContent, '正在检查内网连接…');
+  page.receive({ ...state, connection: { state: 'local' } }); page.receive({ type: 'connection-result' });
+  assert.equal(e.notice.textContent, '检查完成，内网入口连接正常');
+  e.language.value = 'en'; e.language.onchange();
+  assert.equal(e['network-current'].textContent, 'Current: intranet access only');
+  assert.equal(e['lan-address'].value, '192.168.40.20');
+  assert.equal(e['rebuild-relay'].textContent, 'Update intranet entry point…');
+  page.receive(state); const before = page.sent.filter(m => m.type === 'rebuild-relay').length;
+  e['rebuild-relay'].onclick(); assert.equal(page.sent.filter(m => m.type === 'rebuild-relay').length, before);
+  assert.ok(e['rebuild-relay'].textContent.includes('Confirm update'));
+  e['rebuild-relay'].onclick(); assert.equal(page.sent.filter(m => m.type === 'rebuild-relay').length, before + 1);
+});
 
 test('sharing limit settings validate drafts, save unlimited and link capacity errors directly to the setting', () => {
   const page = browser(), e = page.elements;
@@ -313,7 +681,7 @@ test('language choice remains available after disconnect without restoring execu
 });
 
 test('history renders as inactive metadata; only a local click restores and copies a fresh invitation', () => {
-  const page = browser(), saved = { threadId: 'old-thread', title: '<script>Saved title</script>', requireApproval: true,
+  const page = browser({ nativeCopy: 'manual' }), saved = { threadId: 'old-thread', title: '<script>Saved title</script>', requireApproval: true,
     ownerName: 'A', lastSharedAt: Date.now() - 10000 };
   page.receive({ type: 'state', rooms: [], history: [saved], connection: { state: 'not-started' } });
   assert.deepEqual(page.sent.map(m => m.type), ['auth', 'threads']);
@@ -325,6 +693,9 @@ test('history renders as inactive metadata; only a local click restores and copi
   assert.equal(page.copies.length, 0);
   page.receive({ type: 'share-result', roomId: fresh.roomId, threadId: saved.threadId, restored: true });
   assert.deepEqual(page.copies, [fresh.inviteUrl]);
+  assert.equal(page.elements.notice.textContent, '正在复制邀请…');
+  page.acknowledgeCopy(true);
+  assert.equal(page.elements.notice.textContent, '邀请链接已复制');
   assert.equal(page.sent.some(m => ['admit', 'approve'].includes(m.type)), false);
 });
 
@@ -651,4 +1022,26 @@ test('native Star preference overrides browser storage and dismissal uses the na
   page.window.receiveCo2AppInfo({ version: '0.3.3', build: '13', channel: 'preview', canUpdate: true, starDismissed: true });
   assert.equal(e['about-star'].hidden, true);
   assert.equal(e['check-update'].disabled, false);
+});
+
+test('About updates and intranet lifetime UI both redraw, while disconnect cancels the invitation without disabling native updates', () => {
+  const page = lifetimePage({ nativeUpdater: true,
+    appInfo: { version: '0.3.3', build: '17', channel: 'preview', canUpdate: true, starDismissed: false } }), e = page.elements;
+  e.share.focus(); e.share.onclick(); chooseLifetime(page, 'permanent');
+  page.window.receiveCo2UpdateState({ phase: 'available', version: '0.3.3', build: '18' });
+  e.language.value = 'en'; e.language.onchange();
+  assert.equal(e['invite-lifetime-dialog'].open, true);
+  assert.equal(selectedLifetime(page), 'permanent');
+  assert.equal(e['invite-lifetime-hint'].textContent, messages.en['不设固定到期时间，需保持应用和共享运行；停止共享、退出应用或更换入口后失效。']);
+  assert.equal(e['check-update-label'].textContent, 'Update to v0.3.3 · Build 18');
+  assert.equal(e['about-version'].textContent, 'Version v0.3.3 · Build 17');
+  page.socket.close();
+  assert.equal(e['invite-lifetime-dialog'].open, false);
+  assert.equal(e['invite-lifetime-confirm'].disabled, true);
+  assert.equal(e['intranet-only'].disabled, true);
+  assert.equal(e['save-network'].disabled, true);
+  assert.equal(e['check-update'].disabled, false);
+  e['check-update'].onclick();
+  assert.deepEqual(page.updates.at(-1), { action: 'install' });
+  assert.equal(page.sent.some(m => ['share', 'reshare'].includes(m.type)), false);
 });

@@ -3,6 +3,7 @@ const i18n = window.Co2I18n, t = i18n.t;
 let activeTab = 'sessions', lastState = null, lastAttached, disconnected = false;
 let connectionAction = '', rebuildArmed = false;
 let shareLimitDirty = false, shareLimitSaving = false, shareLimitStatus = '', shareLimitAlert = null;
+let networkDraft = null, networkDirty = false, networkSaving = false, networkStatus = '';
 let nameHint = '用于新共享会话中的消息署名，1–40 个字符。';
 let noticeState = { text: '正在连接…', tone: 'ready', values: {} };
 const token = new URLSearchParams(location.hash.slice(1)).get('owner');
@@ -16,6 +17,7 @@ const button = (text, fn, cls) => { const b = el('button', t(text), cls); b.oncl
 const labels = { online: '共享中', offline: '连接中断', connecting: '正在连接', revoked: '已停止', pending: '待确认', admitted: '已加入', denied: '已拒绝', processing: '提交中', accepted: '已交给 Agent', rejected: '未采纳', unknown: '结果待核实' };
 const badge = state => { const b = el('span', t(labels[state] || state), 'badge'); b.dataset.state = state; return b; };
 let threads = [], selectedThreadId = '', nextCursor = null, search = '', busyThreadId = '', menuThreadId = '', searchTimer;
+let pendingInviteLifetime = null;
 let renderedThreadRows = [], ownerNameEdited = false;
 const collapsedProjects = new Set(), searchCollapsedProjects = new Set();
 const invitationInputs = new Map();
@@ -24,6 +26,9 @@ const attentionCopy = {
   guest: '访客申请加入', proposal: '协作消息待审批', tool: 'Codex 工具等待审批',
   unknown: '消息提交结果待核实', offline: '共享连接中断', connection: '公网入口不可用', 'share-stopped': '共享已异常结束或到期',
 };
+const intranetMode = () => Boolean(lastState?.network?.intranetOnly);
+const networkWorkBusy = () => networkSaving || Boolean(lastState?.networkBusy);
+const attentionLabel = kind => kind === 'connection' && intranetMode() ? '内网入口不可用' : attentionCopy[kind];
 function openAttention(id) {
   if (!lastState) return false;
   const item = (lastState.attention ?? []).find(item => item.id === id);
@@ -48,12 +53,12 @@ $('#notification-settings').onclick = () => window.webkit?.messageHandlers?.noti
 function renderAttention(m) {
   const items = m.attention ?? [];
   $('#attention').hidden = items.length === 0;
-  $('#attention-summary').textContent = items.length ? t('{count} 项协作提醒 · {latest}', { count: items.reduce((n, item) => n + item.count, 0), latest: t(attentionCopy[items[0].kind]) }) : '';
+  $('#attention-summary').textContent = items.length ? t('{count} 项协作提醒 · {latest}', { count: items.reduce((n, item) => n + item.count, 0), latest: t(attentionLabel(items[0].kind)) }) : '';
   $('#attention-toggle').setAttribute('aria-label', $('#attention-summary').textContent);
   $('#attention-list').replaceChildren(...items.map(item => {
     const row = button('', () => openAttention(item.id), 'attention-entry');
     const room = m.rooms.find(room => room.roomId === item.roomId);
-    row.append(el('strong', t(attentionCopy[item.kind])), el('span', room?.title ?? t('共享连接')), el('span', item.count, 'count'));
+    row.append(el('strong', t(attentionLabel(item.kind))), el('span', room?.title ?? t('共享连接')), el('span', item.count, 'count'));
     return row;
   }));
 }
@@ -219,6 +224,63 @@ $('#save-share-limit').onclick = () => {
   shareLimitDirty = true; shareLimitSaving = true; shareLimitStatus = '正在保存…'; renderShareLimit();
   send({ type: 'set-share-limit', shareLimit });
 };
+function networkChangeBlocked() {
+  return disconnected || ws.readyState !== WebSocket.OPEN || !lastState?.network || !lastState.network.configurable
+    || networkWorkBusy() || Boolean(connectionAction) || lastState.connection?.state === 'connecting'
+    || Boolean(busyThreadId) || Boolean(pendingInviteLifetime) || lastState.rooms.some(room => room.state !== 'revoked');
+}
+function renderNetwork() {
+  const network = lastState?.network;
+  if (!networkDraft || (!networkDirty && !networkSaving)) {
+    networkDraft = { intranetOnly: Boolean(network?.intranetOnly), lanAddress: network?.lanAddress ?? '' };
+  }
+  const candidates = [...new Map((network?.interfaces ?? []).map(item => [item.address, item])).values()];
+  if (networkDraft.intranetOnly && !networkDraft.lanAddress && candidates.length === 1) networkDraft.lanAddress = candidates[0].address;
+  const options = [el('option', t(candidates.length ? '选择内网地址' : '未找到可用内网地址'))]; options[0].value = '';
+  for (const item of candidates) {
+    const option = el('option', `${item.address} (${item.name})`); option.value = item.address; options.push(option);
+  }
+  if (networkDraft.lanAddress && !candidates.some(item => item.address === networkDraft.lanAddress)) {
+    const option = el('option', t('{address}（已不可用）', { address: networkDraft.lanAddress }));
+    option.value = networkDraft.lanAddress; option.disabled = true; options.push(option);
+  }
+  $('#lan-address').replaceChildren(...options); $('#lan-address').value = networkDraft.lanAddress;
+  $('#intranet-only').checked = networkDraft.intranetOnly;
+  $('#lan-address-row').hidden = !networkDraft.intranetOnly;
+  const blocked = networkChangeBlocked();
+  $('#intranet-only').disabled = blocked; $('#lan-address').disabled = blocked;
+  $('#save-network').disabled = blocked || !networkDirty;
+  $('#save-network').setAttribute('aria-busy', String(networkSaving));
+  $('#save-network').textContent = t(networkSaving ? '正在保存…' : '保存访问范围');
+  $('#network-current').textContent = t(!network ? '正在读取访问范围…' : network.intranetOnly ? '当前：仅内网可访问' : '当前：公网分享');
+  $('#network-hint').textContent = t(networkDraft.intranetOnly
+    ? '同事通过内网 IP 加入，不创建公网入口。HTTP 未加密，访客系统通知不可用。'
+    : '使用现有公网分享方式，同事可通过公网邀请加入。');
+  const note = !network ? '正在读取访问范围…'
+    : !network.configurable ? '访问范围由启动参数管理，请退出后调整启动参数。'
+    : networkWorkBusy() || connectionAction || lastState.connection?.state === 'connecting' ? '网络操作进行中，请稍候…'
+    : busyThreadId || lastState.rooms.some(room => room.state !== 'revoked') ? '请先结束所有共享，再更改访问范围。'
+    : networkDirty ? '尚未保存，当前邀请仍沿用已保存的访问范围。'
+    : '保存后用于新邀请并保留。模型与工具的网络访问沿用原会话。';
+  $('#network-note').textContent = t(note); $('#network-status').textContent = t(networkStatus);
+}
+$('#intranet-only').onchange = () => {
+  if (networkChangeBlocked()) { renderNetwork(); return; }
+  networkDraft.intranetOnly = $('#intranet-only').checked; networkDirty = true; networkStatus = ''; renderNetwork();
+};
+$('#lan-address').onchange = () => {
+  if (networkChangeBlocked()) { renderNetwork(); return; }
+  networkDraft.lanAddress = $('#lan-address').value; networkDirty = true; networkStatus = ''; renderNetwork();
+};
+$('#save-network').onclick = () => {
+  if (networkChangeBlocked() || !networkDirty) return;
+  if (networkDraft.intranetOnly && !(lastState.network.interfaces ?? []).some(item => item.address === networkDraft.lanAddress)) {
+    networkStatus = '请选择当前可用的内网地址。'; renderNetwork(); $('#lan-address').focus(); return;
+  }
+  networkSaving = true; networkStatus = '正在保存…'; renderRooms(lastState); updateShare();
+  send({ type: 'set-network-mode', intranetOnly: networkDraft.intranetOnly,
+    ...(networkDraft.intranetOnly ? { lanAddress: networkDraft.lanAddress } : {}) });
+};
 const updateProfileName = () => { $('#profile-name').textContent = $('#owner-name').value.trim() || t('前往设置填写名称'); };
 $('#owner-name').oninput = () => {
   ownerNameEdited = true; updateProfileName();
@@ -237,9 +299,11 @@ $('#require-approval').onchange = () => {
   $('#policy-summary').textContent = t($('#require-approval').checked ? '新消息经你确认后交给 Agent' : '加入后，消息直接交给 Agent');
 };
 const updateShare = () => {
-  $('#share').disabled = ws.readyState !== WebSocket.OPEN || !selectedThreadId || Boolean(busyThreadId);
-  $('#menu-share').disabled = ws.readyState !== WebSocket.OPEN || Boolean(busyThreadId);
+  $('#share').disabled = ws.readyState !== WebSocket.OPEN || !selectedThreadId || Boolean(busyThreadId) || Boolean(pendingInviteLifetime) || networkWorkBusy();
+  $('#menu-share').disabled = ws.readyState !== WebSocket.OPEN || Boolean(busyThreadId) || Boolean(pendingInviteLifetime) || networkWorkBusy();
   $('#share').textContent = t(busyThreadId ? '正在生成邀请…' : '生成邀请 ↗');
+  $('#invite-lifetime-confirm').disabled = disconnected || ws.readyState !== WebSocket.OPEN || Boolean(busyThreadId) || networkWorkBusy() || Boolean(connectionAction) || lastState?.connection?.state === 'connecting';
+  renderNetwork();
 };
 const closeMenu = () => { $('#thread-menu').hidden = true; menuThreadId = ''; };
 function selectThread(id) {
@@ -316,27 +380,87 @@ function renderThreads() {
   $('#threads').replaceChildren(...(groups.length ? groups : [el('p', t(search ? '没有匹配的会话' : '暂无可分享的会话'), 'catalog-empty')]));
   $('#load-more').hidden = nextCursor === null; updateSelection(); updateShare();
 }
+const inviteLifetimeValues = ['1h', '1d', '7d', 'permanent'];
+const selectedInviteLifetime = () => inviteLifetimeValues.find(value => $(`#invite-lifetime-${value}`).checked);
+function renderInviteLifetimeHint() {
+  $('#invite-lifetime-hint').textContent = t(selectedInviteLifetime() === 'permanent'
+    ? '不设固定到期时间，需保持应用和共享运行；停止共享、退出应用或更换入口后失效。'
+    : '到期后自动结束共享，已加入的访客也会断开。');
+}
+function cancelInviteLifetime() {
+  const pending = pendingInviteLifetime;
+  pendingInviteLifetime = null;
+  if ($('#invite-lifetime-dialog').open) $('#invite-lifetime-dialog').close();
+  updateShare();
+  pending?.trigger?.focus();
+}
+function createInvite(request) {
+  busyThreadId = request.threadId; updateShare();
+  notice(request.type === 'reshare' ? '正在重新分享，完成后将复制新邀请…' : '正在接入所选会话并生成邀请…');
+  send(request);
+}
+function chooseInviteLifetime(request) {
+  if (!intranetMode()) { createInvite(request); return; }
+  pendingInviteLifetime = { request, lanAddress: lastState.network.lanAddress,
+    activeRoomIds: new Set(lastState.rooms.filter(room => room.threadId === request.threadId && room.state !== 'revoked').map(room => room.roomId)),
+    trigger: document.activeElement?.id === 'menu-share' ? $('#share') : document.activeElement };
+  for (const value of inviteLifetimeValues) $(`#invite-lifetime-${value}`).checked = value === '1h';
+  renderInviteLifetimeHint(); updateShare();
+  $('#invite-lifetime-dialog').showModal(); $('#invite-lifetime-1h').focus();
+}
+for (const value of inviteLifetimeValues) $(`#invite-lifetime-${value}`).onchange = renderInviteLifetimeHint;
+$('#invite-lifetime-cancel').onclick = cancelInviteLifetime;
+$('#invite-lifetime-dialog').oncancel = event => { event.preventDefault(); cancelInviteLifetime(); };
+$('#invite-lifetime-dialog').onclose = () => { if (pendingInviteLifetime && !$('#invite-lifetime-dialog').open) cancelInviteLifetime(); };
+$('#invite-lifetime-confirm').onclick = () => {
+  if (!pendingInviteLifetime || !intranetMode() || disconnected || ws.readyState !== WebSocket.OPEN || busyThreadId
+    || networkWorkBusy() || connectionAction || lastState?.connection?.state === 'connecting') return;
+  const inviteLifetime = selectedInviteLifetime();
+  if (!inviteLifetimeValues.includes(inviteLifetime)) return;
+  const request = { ...pendingInviteLifetime.request, inviteLifetime };
+  cancelInviteLifetime(); createInvite(request);
+};
 function shareThread(id) {
   closeMenu();
-  if (busyThreadId || ws.readyState !== WebSocket.OPEN || !threads.some(t => t.id === id)) return;
+  if (busyThreadId || pendingInviteLifetime || networkWorkBusy() || ws.readyState !== WebSocket.OPEN || !threads.some(t => t.id === id)) return;
   selectThread(id);
   const ownerName = $('#owner-name').value.trim();
   if (!ownerName || [...ownerName].length > 40 || /[\u0000-\u001f\u007f-\u009f]/u.test($('#owner-name').value)) {
     notice('请先设置 1–40 个字符的显示名称。', 'error'); selectTab('settings'); $('#owner-name').focus(); return;
   }
-  busyThreadId = id; updateShare(); notice('正在接入所选会话并生成邀请…');
-  send({ type: 'share', threadId: id, ownerName, requireApproval: $('#require-approval').checked });
+  chooseInviteLifetime({ type: 'share', threadId: id, ownerName, requireApproval: $('#require-approval').checked });
 }
+let copySequence = 0, pendingInviteCopy = null;
+function manualInviteCopy(url, input) {
+  const current = [...invitationInputs.values()].find(candidate => candidate.value === url) ?? input;
+  current?.focus(); current?.select(); notice('请手动复制链接');
+}
+window.co2InviteCopyResult = result => {
+  if (!result || typeof result.requestId !== 'string' || typeof result.ok !== 'boolean'
+    || result.requestId !== pendingInviteCopy?.requestId) return;
+  const pending = pendingInviteCopy; pendingInviteCopy = null; clearTimeout(pending.timer);
+  if (result.ok) notice('邀请链接已复制');
+  else manualInviteCopy(pending.url, pending.input);
+};
 function copyInvite(url, input) {
-  if (window.webkit?.messageHandlers?.copyInvite) { window.webkit.messageHandlers.copyInvite.postMessage(url); notice('邀请链接已复制'); return; }
-  if (!navigator.clipboard) { input?.select(); notice('请手动复制链接'); return; }
-  navigator.clipboard.writeText(url).then(() => notice('邀请链接已复制')).catch(() => { input?.select(); notice('请手动复制链接'); });
+  if (pendingInviteCopy) { clearTimeout(pendingInviteCopy.timer); pendingInviteCopy = null; }
+  if (window.webkit?.messageHandlers?.copyInvite) {
+    const requestId = `copy-${++copySequence}`;
+    pendingInviteCopy = { requestId, url, input, timer: setTimeout(() => {
+      if (pendingInviteCopy?.requestId !== requestId) return;
+      pendingInviteCopy = null; manualInviteCopy(url, input);
+    }, 3000) };
+    notice('正在复制邀请…');
+    try { window.webkit.messageHandlers.copyInvite.postMessage({ requestId, url }); }
+    catch { window.co2InviteCopyResult({ requestId, ok: false }); }
+    return;
+  }
+  if (!navigator.clipboard) { manualInviteCopy(url, input); return; }
+  navigator.clipboard.writeText(url).then(() => notice('邀请链接已复制')).catch(() => manualInviteCopy(url, input));
 }
 function reshare(threadId) {
-  if (busyThreadId || disconnected || connectionAction || lastState?.connection?.state === 'connecting') return;
-  busyThreadId = threadId; updateShare();
-  notice('正在重新分享，完成后将复制新邀请…');
-  send({ type: 'reshare', threadId });
+  if (busyThreadId || pendingInviteLifetime || networkWorkBusy() || disconnected || ws.readyState !== WebSocket.OPEN || connectionAction || lastState?.connection?.state === 'connecting') return;
+  chooseInviteLifetime({ type: 'reshare', threadId });
 }
 function reshareButton(threadId, cls) {
   const connecting = lastState?.connection?.state === 'connecting';
@@ -344,7 +468,7 @@ function reshareButton(threadId, cls) {
     : connecting ? '入口建立中，稍后可重新分享…'
     : connectionAction === 'check' ? '正在检查连接，请稍候…' : '重新分享并复制邀请';
   const restore = button(label, () => reshare(threadId), cls);
-  restore.disabled = disconnected || Boolean(busyThreadId) || Boolean(connectionAction) || connecting;
+  restore.disabled = disconnected || Boolean(busyThreadId) || Boolean(pendingInviteLifetime) || Boolean(connectionAction) || networkWorkBusy() || connecting;
   restore.setAttribute('aria-busy', String(Boolean(connectionAction) || connecting));
   return restore;
 }
@@ -369,34 +493,43 @@ const connectionLabels = {
   unavailable: '当前网络无法访问公网入口。请先检查连接；重建会使旧邀请失效。',
   stopped: '隧道已退出，旧邀请已停止。请重建入口后重新分享。',
 };
+const intranetConnectionLabels = {
+  recovering: '内网连接波动，正在检查；暂不更换链接',
+  unavailable: '当前内网入口不可用，请检查所选网络地址和网络连接。',
+  stopped: '内网入口已停止，请检查网络后更新入口并重新分享。',
+};
 function renderConnection(m) {
   const state = m.connection?.state;
   const rebuilding = connectionAction === 'rebuild';
-  if (!connectionLabels[state]) rebuildArmed = false;
-  $('#public-connection').hidden = !connectionLabels[state] && !rebuilding;
+  const labels = intranetMode() ? intranetConnectionLabels : connectionLabels;
+  if (!labels[state]) rebuildArmed = false;
+  $('#public-connection').hidden = !labels[state] && !rebuilding;
   $('#public-connection').dataset.state = state || '';
-  $('#public-status').textContent = t(rebuilding ? '入口重建中，稍后可重新分享…' : connectionLabels[state] || '');
-  $('#check-connection').disabled = disconnected || Boolean(connectionAction) || state === 'connecting';
+  $('#public-status').textContent = t(rebuilding
+    ? intranetMode() ? '内网入口更新中，稍后可重新分享…' : '入口重建中，稍后可重新分享…' : labels[state] || '');
+  $('#check-connection').disabled = disconnected || networkWorkBusy() || Boolean(connectionAction) || state === 'connecting';
   const checkLabel = connectionAction === 'check' ? '正在检查…' : '检查连接';
   $('#check-connection').setAttribute('data-i18n', checkLabel);
   $('#check-connection').textContent = t(checkLabel);
   $('#check-connection').setAttribute('aria-busy', String(connectionAction === 'check'));
-  $('#rebuild-relay').disabled = disconnected || Boolean(connectionAction) || Boolean(busyThreadId) || state === 'connecting';
-  const rebuildLabel = rebuilding ? '正在重建…' : rebuildArmed ? '确认重建（旧邀请将失效）' : '重建入口…';
+  $('#rebuild-relay').disabled = disconnected || networkWorkBusy() || Boolean(connectionAction) || Boolean(busyThreadId) || state === 'connecting';
+  const rebuildLabel = intranetMode()
+    ? rebuilding ? '正在更新…' : rebuildArmed ? '确认更新（旧邀请将失效）' : '更新内网入口…'
+    : rebuilding ? '正在重建…' : rebuildArmed ? '确认重建（旧邀请将失效）' : '重建入口…';
   $('#rebuild-relay').setAttribute('data-i18n', rebuildLabel);
   $('#rebuild-relay').textContent = t(rebuildLabel);
   $('#rebuild-relay').setAttribute('aria-busy', String(rebuilding));
 }
 $('#check-connection').onclick = () => {
-  if (disconnected || connectionAction || lastState?.connection?.state === 'connecting') return;
+  if (disconnected || networkWorkBusy() || connectionAction || lastState?.connection?.state === 'connecting') return;
   connectionAction = 'check'; if (lastState) renderRooms(lastState);
-  notice('正在检查公网连接…'); send({ type: 'check-connection' });
+  notice(intranetMode() ? '正在检查内网连接…' : '正在检查公网连接…'); send({ type: 'check-connection' });
 };
 $('#rebuild-relay').onclick = () => {
-  if (disconnected || connectionAction || busyThreadId || lastState?.connection?.state === 'connecting') return;
+  if (disconnected || networkWorkBusy() || connectionAction || busyThreadId || lastState?.connection?.state === 'connecting') return;
   if (!rebuildArmed) { rebuildArmed = true; renderConnection(lastState ?? {}); return; }
   rebuildArmed = false; connectionAction = 'rebuild'; if (lastState) renderRooms(lastState);
-  notice('入口重建中，稍后可重新分享…'); send({ type: 'rebuild-relay' });
+  notice(intranetMode() ? '内网入口更新中，稍后可重新分享…' : '入口重建中，稍后可重新分享…'); send({ type: 'rebuild-relay' });
 };
 ws.onopen = () => {
   if (!token) { notice('缺少本机管理凭据，请重新打开助手生成的管理链接。', 'error'); ws.close(); return; }
@@ -408,7 +541,8 @@ const disableDisconnectedControls = () => {
   });
 };
 ws.onclose = () => {
-  disconnected = true; closeMenu(); notice('本地助手已断开，请从菜单栏重新连接。', 'error');
+  disconnected = true; closeMenu(); cancelInviteLifetime(); notice('本地助手已断开，请从菜单栏重新连接。', 'error');
+  renderNetwork();
   disableDisconnectedControls();
 };
 ws.onerror = () => notice('无法连接本地助手', 'error');
@@ -463,6 +597,7 @@ ws.onmessage = event => {
   if (m.type === 'error') {
     if (['share', 'reshare'].includes(m.operation)) { busyThreadId = ''; updateShare(); }
     if (['check-connection', 'rebuild-relay'].includes(m.operation)) connectionAction = '';
+    if (m.operation === 'set-network-mode') { networkSaving = false; networkStatus = '访问范围未能保存，请重试。'; }
     if (lastState) renderRooms(lastState);
     if (m.operation === 'set-share-limit') { shareLimitSaving = false; shareLimitStatus = '共享上限未能保存，请重试。'; }
     if (m.code === 'SHARE_LIMIT_REACHED') shareLimitAlert = { limit: m.values.limit };
@@ -472,11 +607,16 @@ ws.onmessage = event => {
     shareLimitDirty = false; shareLimitSaving = false; shareLimitAlert = null; shareLimitStatus = '共享上限已保存';
     renderShareLimit(m.settings); notice('共享上限已保存'); return;
   }
+  if (m.type === 'network-result') {
+    networkDirty = false; networkSaving = false; networkDraft = null; networkStatus = '访问范围已保存';
+    if (lastState) { lastState = { ...lastState, network: m.network }; renderRooms(lastState); }
+    notice('访问范围已保存'); return;
+  }
   if (m.type === 'connection-result') {
     connectionAction = ''; if (lastState) renderRooms(lastState);
-    if (m.rebuilt) notice('入口已重建，请从分享历史重新分享并发送新邀请');
-    else if (['online', 'local'].includes(lastState?.connection?.state)) notice('检查完成，公网入口连接正常');
-    else notice('检查完成，公网入口仍不可用，请检查网络或重建入口。', 'error');
+    if (m.rebuilt) notice(intranetMode() ? '内网入口已更新，请重新分享并发送新邀请' : '入口已重建，请从分享历史重新分享并发送新邀请');
+    else if (['online', 'local'].includes(lastState?.connection?.state)) notice(intranetMode() ? '检查完成，内网入口连接正常' : '检查完成，公网入口连接正常');
+    else notice(intranetMode() ? '检查完成，内网入口仍不可用，请检查网络或更新入口。' : '检查完成，公网入口仍不可用，请检查网络或重建入口。', 'error');
     return;
   }
   if (m.type === 'share-result') {
@@ -504,6 +644,13 @@ ws.onmessage = event => {
 };
 function renderRooms(m) {
   lastState = m;
+  if (pendingInviteLifetime && (!intranetMode() || pendingInviteLifetime.lanAddress !== m.network.lanAddress)) {
+    cancelInviteLifetime(); notice('访问范围已变更，请重新生成邀请。');
+  }
+  if (pendingInviteLifetime && m.rooms.some(room => room.threadId === pendingInviteLifetime.request.threadId && room.state !== 'revoked' && !pendingInviteLifetime.activeRoomIds.has(room.roomId))) {
+    cancelInviteLifetime(); notice('此会话已在共享，请在「共享会话」中查看邀请。');
+  }
+  updateShare();
   renderShareLimit(m.settings);
   attentionTargets.clear(); renderAttention(m);
   renderConnection(m);
@@ -559,9 +706,17 @@ function renderRooms(m) {
       policy.setAttribute('aria-label', t('{title}：{action}消息审批', { title: room.title, action: t(room.requireApproval ? '关闭' : '开启') }));
       policy.disabled = room.state !== 'online';
       policyRow.append(policyTitle, policy); $('#room-policies').append(policyRow);
-      invite.append(row, el('p', t('有效至 {time} · 包含本会话中已展示的文本记录', { time: new Date(room.expiresAt).toLocaleTimeString(i18n.language) }), 'muted'));
-      if (room.renewalSupported === true) invite.append(el('p', t('连接正常时自动续期'), 'muted'));
-      else if (room.renewalSupported === false) invite.append(el('p', t('当前中继不支持自动续期'), 'muted'));
+      invite.append(row);
+      if (room.intranetOnly === true) {
+        invite.append(el('p', room.inviteExpiresAt === null
+          ? t('不设固定到期时间 · 包含本会话中已展示的文本记录')
+          : t('有效至 {time} · 到期后自动结束共享', { time: new Date(room.inviteExpiresAt).toLocaleString(i18n.language) }), 'muted'));
+        if (room.inviteExpiresAt === null) invite.append(el('p', t('不设固定到期时间，需保持应用和共享运行；停止共享、退出应用或更换入口后失效。'), 'muted'));
+      } else {
+        invite.append(el('p', t('有效至 {time} · 包含本会话中已展示的文本记录', { time: new Date(room.expiresAt).toLocaleTimeString(i18n.language) }), 'muted'));
+        if (room.renewalSupported === true) invite.append(el('p', t('连接正常时自动续期'), 'muted'));
+        else if (room.renewalSupported === false) invite.append(el('p', t('当前中继不支持自动续期'), 'muted'));
+      }
       section.append(invite);
     }
     const body = el('div', null, 'room-body');
@@ -590,6 +745,7 @@ function updateLanguage() {
   i18n.apply(); $('#language').value = i18n.language;
   selectTab(activeTab); updateProfileName(); $('#name-hint').textContent = t(nameHint);
   $('#require-approval').onchange(); updateShare(); updateThreadHint();
+  renderInviteLifetimeHint();
   renderShareLimit();
   renderAbout();
   if (threads.length || lastAttached !== undefined) {

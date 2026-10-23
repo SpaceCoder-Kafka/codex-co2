@@ -175,6 +175,10 @@ h3 { font-size: 13px; font-weight: 600; }
 .share-limit-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .share-limit-controls input { width: 96px; }
 #share-limit-status { margin-top: 12px; font-size: 12px; }
+.network-address { margin-top: 20px; }
+.network-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-top: 16px; }
+.network-actions .muted { font-size: 12px; }
+#network-note:empty { display: none; }
 .share-limit-alert { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; flex-shrink: 0; margin-bottom: 18px; padding: 12px 16px; border: 1px solid #efcfac; border-radius: 12px; background: #fff7e9; font-size: 12px; }
 #share-limit-setting:focus-within { border-color: #a9cbff; }
 .switch { appearance: none; -webkit-appearance: none; width: 36px; height: 22px; border: 0; padding: 3px; flex-shrink: 0; background: #d7d7de; border-radius: 20px; cursor: pointer; transition: background .15s; }
@@ -232,6 +236,19 @@ h3 { font-size: 13px; font-weight: 600; }
 .thread-menu { position: fixed; z-index: 10; width: 160px; padding: 5px; background: white; border: 1px solid #e3e3e8; box-shadow: 0 7px 30px #171b2e22; border-radius: 10px; }
 .thread-menu button { justify-content: flex-start; width: 100%; border-radius: 6px; background: transparent; }
 .thread-menu button:hover { background: var(--surface); }
+.invite-lifetime-dialog { width: 400px; max-width: calc(100vw - 32px); max-height: calc(100vh - 32px); padding: 26px; border: 1px solid var(--border); border-radius: 16px; color: #111; background: white; box-shadow: 0 14px 60px #171b2e33; }
+.invite-lifetime-dialog::backdrop { background: #171b2e55; }
+.invite-lifetime-dialog h2 { font-size: 18px; margin-bottom: 8px; }
+.invite-lifetime-choices { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 22px 0 0; padding: 0; border: 0; }
+.invite-lifetime-choices legend { margin-bottom: 8px; font-size: 12px; font-weight: 550; }
+.invite-lifetime-choice { display: flex; align-items: center; gap: 8px; min-height: 42px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); font-size: 12px; cursor: pointer; }
+.invite-lifetime-choice:has(input:checked) { border-color: #9fc2f4; background: #edf4ff; }
+.invite-lifetime-choice input { width: 15px; height: 15px; margin: 0; padding: 0; flex-shrink: 0; accent-color: var(--blue); }
+.invite-lifetime-permanent-option { position: relative; }
+.invite-permanent-tooltip { position: absolute; z-index: 1; right: 0; bottom: calc(100% + 8px); width: 240px; max-width: calc(100vw - 70px); padding: 10px 12px; border-radius: 8px; background: #26262b; color: white; font-size: 11px; line-height: 1.6; font-weight: 400; box-shadow: 0 3px 12px #171b2e33; visibility: hidden; }
+.invite-lifetime-permanent-option:hover .invite-permanent-tooltip, .invite-lifetime-permanent-option:focus-within .invite-permanent-tooltip { visibility: visible; }
+.invite-lifetime-dialog #invite-lifetime-hint { min-height: 44px; margin-top: 10px; }
+.invite-lifetime-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 22px; }
 @media (min-width: 1350px) { main { padding: 40px; } .sidebar { width: 168px; } .session-layout { grid-template-columns: minmax(0, 1fr) 300px; gap: 32px; } .overview { grid-template-columns: minmax(0, 1fr) 150px 150px; } }
 @media (max-width: 1100px) { main { padding: 26px; } .sidebar { width: 152px; padding-left: 10px; padding-right: 10px; } .nav-tab { padding: 10px; font-size: 11px; } .nav-tab[aria-selected="true"]::before { left: -10px; } .session-layout { grid-template-columns: minmax(0, 1fr) 238px; gap: 20px; } .overview { grid-template-columns: minmax(0, 1fr) 102px 102px; } .welcome { padding: 18px; } .welcome h2 { font-size: 18px; } .collaboration-art { width: 95px; } .stat { padding: 16px; } .stat > svg, .stat-avatar { right: 12px; width: 15px; } .selection-card { padding: 18px; } .thread-date { display: none; } }
 @media (max-width: 900px) { .sidebar { width: 84px; align-items: center; padding: 26px 10px; } .brand { margin-left: 0; font-size: 25px; } .brand span { font-size: 21px; } .nav-tabs { width: 100%; } .nav-tab { flex-direction: column; gap: 7px; padding: 12px 0; font-size: 9px; } .nav-count { position: absolute; right: 7px; top: 5px; } .sidebar-caption { display: none; } main { padding: 24px; } .page-header { margin-bottom: 22px; gap: 18px; } .page-header > div:first-child > .eyebrow { font-size: 8px; letter-spacing: .8px; } .connection { max-width: 160px; font-size: 9px; } h1 { font-size: 27px; } .overview { grid-template-columns: minmax(0, 1fr) 90px 90px; gap: 10px; margin-bottom: 22px; } .welcome h2 { font-size: 17px; } .collaboration-art { display: none; } .welcome { min-height: 112px; padding: 16px; } .stat { padding: 14px; } .stat strong { font-size: 29px; } .stat > span { font-size: 9px; } .stat > svg, .stat-avatar { display: none; } .session-layout { grid-template-columns: minmax(0, 1fr) 216px; gap: 18px; } .thread-row { padding-left: 10px; gap: 8px; } .thread-pick { gap: 9px; } .thread-mark { width: 32px; height: 32px; font-size: 14px; } .thread-pick strong { font-size: 12px; } .selection-card { padding: 16px; } .selection-card h2 { font-size: 15px; } .guide-card { padding-top: 20px; } .room-body { grid-template-columns: 1fr; gap: 20px; } .group + .group { border-left: 0; border-top: 1px solid var(--border); padding: 20px 0 0; } }
@@ -261,4 +278,4 @@ select:focus-visible { outline: 3px solid #a9cbff; outline-offset: 3px; }
 :root[lang="en"] .selection-meta { flex-wrap: wrap; }
 :root[lang="en"] .guide-card > div { font-size: 10px; }
 @media (max-width: 900px) { :root[lang="en"] .nav-tab { font-size: 9px; padding-inline: 4px; } :root[lang="en"] .nav-tab > span:not(.nav-count) { text-align: center; } :root[lang="en"] .welcome h2 { font-size: 16px; } }
-@media (max-width: 680px) { .settings-row select { width: 150px; } }
+@media (max-width: 680px) { .settings-row select { width: 150px; } .network-address { flex-wrap: wrap; } .network-address select { width: 100%; } }
