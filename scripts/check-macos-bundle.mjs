@@ -110,8 +110,9 @@ try {
     const binary = path.join(resources, 'runtime', name);
     const actual = execFileSync(binary, ['--version'], { env, encoding: 'utf8' }).trim();
     if (!actual.startsWith(expected)) throw new Error(`Version mismatch: ${name}`);
-    const linked = execFileSync('/usr/bin/otool', ['-L', binary], { encoding: 'utf8' }).split('\n').slice(1).filter(Boolean);
-    if (linked.some(line => !/^\s+\/(usr\/lib|System\/Library)\//.test(line))) throw new Error(`External dependency: ${name}`);
+    // inspectMacOSBinary above already checks dependencies independently for
+    // every slice. Unqualified `otool -L` adds a heading per architecture;
+    // treating its second heading as a dylib would reject valid fat binaries.
   }
   execFileSync('/usr/bin/codesign', ['--verify', '--deep', '--strict', app], { stdio: 'pipe' });
 } finally { await fs.rm(temporaryHome, { recursive: true, force: true }); }

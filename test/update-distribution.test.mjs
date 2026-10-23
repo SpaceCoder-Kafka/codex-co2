@@ -107,6 +107,14 @@ test('native inspection requires both slices and evaluates dependencies and depl
   assert.doesNotThrow(() => inspectMacOSBinary('/synthetic/app', { execute: inspectionTool({ library: '@rpath/Sparkle.framework/Versions/B/Sparkle' }), embeddedSparkle: true }));
 });
 
+test('an external dependency present only in the Intel slice still rejects a Universal runtime', () => {
+  const systemOnly = inspectionTool(), external = inspectionTool({ library: '/opt/local/lib/unbundled.dylib' });
+  assert.throws(() => inspectMacOSBinary('/synthetic/universal-node', { execute: (binary, args) => {
+    if (args.includes('-L') && args[1] === 'x86_64') return external(binary, args);
+    return systemOnly(binary, args);
+  } }), /Non-system dylib dependency.*x86_64/);
+});
+
 test('framework inspection includes nested Mach-O helpers and rejects a missing Intel helper slice', () => temporary(async directory => {
   const main = path.join(directory, 'Versions/B/Sparkle'), helper = path.join(directory, 'Versions/B/XPCServices/Installer.xpc/Contents/MacOS/Installer');
   for (const file of [main, helper]) { await fs.mkdir(path.dirname(file), { recursive: true }); await fs.writeFile(file, Buffer.from('cafebabe00000000', 'hex')); }

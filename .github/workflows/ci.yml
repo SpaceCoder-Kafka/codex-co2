@@ -92,7 +92,9 @@ jobs:
       - name: Run Windows application policy fixtures
         run: |
           $co2PolicyRoot = Join-Path $env:RUNNER_TEMP 'co2-policy-fixtures'
-          dotnet run --project windows/PolicyTests/PolicyTests.csproj --configuration Release "-p:BaseIntermediateOutputPath=$co2PolicyRoot/obj/" "-p:BaseOutputPath=$co2PolicyRoot/bin/"
+          dotnet build windows/PolicyTests/PolicyTests.csproj --configuration Release --output "$co2PolicyRoot/bin" "-p:BaseIntermediateOutputPath=$co2PolicyRoot/obj/"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          dotnet (Join-Path $co2PolicyRoot 'bin/PolicyTests.dll')
       - name: Build Windows preview with bundled runtime
         run: npm run build:windows
       - name: Verify Windows package provenance and PE architecture
