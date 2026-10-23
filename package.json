@@ -23,6 +23,8 @@
     "demo": "node bin/share.mjs demo",
     "build:macos": "node scripts/build-macos.mjs",
     "check:macos": "node scripts/check-macos-bundle.mjs",
+    "build:windows": "node scripts/build-windows.mjs",
+    "check:windows": "node scripts/check-windows-bundle.mjs",
     "updates:key": "node scripts/setup-update-key.mjs",
     "updates:prepare": "node scripts/prepare-update.mjs",
     "test:integration:required": "node scripts/test-integration.mjs",

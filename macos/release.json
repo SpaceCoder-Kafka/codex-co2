@@ -1,5 +1,5 @@
 {
-  "build": "17",
+  "build": "18",
   "channel": "preview",
   "repository": "SpaceCoder-Kafka/codex-co2",
   "feedURL": "https://raw.githubusercontent.com/SpaceCoder-Kafka/codex-co2/updates/appcast.xml",

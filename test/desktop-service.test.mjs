@@ -9,12 +9,12 @@ import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { setTimeout as delay } from 'node:timers/promises';
 
-async function fixture(t, { ipc = false, attach = true } = {}) {
+async function fixture(t, { ipc = false, attach = true, parentReady = false } = {}) {
   const root = await fs.mkdtemp('/tmp/co2-helper-');
   const runtimeDir = path.join(root, '.coop');
   const resourceRoot = process.env.CO2_TEST_RESOURCE_ROOT ?? fileURLToPath(new URL('../', import.meta.url));
   const cloudflared = path.join(root, 'cloudflared');
-  await fs.writeFile(cloudflared, '#!/bin/sh\nif [ "$1" = --version ]; then echo "cloudflared version 2026.10.1 (synthetic)"; exit 0; fi\nexit 99\n', { mode: 0o700 });
+  await fs.writeFile(cloudflared, '#!/bin/sh\nif [ "$1" = --version ]; then touch "$0.version"; echo "cloudflared version 2026.10.1 (synthetic)"; exit 0; fi\nexit 99\n', { mode: 0o700 });
   const requests = [], sockets = new Set();
   let server;
   if (ipc) {
@@ -41,7 +41,7 @@ async function fixture(t, { ipc = false, attach = true } = {}) {
     await fs.chmod(path.join(directory, 'ipc.sock'), 0o600);
   }
   const child = spawn(process.execPath, [path.join(resourceRoot, 'bin/desktop-service.mjs'), '--runtime-dir', runtimeDir,
-    '--resource-root', resourceRoot, '--cloudflared', cloudflared, ...(attach ? ['--attach'] : [])], {
+    '--resource-root', resourceRoot, '--cloudflared', cloudflared, ...(attach ? ['--attach'] : []), ...(parentReady ? ['--parent-ready'] : [])], {
     env: { HOME: root, PATH: '/usr/bin:/bin', LANG: 'en_US.UTF-8', CODEX_COOP_CLI: '/missing/codex' },
     stdio: ['pipe', 'pipe', 'pipe'],
   });
@@ -71,7 +71,7 @@ async function fixture(t, { ipc = false, attach = true } = {}) {
     }
     throw new Error('Helper response timeout');
   };
-  return { root, runtimeDir, child, exited, requests, messages, waitFor, get stderr() { return stderr; } };
+  return { root, runtimeDir, cloudflared, child, exited, requests, messages, waitFor, get stderr() { return stderr; } };
 }
 
 test('packaged helper attaches without a CLI and never creates an isolated backend or home', { timeout: 10000 }, async t => {
@@ -105,4 +105,29 @@ test('isolated helper still requires an explicit CLI instead of using a global f
   assert.notEqual((await f.exited)[0], 0);
   assert.match(f.stderr, /requires an absolute CLI path/);
   await assert.rejects(fs.stat(f.runtimeDir), { code: 'ENOENT' });
+});
+
+test('manager lifecycle gate prevents runtime I/O and descendants until the parent contains the helper', { timeout: 10000 }, async t => {
+  const f = await fixture(t, { ipc: true, parentReady: true });
+  await delay(100);
+  assert.deepEqual(f.requests, []);
+  await assert.rejects(fs.stat(f.runtimeDir), { code: 'ENOENT' });
+  await assert.rejects(fs.stat(f.cloudflared + '.version'), { code: 'ENOENT' });
+  f.child.stdin.write('CO2_PARENT_'); await delay(20);
+  await assert.rejects(fs.stat(f.cloudflared + '.version'), { code: 'ENOENT' });
+  f.child.stdin.write('READY\n');
+  await f.waitFor(m => m.type === 'ready');
+  assert.deepEqual(f.requests, ['initialize']);
+  f.child.stdin.write('{"type":"shutdown"}\n');
+  assert.equal((await f.exited)[0], 0);
+});
+
+test('manager lifecycle gate rejects malformed input and parent EOF without starting any runtime', { timeout: 10000 }, async t => {
+  for (const input of ['unexpected\n', '']) {
+    const f = await fixture(t, { parentReady: true });
+    f.child.stdin.end(input);
+    assert.notEqual((await f.exited)[0], 0);
+    await assert.rejects(fs.stat(f.runtimeDir), { code: 'ENOENT' });
+    await assert.rejects(fs.stat(f.cloudflared + '.version'), { code: 'ENOENT' });
+  }
 });

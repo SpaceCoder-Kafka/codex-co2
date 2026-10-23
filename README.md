@@ -76,6 +76,17 @@ The macOS preview attaches to your **already running official Codex Desktop**, k
 - **Guest:** a browser with JavaScript and WebSocket support.
 - **Network:** both participants need access to the generated public address. The default temporary entry uses Cloudflare Quick Tunnels.
 
+### Universal macOS and Windows candidates
+
+The source build now targets these desktop packages; the published Build 17 downloads above remain Apple Silicon packages.
+
+| Package | Target | Acceptance |
+| --- | --- | --- |
+| Universal DMG | macOS 15+; Apple Silicon and Intel | Two native slices; Intel and clean-Mac native acceptance still required |
+| Windows setup EXE and portable ZIP | Windows 10 version 1809+ / Windows 11, x64 | Native Windows Desktop, installation and tool-approval acceptance still required |
+
+Both attach to an already running official Codex Desktop; guests continue to use a browser. Windows uses Microsoft Edge WebView2 Runtime and offers manual updates through the project Releases page. Preview packages remain ad-hoc signed/unnotarized on macOS and unsigned on Windows. Linux packages are not built.
+
 ### New users: install with Homebrew
 
 These steps are for the host. Guests only need to open an invitation in their browser.
@@ -169,12 +180,21 @@ Open the local manager printed by the command. Without `--public`, access stays 
 
 For direct intranet access from source, run `npm run host -- --attach --intranet-only --open`. If multiple private addresses are detected, select the sharing address in the manager or specify a current interface address with `--lan-address 192.168.1.20`. Intranet mode never falls back to public sharing after failure. Check the connection and share again after an address change. Company routing, VPN and Wi-Fi client isolation still determine whether devices can reach each other.
 
-Building needs Apple Silicon macOS, Xcode command line tools, Python 3.9+ and network access:
+Building the Universal DMG needs Apple Silicon or Intel macOS, Xcode command line tools, Python 3.9+ and network access:
 
 ```sh
 npm run build:macos
 npm run check:macos
 ```
+
+For Windows packages, install .NET SDK 8.0.426, Python 3.9+, NSIS 3.13 and npm dependencies, then run:
+
+```sh
+npm run build:windows
+npm run check:windows
+```
+
+The Windows shell is self-contained; users do not need a separate .NET installation. Cross-building creates Windows artifacts but does not establish native Windows acceptance. See [CONTRIBUTING](CONTRIBUTING.md) for tool overrides and checks.
 
 Outputs are in ignored `dist/`. Builds download pinned runtimes, install clean locked production dependencies, include license notices and run local regressions. See [CONTRIBUTING](CONTRIBUTING.md) for developer tests.
 

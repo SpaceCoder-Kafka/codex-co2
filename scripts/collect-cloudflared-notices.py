@@ -13,6 +13,7 @@ import json
 import re
 import sys
 import subprocess
+import shutil
 import urllib.parse
 import zipfile
 
@@ -64,7 +65,10 @@ def fetch(url, cache):
         temporary = target.with_suffix('.download')
         # Bound total transfer time, not just each socket read. Use the same
         # platform TLS/download tool as the macOS build script.
-        subprocess.run(['/usr/bin/curl', '--fail', '--location', '--silent', '--show-error',
+        curl = shutil.which('curl.exe' if sys.platform == 'win32' else 'curl')
+        if not curl:
+            raise RuntimeError('An HTTPS-capable curl executable is required to collect verified notices')
+        subprocess.run([curl, '--fail', '--location', '--silent', '--show-error',
                         '--connect-timeout', '15', '--max-time', '120', '--retry', '2',
                         '--retry-max-time', '180', '--max-filesize', '268435456',
                         '--output', str(temporary), url], check=True, timeout=200)

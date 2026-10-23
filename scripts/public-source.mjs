@@ -6,12 +6,13 @@ import { fileURLToPath } from 'node:url';
 
 export const sourceRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
-const forbiddenPath = /(?:^|\/)(?:\.git|\.coop|node_modules|dist|auth\.json|\.npmrc|\.env(?:\..*)?)(?:\/|$)|\.(?:pem|key|p12|pfx|sqlite(?:-.*)?|db|jsonl|ndjson|har|zip|dmg|log)$/i;
+const forbiddenPath = /(?:^|\/)(?:\.git|\.coop|node_modules|dist|auth\.json|\.npmrc|\.env(?:\..*)?)(?:\/|$)|\.(?:pem|key|p12|pfx|sqlite(?:-.*)?|db|jsonl|ndjson|har|zip|dmg|exe|msi|pdb|nupkg|log)$/i;
 const patterns = [
   ['private key', /-----BEGIN (?:RSA |EC |OPENSSH |DSA )?PRIVATE KEY-----/],
   ['provider credential', /\b(?:sk-(?:proj-|svcacct-)?[A-Za-z0-9_-]{24,}|gh[pousr]_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{30,}|AKIA[0-9A-Z]{16})/],
   ['credential-bearing URL', /https?:\/\/[^\s/:]+:[^\s/@]+@/],
   ['personal absolute path', /\/(?:Users|home)\/[A-Za-z][^\s"'<>]*/],
+  ['personal Windows absolute path', /\b[A-Za-z]:[\\/](?:Users|Documents and Settings)[\\/][A-Za-z][^\s"'<>]*/i],
   ['private documentation reference', /codex-co2-\x64oc/],
 ];
 

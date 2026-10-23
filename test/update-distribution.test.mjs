@@ -4,7 +4,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { createPrivateKey, createPublicKey, randomBytes, sign, verify } from 'node:crypto';
-import { appcastXML, createTestSigningKey, frameworkInventory, previousAppcastItems, releaseConfiguration, updateAssetName } from '../scripts/sparkle-distribution.mjs';
+import { appcastXML, compareMacOSVersions, createTestSigningKey, frameworkBinaryInspection, frameworkInventory, inspectMacOSBinary, previousAppcastItems, releaseConfiguration, updateAssetName } from '../scripts/sparkle-distribution.mjs';
 
 const repository = 'SpaceCoder-Kafka/codex-co2';
 const feedURL = 'https://raw.githubusercontent.com/SpaceCoder-Kafka/codex-co2/updates/appcast.xml';
@@ -76,3 +76,46 @@ test('appcast preserves stable and preview entries while enforcing global build 
   assert.throws(() => previousAppcastItems(old.replace('</item>', '')), /complete/);
   assert.throws(() => appcastXML({ release: stable, minimumMacOS: '15.0', size: 150, signature: 'invalid' }), /metadata/);
 });
+
+test('Universal releases use one compatible update archive while historical ARM entries retain their original URL', () => {
+  const historical = appcastXML({ release: { version: '0.3.3', build: '17', channel: 'preview' }, minimumMacOS: '15.0', size: 100, signature });
+  const release = { version: '0.3.4', build: '18', channel: 'preview', architecture: 'universal' };
+  assert.equal(updateAssetName(release), 'Codex-Co2-0.3.4-build18-universal-preview.dmg');
+  const feed = appcastXML({ release, minimumMacOS: '15.0', size: 200, signature, previousItems: previousAppcastItems(historical) });
+  const items = previousAppcastItems(feed);
+  assert.match(items[0], /build18-universal-preview\.dmg/);
+  assert.match(items[1], /build17-arm64-preview\.dmg/);
+  assert.throws(() => updateAssetName({ ...release, architecture: '../../invalid' }), /architecture/);
+});
+
+function inspectionTool({ architectures = 'arm64 x86_64', minimums = { arm64: '13.0', x86_64: '15.0' }, library = '/usr/lib/libSystem.B.dylib' } = {}) {
+  return (binary, args) => {
+    if (binary.endsWith('/lipo')) return architectures + '\n';
+    if (args.includes('-L')) return `fixture (architecture ${args[1]}):\n\t${library} (compatibility version 1.0.0, current version 1.0.0)\n`;
+    return `Load command 1\n cmd LC_BUILD_VERSION\n minos ${minimums[args[1]]}\n`;
+  };
+}
+
+test('native inspection requires both slices and evaluates dependencies and deployment targets per architecture', () => {
+  const result = inspectMacOSBinary('/synthetic/app', { execute: inspectionTool() });
+  assert.equal(result.slices.arm64.minimumMacOS, '13.0');
+  assert.equal(result.slices.x86_64.minimumMacOS, '15.0');
+  assert.ok(compareMacOSVersions(result.slices.x86_64.minimumMacOS, result.slices.arm64.minimumMacOS) > 0);
+  assert.throws(() => inspectMacOSBinary('/synthetic/app', { execute: inspectionTool({ architectures: 'arm64' }) }), /architectures/);
+  assert.throws(() => inspectMacOSBinary('/synthetic/app', { execute: inspectionTool({ library: '/opt/homebrew/lib/developer.dylib' }) }), /Non-system/);
+  assert.throws(() => inspectMacOSBinary('/synthetic/app', { execute: inspectionTool({ library: '@rpath/Unexpected.framework/Unexpected' }), embeddedSparkle: true }), /Non-system/);
+  assert.doesNotThrow(() => inspectMacOSBinary('/synthetic/app', { execute: inspectionTool({ library: '@rpath/Sparkle.framework/Versions/B/Sparkle' }), embeddedSparkle: true }));
+});
+
+test('framework inspection includes nested Mach-O helpers and rejects a missing Intel helper slice', () => temporary(async directory => {
+  const main = path.join(directory, 'Versions/B/Sparkle'), helper = path.join(directory, 'Versions/B/XPCServices/Installer.xpc/Contents/MacOS/Installer');
+  for (const file of [main, helper]) { await fs.mkdir(path.dirname(file), { recursive: true }); await fs.writeFile(file, Buffer.from('cafebabe00000000', 'hex')); }
+  await fs.writeFile(path.join(directory, 'LICENSE'), 'synthetic license');
+  await fs.symlink('Versions/B/Sparkle', path.join(directory, 'Sparkle'));
+  const binaries = await frameworkBinaryInspection(directory, { execute: inspectionTool() });
+  assert.deepEqual(Object.keys(binaries), ['Versions/B/Sparkle', 'Versions/B/XPCServices/Installer.xpc/Contents/MacOS/Installer']);
+  await assert.rejects(frameworkBinaryInspection(directory, { execute: (binary, args) => {
+    if (binary.endsWith('/lipo') && args.at(-1) === helper) return 'arm64\n';
+    return inspectionTool()(binary, args);
+  } }), /architectures/);
+}));

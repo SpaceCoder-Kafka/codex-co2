@@ -29,3 +29,11 @@ dist/
 coverage/
 __pycache__/
 .venv/
+
+# Windows build outputs stay out of source exports.
+windows/bin/
+windows/obj/
+*.exe
+*.msi
+*.pdb
+*.nupkg

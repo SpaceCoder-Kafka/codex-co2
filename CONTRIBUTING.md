@@ -23,7 +23,7 @@ The required runner fails if the exact backend is unavailable, any integration i
 
 For transport or lifecycle changes run both `npm test` and `npm run test:integration:required`. Preserve conversation authorization across requests, responses, notifications and execution capabilities. Native tool approvals belong to the host. Keep compatibility identifiers and retired SSH cleanup markers intact; host-level SSH sharing is not supported.
 
-For macOS builds use an Apple Silicon Mac, Xcode command line tools and Python 3.9+:
+For Universal macOS builds use an Apple Silicon or Intel Mac, Xcode command line tools and Python 3.9+:
 
 ```sh
 npm run updates:key
@@ -38,10 +38,18 @@ npm run check:macos
 Application build numbers in `macos/release.json` increase globally, including across application versions and channels. After verifying a production bundle, prepare signed update metadata locally:
 
 ```sh
-npm run updates:prepare -- --app "dist/Codex Co².app" --dmg dist/Codex-Co2-0.3.3-build17-arm64-preview.dmg --output dist/appcast.xml --initial
+npm run updates:prepare -- --app "dist/Codex Co².app" --dmg dist/Codex-Co2-0.3.3-build18-universal-preview.dmg --output dist/appcast.xml --initial
 ```
 
 Use `--initial` only for the first feed. Later updates must pass `--previous-feed <previous-signed-appcast.xml>` instead, preserving older channel entries and checking the global build increase. Preparation verifies the DMG, source inventory, embedded bundle and matching signing key, and does not publish anything. Publish matching Release assets first, then the signed feed unchanged as `appcast.xml` on the existing repository's separate `updates` branch. Keep generated appcasts outside the source inventory to avoid a digest cycle. Coordinate `auto_updates true` in the existing Homebrew cask when publishing the first updater-enabled release. Existing Build 12 installations still need one manual upgrade.
+
+Universal builds combine separately verified arm64 and x86_64 main executables, Node and cloudflared. Sparkle and every native helper must also contain both slices. Inspect minimum macOS and linked libraries per slice; the host-native runtime check does not prove the other architecture works. Each cloudflared slice gets its own verified Go module/license inventory. Keep historical ARM appcast items unchanged.
+
+## Windows builds
+
+Use .NET SDK **8.0.426**, NSIS **3.13**, Python 3.9+ and Node.js **22.23.3**. Build a self-contained x64 application, per-user setup EXE and portable ZIP with `npm run build:windows`, then run `npm run check:windows`. The target is Windows 10 version 1809+ and Windows 11; the shell requires Microsoft Edge WebView2 Runtime. Windows packages are unsigned previews and provide manual downloads instead of an unverified automatic updater. Keep private runtime state in `.coop/` with a same-user Windows ACL. The existing Desktop pipe and index must pass ownership/ACL checks before attachment; do not relax these checks to make an incompatible Desktop work.
+
+Cross-builds on macOS require the same .NET SDK and NSIS; generated PE files still need native Windows checks. Neither package verification nor synthetic IPC tests establish real Desktop, native approval or clean-machine acceptance. Windows artifacts carry their own checksums, source inventory and bundled-runtime notices. Do not install over a running app during tests.
 
 After dependency changes, run `npm ci --ignore-scripts`, regenerate notices with `npm run notices:write`, and review license changes. Builds check notices against a fresh lockfile installation.
 

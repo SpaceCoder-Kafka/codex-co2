@@ -72,6 +72,17 @@ https://github.com/user-attachments/assets/b1c2f544-3684-432e-9e03-f32ac15b9370
 
 分享者需要 Apple Silicon Mac 和已运行的官方 Codex Desktop。安装包最低要求 macOS **15.0**；原生检查仅记录于 macOS **26.4.1**、Desktop **26.1007.30912**，其他组合尚未验证。协作者使用支持 JavaScript 和 WebSocket 的浏览器；双方网络需能访问生成的公网地址。
 
+### Universal macOS 与 Windows 候选包
+
+源码构建新增以下桌面产物；上方已发布的 Build 17 下载仍为 Apple Silicon 安装包。
+
+| 安装包 | 目标系统 | 验收范围 |
+| --- | --- | --- |
+| Universal DMG | macOS 15+；Apple Silicon 与 Intel | 包含两种原生架构；Intel 与干净 Mac 原生验收仍待完成 |
+| Windows 安装 EXE 与便携 ZIP | Windows 10 1809+ / Windows 11，x64 | 官方 Desktop、安装与原生工具审批仍待 Windows 验收 |
+
+两端均接入已经运行的官方 Codex Desktop，协作者继续使用浏览器。Windows 使用 Microsoft Edge WebView2 Runtime，通过项目 Releases 页面手动更新。预览包在 macOS 上仍为临时签名、未经公证；Windows 包暂未签名。不构建 Linux 包。
+
 ### 新用户使用（Homebrew）
 
 以下步骤供分享者使用。协作者只需在浏览器打开邀请，无需安装应用。
@@ -163,12 +174,21 @@ npm run host -- --attach --public --open
 
 源码内网直连使用 `npm run host -- --attach --intranet-only --open`。如果检测到多个私网地址，在管理页选择共享地址，或使用 `--lan-address 192.168.1.20` 指定当前网卡地址。内网模式不会在失败后回退公网；网络地址改变后需检查并重新分享。公司路由、VPN 或 Wi-Fi 访客隔离仍决定设备能否互通。
 
-构建另需 Apple Silicon macOS、Xcode 命令行工具、Python 3.9+ 和网络：
+Universal DMG 构建另需 Apple Silicon 或 Intel macOS、Xcode 命令行工具、Python 3.9+ 和网络：
 
 ```sh
 npm run build:macos
 npm run check:macos
 ```
+
+Windows 构建另需 .NET SDK 8.0.426、Python 3.9+、NSIS 3.13 和 npm 依赖：
+
+```sh
+npm run build:windows
+npm run check:windows
+```
+
+Windows 程序内置 .NET 运行时，用户无需另装 .NET。交叉构建能生成 Windows 文件，不能代替 Windows 原生验收。工具路径与验证说明见 [CONTRIBUTING](CONTRIBUTING.md)。
 
 产物位于忽略提交的 `dist/`。构建使用锁文件安装干净依赖，包含第三方声明并运行本地回归。开发测试见 [CONTRIBUTING](CONTRIBUTING.md)。
 

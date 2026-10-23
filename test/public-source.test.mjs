@@ -9,7 +9,7 @@ import { scanPublicFile, publicSource } from '../scripts/public-source.mjs';
 import { npmNotices } from '../scripts/third-party-notices.mjs';
 
 test('public scan rejects private paths and credentials without exposing values', () => {
-  for (const name of ['.coop/state.json', 'dist/app.txt', '.env.local', 'secret.pem', 'capture.har']) {
+  for (const name of ['.coop/state.json', 'dist/app.txt', '.env.local', 'secret.pem', 'capture.har', 'installer.exe', 'app.msi', 'debug.pdb', 'dependency.nupkg']) {
     assert.throws(() => scanPublicFile(name, Buffer.from('synthetic')), /Private export path/);
   }
   const samples = [
@@ -17,6 +17,7 @@ test('public scan rejects private paths and credentials without exposing values'
     'ghp_' + 'x'.repeat(40),
     ['https:', '', 'user:password@example.invalid'].join('/'),
     ['', 'Users', 'synthetic', 'private'].join('/'),
+    ['C:', 'Users', 'synthetic', 'private'].join('\\'),
     ['codex-co2', 'doc'].join('-'),
   ];
   for (const value of samples) {

@@ -6,8 +6,9 @@ permissions:
   contents: read
 jobs:
   synthetic:
+    name: macOS synthetic checks and Universal package
     runs-on: macos-26
-    timeout-minutes: 15
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
@@ -32,3 +33,81 @@ jobs:
           test "$("$co2_test_binary" --version)" = "codex-cli 0.163.0"
           printf 'CODEX_COOP_CLI=%s\n' "$co2_test_binary" >> "$GITHUB_ENV"
       - run: npm run test:integration:required
+      - name: Build Universal preview without replacing an installed application
+        run: npm run build:macos
+      - name: Verify Universal bundle and both native architecture slices
+        run: npm run check:macos
+      - name: Save macOS preview artifacts
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: macos-universal-preview-unnotarized
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            dist/*-universal*.dmg
+            dist/*-universal*.dmg.sha256
+            dist/*-universal*.dmg.source.json
+            dist/RELEASE_NOTES.md
+
+  windows:
+    name: Windows native security checks and x64 package
+    runs-on: windows-2022
+    timeout-minutes: 45
+    env:
+      DOTNET_CLI_HOME: ${{ runner.temp }}/co2-dotnet-home
+      DOTNET_GENERATE_ASPNET_CERTIFICATE: 'false'
+      DOTNET_SKIP_FIRST_TIME_EXPERIENCE: '1'
+      DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+      DOTNET_NOLOGO: '1'
+      CO2_BUILD_PYTHON: python
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6
+        with:
+          dotnet-version: '8.0.426'
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
+        with:
+          python-version: '3.12'
+      - name: Install pinned NSIS packaging tool
+        run: |
+          choco upgrade nsis --version=3.13 --yes --no-progress --allow-downgrade
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $co2Nsis = Join-Path ${env:ProgramFiles(x86)} 'NSIS/makensis.exe'
+          if (!(Test-Path $co2Nsis)) { throw 'Pinned NSIS executable is unavailable' }
+          "CO2_BUILD_NSIS=$co2Nsis" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - run: npm run check:public
+      - run: npm run notices:check
+      - run: python -m unittest discover -s test -p test_cloudflared_notices.py
+      - name: Run Windows application policy fixtures
+        run: |
+          $co2PolicyRoot = Join-Path $env:RUNNER_TEMP 'co2-policy-fixtures'
+          dotnet run --project windows/PolicyTests/PolicyTests.csproj --configuration Release "-p:BaseIntermediateOutputPath=$co2PolicyRoot/obj/" "-p:BaseOutputPath=$co2PolicyRoot/bin/"
+      - name: Build Windows preview with bundled runtime
+        run: npm run build:windows
+      - name: Verify Windows package provenance and PE architecture
+        run: npm run check:windows
+      - name: Check native policy, private ACLs and authenticated synthetic pipe
+        run: |
+          $env:CO2_PLATFORM_BRIDGE = Join-Path $env:GITHUB_WORKSPACE 'dist/windows/CodexCo2/CodexCo2.exe'
+          node --test test/attachment-paths.test.mjs test/platform.test.mjs test/windows-packaging.test.mjs
+      - name: Save Windows preview artifacts
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: windows-x64-preview-unsigned
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            dist/windows/*-windows-x64*-setup.exe
+            dist/windows/*-windows-x64*-setup.exe.sha256
+            dist/windows/*-windows-x64*-setup.exe.source.json
+            dist/windows/*-windows-x64*-portable.zip
+            dist/windows/*-windows-x64*-portable.zip.sha256
+            dist/windows/*-windows-x64*-portable.zip.source.json
+            dist/windows/RELEASE_NOTES.md

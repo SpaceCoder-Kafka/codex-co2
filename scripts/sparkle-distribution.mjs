@@ -13,6 +13,47 @@ export const SPARKLE = Object.freeze({
 });
 export const digest = bytes => createHash('sha256').update(bytes).digest('hex');
 export const validPublicKey = value => typeof value === 'string' && /^[A-Za-z0-9+/]{43}=$/.test(value) && Buffer.from(value, 'base64').length === 32;
+export const MACOS_ARCHITECTURES = Object.freeze(['arm64', 'x86_64']);
+export function compareMacOSVersions(a, b) {
+  const av = a.split('.').map(Number), bv = b.split('.').map(Number);
+  for (let i = 0; i < 3; i++) { const delta = (av[i] ?? 0) - (bv[i] ?? 0); if (delta) return delta; }
+  return 0;
+}
+
+// Inspect every slice independently: a host-native execution or `file` match
+// alone can miss an Intel-only dependency, a newer deployment target, or an
+// architecture missing from a framework helper.
+export function inspectMacOSBinary(binary, { architectures = MACOS_ARCHITECTURES, embeddedSparkle = false, execute = execFileSync } = {}) {
+  const found = execute('/usr/bin/lipo', ['-archs', binary], { encoding: 'utf8' }).trim().split(/\s+/).sort();
+  if (found.join(',') !== [...architectures].sort().join(',')) throw new Error(`Unexpected Mach-O architectures for ${binary}: ${found.join(',')}`);
+  const slices = {};
+  for (const architecture of architectures) {
+    const output = execute('/usr/bin/otool', ['-arch', architecture, '-L', binary], { encoding: 'utf8' });
+    const libraries = output.split('\n').slice(1).filter(line => /^\s+/.test(line)).map(line => line.trim().split(' (')[0]);
+    if (libraries.some(library => !/^\/(usr\/lib|System\/Library)\//.test(library)
+        && !(embeddedSparkle && library === '@rpath/Sparkle.framework/Versions/B/Sparkle'))) throw new Error(`Non-system dylib dependency in ${binary} (${architecture})`);
+    const commands = execute('/usr/bin/otool', ['-arch', architecture, '-l', binary], { encoding: 'utf8' });
+    const minimumMacOS = commands.match(/\bminos\s+([\d.]+)/)?.[1]
+      ?? commands.match(/LC_VERSION_MIN_MACOSX[\s\S]*?\bversion\s+([\d.]+)/)?.[1];
+    if (!minimumMacOS) throw new Error(`Missing minimum macOS in ${binary} (${architecture})`);
+    slices[architecture] = { minimumMacOS, libraries };
+  }
+  return { architectures: [...architectures], slices };
+}
+
+export async function frameworkBinaryInspection(directory, options = {}) {
+  const inventory = await frameworkInventory(directory), binaries = {};
+  for (const [relative, entry] of Object.entries(inventory)) {
+    if (entry.type !== 'file') continue;
+    const file = path.join(directory, relative), handle = await fs.open(file, 'r'), magic = Buffer.alloc(4);
+    let bytesRead;
+    try { ({ bytesRead } = await handle.read(magic, 0, 4, 0)); } finally { await handle.close(); }
+    if (bytesRead !== 4 || ![0xfeedface, 0xfeedfacf, 0xcefaedfe, 0xcffaedfe, 0xcafebabe, 0xbebafeca, 0xcafebabf, 0xbfbafeca].includes(magic.readUInt32BE())) continue;
+    binaries[relative] = inspectMacOSBinary(file, { ...options, embeddedSparkle: true });
+  }
+  if (!Object.keys(binaries).length) throw new Error('Sparkle distribution contains no inspected Mach-O binaries');
+  return binaries;
+}
 
 export async function releaseConfiguration(root, env = process.env) {
   const release = JSON.parse(await fs.readFile(path.join(root, 'macos/release.json'), 'utf8'));
@@ -89,7 +130,10 @@ export async function sparkleDistribution(cache) {
 }
 
 export function updateTag({ version, build, channel }) { return channel === 'preview' ? `v${version}-preview.${build}` : `v${version}`; }
-export function updateAssetName({ version, build, channel }) { return `Codex-Co2-${version}-build${build}-arm64${channel === 'preview' ? '-preview' : ''}.dmg`; }
+export function updateAssetName({ version, build, channel, architecture = 'arm64' }) {
+  if (!['arm64', 'universal'].includes(architecture)) throw new Error('Unsupported macOS release architecture');
+  return `Codex-Co2-${version}-build${build}-${architecture}${channel === 'preview' ? '-preview' : ''}.dmg`;
+}
 export const xmlEscape = value => String(value).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&apos;');
 
 export function appcastXML({ release, minimumMacOS, size, signature, previousItems = [], date = new Date() }) {

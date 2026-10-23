@@ -20,7 +20,7 @@ const app = path.resolve(options.app), dmg = path.resolve(options.dmg), output =
 if (!output.endsWith('.xml') || output === path.resolve(options['previous-feed'] ?? '') || output === dmg || output.startsWith(app + path.sep)) throw new Error('Write the new appcast to a separate .xml file outside the app and previous feed');
 const manifest = JSON.parse(await fs.readFile(path.join(app, 'Contents/Resources/manifest.json'), 'utf8'));
 if (!manifest.updater || Boolean(manifest.updater.testing) !== Boolean(options.testing) || manifest.updater.testing && manifest.distributable !== false) throw new Error('Bundle/update testing mode mismatch; synthetic keys cannot produce a distributable update');
-const release = { version: manifest.version, build: manifest.build, channel: manifest.channel };
+const release = { version: manifest.version, build: manifest.build, channel: manifest.channel, architecture: manifest.architecture };
 if (path.basename(dmg) !== updateAssetName(release)) throw new Error('DMG name does not match the bundle release metadata');
 execFileSync(process.execPath, [path.join(root, 'scripts/check-macos-bundle.mjs'), app, root], { stdio: 'inherit' });
 const checksum = await fs.readFile(dmg + '.sha256', 'utf8'), source = JSON.parse(await fs.readFile(dmg + '.source.json', 'utf8'));

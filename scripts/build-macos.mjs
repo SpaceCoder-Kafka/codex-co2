@@ -7,13 +7,15 @@ import { createHash } from 'node:crypto';
 import { binaryVersion } from '../lib/runtime.mjs';
 import { npmNotices } from './third-party-notices.mjs';
 import { publicSource } from './public-source.mjs';
-import { SPARKLE, createTestSigningKey, frameworkInventory, releaseConfiguration, sparkleDistribution, updateAssetName, xmlEscape } from './sparkle-distribution.mjs';
+import { SPARKLE, MACOS_ARCHITECTURES, compareMacOSVersions, createTestSigningKey, frameworkBinaryInspection, frameworkInventory, inspectMacOSBinary, releaseConfiguration, sparkleDistribution, updateAssetName, xmlEscape } from './sparkle-distribution.mjs';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const source = await publicSource(root);
 const release = await releaseConfiguration(root);
+release.architecture = 'universal';
 const appVersion = release.version, buildNumber = release.build;
 const nodeVersion = '22.23.3', tunnelVersion = '2026.10.1';
 const cache = path.join(root, '.coop/build-cache');
+const universalCache = path.join(cache, 'universal');
 const dist = path.resolve(process.env.CO2_BUILD_DIST ?? path.join(root, 'dist'));
 const app = path.join(dist, 'Codex Co².app');
 const resources = path.join(app, 'Contents/Resources');
@@ -27,13 +29,15 @@ async function download(url, file) {
   run('/usr/bin/curl', ['--fail', '--location', '--retry', '2', '--max-time', '180', '--silent', '--show-error', '--output', temp, url]);
   await fs.rename(temp, file);
 }
-if (process.platform !== 'darwin' || process.arch !== 'arm64') throw new Error('Build requires Apple Silicon macOS');
+if (process.platform !== 'darwin' || !['arm64', 'x64'].includes(process.arch)) throw new Error('Build requires Apple Silicon or Intel macOS');
+if (process.env.CO2_BUILD_CLOUDFLARED) throw new Error('Universal builds require checksum-verified official cloudflared assets for both architectures');
 // A pre-existing failure is still a failure in the app being shipped. Stop
 // before modifying build outputs if any local regression test fails.
 const tests = (await fs.readdir(path.join(root, 'test'))).filter(name => name.endsWith('.test.mjs')).sort();
 run(process.execPath, ['--test', ...tests.map(name => path.join(root, 'test', name))]);
 run(process.env.CO2_BUILD_PYTHON ?? 'python3', ['-m', 'unittest', 'discover', '-s', path.join(root, 'test'), '-p', 'test_cloudflared_notices.py']);
 await fs.mkdir(cache, { recursive: true, mode: 0o700 }); await fs.chmod(path.join(root, '.coop'), 0o700);
+await fs.mkdir(universalCache, { recursive: true, mode: 0o700 });
 await fs.mkdir(dist, { recursive: true });
 const sparkle = await sparkleDistribution(cache);
 if (release.testing && !release.publicKey) {
@@ -41,33 +45,39 @@ if (release.testing && !release.publicKey) {
   release.publicKey = key.publicKey;
   console.log('Building a NON-DISTRIBUTABLE synthetic updater bundle; temporary signing seed remains in the ignored build cache.');
 }
-const archiveName = `node-v${nodeVersion}-darwin-arm64.tar.gz`;
-const archive = path.join(cache, archiveName);
 const sums = path.join(cache, `node-${nodeVersion}-SHASUMS256.txt`);
-await download(`https://nodejs.org/dist/v${nodeVersion}/${archiveName}`, archive);
 await download(`https://nodejs.org/dist/v${nodeVersion}/SHASUMS256.txt`, sums);
-const expected = (await fs.readFile(sums, 'utf8')).split('\n').find(line => line.endsWith(`  ${archiveName}`))?.split(' ')[0];
-if (!expected || sha(await fs.readFile(archive)) !== expected) throw new Error('Official Node archive checksum mismatch');
-run('/usr/bin/tar', ['-xzf', archive, '-C', cache]);
-const nodeDir = path.join(cache, `node-v${nodeVersion}-darwin-arm64`);
-let cloudflared = process.env.CO2_BUILD_CLOUDFLARED;
-let cloudflaredArchiveSHA256;
-if (!cloudflared) {
-  const metadata = path.join(cache, `cloudflared-${tunnelVersion}-release.json`);
-  await download(`https://api.github.com/repos/cloudflare/cloudflared/releases/tags/${tunnelVersion}`, metadata);
-  const release = JSON.parse(await fs.readFile(metadata, 'utf8'));
-  const name = 'cloudflared-darwin-arm64.tgz';
-  const asset = release.assets?.find(item => item.name === name);
-  cloudflaredArchiveSHA256 = asset?.digest?.replace(/^sha256:/, '');
-  if (!/^[a-f0-9]{64}$/.test(cloudflaredArchiveSHA256 ?? '')) throw new Error('Official cloudflared release checksum is unavailable');
-  const archive = path.join(cache, `${tunnelVersion}-${name}`);
-  await download(`https://github.com/cloudflare/cloudflared/releases/download/${tunnelVersion}/${name}`, archive);
-  if (sha(await fs.readFile(archive)) !== cloudflaredArchiveSHA256) throw new Error('Official cloudflared archive checksum mismatch');
-  const extracted = path.join(cache, 'cloudflared-official'); await fs.mkdir(extracted, { recursive: true });
+const metadata = path.join(cache, `cloudflared-${tunnelVersion}-release.json`);
+await download(`https://api.github.com/repos/cloudflare/cloudflared/releases/tags/${tunnelVersion}`, metadata);
+const tunnelRelease = JSON.parse(await fs.readFile(metadata, 'utf8'));
+const runtimeSources = {}, nodeArchiveSHA256 = {}, cloudflaredArchiveSHA256 = {};
+for (const architecture of MACOS_ARCHITECTURES) {
+  const nodeArchitecture = architecture === 'x86_64' ? 'x64' : architecture;
+  const archiveName = `node-v${nodeVersion}-darwin-${nodeArchitecture}.tar.gz`;
+  const archive = path.join(cache, archiveName);
+  await download(`https://nodejs.org/dist/v${nodeVersion}/${archiveName}`, archive);
+  const expected = (await fs.readFile(sums, 'utf8')).split('\n').find(line => line.endsWith(`  ${archiveName}`))?.split(' ')[0];
+  if (!/^[a-f0-9]{64}$/.test(expected ?? '') || sha(await fs.readFile(archive)) !== expected) throw new Error(`Official Node archive checksum mismatch (${architecture})`);
+  nodeArchiveSHA256[architecture] = expected;
+  const extracted = path.join(universalCache, architecture);
+  await fs.rm(extracted, { recursive: true, force: true }); await fs.mkdir(extracted, { recursive: true });
   run('/usr/bin/tar', ['-xzf', archive, '-C', extracted]);
-  cloudflared = path.join(extracted, 'cloudflared');
+  const nodeDirectory = path.join(extracted, `node-v${nodeVersion}-darwin-${nodeArchitecture}`);
+  const name = `cloudflared-darwin-${architecture === 'x86_64' ? 'amd64' : architecture}.tgz`;
+  const asset = tunnelRelease.assets?.find(item => item.name === name);
+  const checksum = asset?.digest?.replace(/^sha256:/, '');
+  if (!/^[a-f0-9]{64}$/.test(checksum ?? '')) throw new Error(`Official cloudflared release checksum is unavailable (${architecture})`);
+  cloudflaredArchiveSHA256[architecture] = checksum;
+  const tunnelArchive = path.join(cache, `${tunnelVersion}-${name}`);
+  await download(`https://github.com/cloudflare/cloudflared/releases/download/${tunnelVersion}/${name}`, tunnelArchive);
+  if (sha(await fs.readFile(tunnelArchive)) !== checksum) throw new Error(`Official cloudflared archive checksum mismatch (${architecture})`);
+  const tunnelDirectory = path.join(extracted, 'cloudflared-official'); await fs.mkdir(tunnelDirectory);
+  run('/usr/bin/tar', ['-xzf', tunnelArchive, '-C', tunnelDirectory]);
+  runtimeSources[architecture] = { nodeDirectory, node: path.join(nodeDirectory, 'bin/node'), cloudflared: path.join(tunnelDirectory, 'cloudflared') };
+  for (const name of ['node', 'cloudflared']) inspectMacOSBinary(runtimeSources[architecture][name], { architectures: [architecture] });
 }
-if (!path.isAbsolute(cloudflared) || !binaryVersion(cloudflared).startsWith(`cloudflared version ${tunnelVersion} `)) throw new Error(`Supply cloudflared ${tunnelVersion} with CO2_BUILD_CLOUDFLARED`);
+const nodeDir = runtimeSources.arm64.nodeDirectory;
+if (!(await fs.readFile(path.join(nodeDir, 'LICENSE'))).equals(await fs.readFile(path.join(runtimeSources.x86_64.nodeDirectory, 'LICENSE')))) throw new Error('Node licenses differ between official architecture archives');
 const licenses = {
   'cloudflared-LICENSE': `https://raw.githubusercontent.com/cloudflare/cloudflared/${tunnelVersion}/LICENSE`,
 };
@@ -119,25 +129,48 @@ await fs.copyFile(path.join(root, 'package.json'), path.join(service, 'package.j
 await fs.copyFile(path.join(nodeDir, 'LICENSE'), path.join(resources, 'Licenses/Node-LICENSE'));
 for (const name of Object.keys(licenses)) await fs.copyFile(path.join(cache, `${tunnelVersion}-${name}`), path.join(resources, 'Licenses', name));
 for (const name of ['LICENSE', 'THIRD_PARTY_NOTICES.md', 'ASSET_PROVENANCE.md']) await fs.copyFile(path.join(root, name), path.join(resources, 'Licenses', name));
-run(process.env.CO2_BUILD_PYTHON ?? 'python3', [path.join(root, 'scripts/collect-cloudflared-notices.py'), cloudflared, path.join(cache, 'go-license-modules'), path.join(resources, 'Licenses/cloudflared-modules')]);
-const binaries = { node: path.join(nodeDir, 'bin/node'), cloudflared };
+const noticeRoot = path.join(resources, 'Licenses/cloudflared-modules'), noticeFiles = {}, noticeModules = new Map(), noticeArchitectures = {};
+for (const architecture of MACOS_ARCHITECTURES) {
+  const destination = path.join(noticeRoot, architecture);
+  run(process.env.CO2_BUILD_PYTHON ?? 'python3', [path.join(root, 'scripts/collect-cloudflared-notices.py'), runtimeSources[architecture].cloudflared, path.join(cache, 'go-license-modules'), destination]);
+  const indexBytes = await fs.readFile(path.join(destination, 'index.json'));
+  const index = JSON.parse(indexBytes);
+  noticeArchitectures[architecture] = { goVersion: index.goVersion, indexSHA256: sha(indexBytes) };
+  noticeFiles[`${architecture}/index.json`] = sha(indexBytes);
+  for (const [name, checksum] of Object.entries(index.files)) noticeFiles[`${architecture}/${name}`] = checksum;
+  for (const module of index.modules) {
+    const key = JSON.stringify([module.module, module.version, module.sum]);
+    const previous = noticeModules.get(key);
+    const notices = Object.fromEntries(Object.entries(module.notices).map(([name, checksum]) => [`${architecture}/${name}`, checksum]));
+    noticeModules.set(key, { ...module, notices: { ...previous?.notices, ...notices } });
+  }
+}
+await fs.copyFile(path.join(noticeRoot, 'arm64/Go-LICENSE'), path.join(noticeRoot, 'Go-LICENSE'));
+noticeFiles['Go-LICENSE'] = sha(await fs.readFile(path.join(noticeRoot, 'Go-LICENSE')));
+await fs.writeFile(path.join(noticeRoot, 'index.json'), JSON.stringify({ architectures: noticeArchitectures, modules: [...noticeModules.values()], files: noticeFiles }, null, 2) + '\n');
+const nativeBinaries = {};
 let minimumMacOS = '13.0';
-const compareVersion = (a, b) => { const av = a.split('.').map(Number), bv = b.split('.').map(Number); for (let i = 0; i < 3; i++) { const delta = (av[i] ?? 0) - (bv[i] ?? 0); if (delta) return delta; } return 0; };
-for (const [name, source] of Object.entries(binaries)) {
-  const target = path.join(runtime, name); await fs.copyFile(source, target); await fs.chmod(target, 0o755);
-  const linked = execFileSync('/usr/bin/otool', ['-L', target], { encoding: 'utf8' }).split('\n').slice(1).filter(Boolean);
-  if (linked.some(line => !/^\s+\/(usr\/lib|System\/Library)\//.test(line))) throw new Error(`${name} has non-system dylib dependencies`);
-  if (!execFileSync('/usr/bin/file', [target], { encoding: 'utf8' }).includes('arm64')) throw new Error(`${name} is not an Apple Silicon binary`);
-  const loadCommands = execFileSync('/usr/bin/otool', ['-l', target], { encoding: 'utf8' });
-  const min = loadCommands.match(/\bminos\s+([\d.]+)/)?.[1] ?? loadCommands.match(/LC_VERSION_MIN_MACOSX[\s\S]*?\bversion\s+([\d.]+)/)?.[1];
-  if (!min) throw new Error(`Cannot determine minimum macOS for ${name}`);
-  if (compareVersion(min, minimumMacOS) > 0) minimumMacOS = min;
+const recordMinimum = inspection => { for (const slice of Object.values(inspection.slices)) if (compareMacOSVersions(slice.minimumMacOS, minimumMacOS) > 0) minimumMacOS = slice.minimumMacOS; };
+for (const name of ['node', 'cloudflared']) {
+  const target = path.join(runtime, name);
+  run('/usr/bin/lipo', ['-create', ...MACOS_ARCHITECTURES.map(architecture => runtimeSources[architecture][name]), '-output', target]);
+  await fs.chmod(target, 0o755);
+  const inspection = inspectMacOSBinary(target); nativeBinaries[`runtime/${name}`] = inspection; recordMinimum(inspection);
   run('/usr/bin/codesign', ['--force', '--sign', '-', '--preserve-metadata=entitlements', target]);
 }
+if (binaryVersion(path.join(runtime, 'node')) !== `v${nodeVersion}` || !binaryVersion(path.join(runtime, 'cloudflared')).startsWith(`cloudflared version ${tunnelVersion} `)) throw new Error('Bundled Universal runtime version mismatch');
+const frameworkBinaries = await frameworkBinaryInspection(path.join(frameworks, 'Sparkle.framework'));
+for (const inspection of Object.values(frameworkBinaries)) recordMinimum(inspection);
 const executable = path.join(app, 'Contents/MacOS/CodexCo2');
-run('/usr/bin/swiftc', ['-O', '-target', `arm64-apple-macos${minimumMacOS}`, '-framework', 'AppKit', '-framework', 'WebKit',
+const appSlices = [];
+for (const architecture of MACOS_ARCHITECTURES) {
+  const slice = path.join(universalCache, architecture, 'CodexCo2'); appSlices.push(slice);
+  run('/usr/bin/swiftc', ['-O', '-target', `${architecture}-apple-macos${minimumMacOS}`, '-framework', 'AppKit', '-framework', 'WebKit',
   '-F', frameworks, '-framework', 'Sparkle', '-Xlinker', '-rpath', '-Xlinker', '@executable_path/../Frameworks',
-  path.join(root, 'macos/App.swift'), path.join(root, 'macos/Updater.swift'), '-o', executable]);
+  path.join(root, 'macos/App.swift'), path.join(root, 'macos/Updater.swift'), '-o', slice]);
+}
+run('/usr/bin/lipo', ['-create', ...appSlices, '-output', executable]);
+nativeBinaries.executable = inspectMacOSBinary(executable, { embeddedSparkle: true });
 await fs.writeFile(path.join(app, 'Contents/Info.plist'), `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
@@ -154,7 +187,7 @@ await fs.writeFile(path.join(app, 'Contents/Info.plist'), `<?xml version="1.0" e
 <key>LSMinimumSystemVersion</key><string>${minimumMacOS}</string><key>NSHighResolutionCapable</key><true/>
 <key>NSAppTransportSecurity</key><dict><key>NSAllowsLocalNetworking</key><true/></dict>
 </dict></plist>\n`);
-await fs.writeFile(path.join(resources, 'PREVIEW.txt'), `Codex Co² — Apple Silicon experimental preview. Requires macOS ${minimumMacOS} or later.\nAd-hoc signed; NOT notarized. Requires official Codex Desktop installed separately and already running.\nNo credentials or conversation data are included. This package only attaches to the existing Desktop; no Codex backend is bundled. Isolated experiments remain available from source.\n`);
+await fs.writeFile(path.join(resources, 'PREVIEW.txt'), `Codex Co² — Universal experimental preview for Apple Silicon and Intel. Requires macOS ${minimumMacOS} or later.\nAd-hoc signed; NOT notarized. Requires official Codex Desktop installed separately and already running.\nNo credentials or conversation data are included. This package only attaches to the existing Desktop; no Codex backend is bundled. Isolated experiments remain available from source.\n`);
 const files = {};
 async function inventory(dir, prefix = '') {
   for (const entry of await fs.readdir(dir, { withFileTypes: true })) {
@@ -165,23 +198,23 @@ async function inventory(dir, prefix = '') {
   }
 }
 await inventory(resources);
-await fs.writeFile(path.join(resources, 'manifest.json'), JSON.stringify({ name: 'Codex Co²', version: appVersion, build: buildNumber, architecture: 'arm64', notarized: false,
+await fs.writeFile(path.join(resources, 'manifest.json'), JSON.stringify({ name: 'Codex Co²', version: appVersion, build: buildNumber, architecture: 'universal', architectures: MACOS_ARCHITECTURES, nativeBinaries, frameworkBinaries, notarized: false,
   channel: release.channel, distributable: !release.testing,
   updater: { version: SPARKLE.version, archiveSHA256: SPARKLE.sha256, feedURL: release.feedURL, publicKey: release.publicKey,
     testing: release.testing, framework: sparkle.files },
   source: { sha256: source.sha256, files: source.files }, cloudflaredSourceSHA256,
-  runtimeMode: 'desktop-attach', minimumMacOS, versions: { node: nodeVersion, cloudflared: tunnelVersion }, nodeArchiveSHA256: expected, cloudflaredArchiveSHA256,
+  runtimeMode: 'desktop-attach', minimumMacOS, versions: { node: nodeVersion, cloudflared: tunnelVersion }, nodeArchiveSHA256, cloudflaredArchiveSHA256,
   licenses, files }, null, 2) + '\n');
 run('/usr/bin/codesign', ['--force', '--sign', '-', app]);
 run('/usr/bin/codesign', ['--verify', '--deep', '--strict', app]);
-const stage = path.join(cache, 'dmg-stage'); await fs.rm(stage, { recursive: true, force: true }); await fs.mkdir(stage);
+const stage = path.join(universalCache, 'dmg-stage'); await fs.rm(stage, { recursive: true, force: true }); await fs.mkdir(stage);
 await fs.cp(app, path.join(stage, 'Codex Co².app'), { recursive: true, verbatimSymlinks: true });
 await fs.symlink('/Applications', path.join(stage, 'Applications'));
 await fs.copyFile(path.join(resources, 'PREVIEW.txt'), path.join(stage, 'PREVIEW.txt'));
 await fs.copyFile(path.join(root, 'macos/INSTALL.html'), path.join(stage, '安装说明.html'));
 await fs.copyFile(path.join(root, 'macos/Open-Privacy-Security.inetloc'), path.join(stage, '打开隐私与安全性.inetloc'));
-const artwork = path.join(cache, 'dmg-artwork');
-const artworkTool = path.join(cache, 'render-installer-artwork');
+const artwork = path.join(universalCache, 'dmg-artwork');
+const artworkTool = path.join(universalCache, 'render-installer-artwork');
 run('/usr/bin/swiftc', ['-O', '-framework', 'AppKit', path.join(root, 'macos/InstallerArtwork.swift'), '-o', artworkTool]);
 run(artworkTool, [stage, artwork]);
 run('/usr/bin/tiffutil', ['-cathidpicheck', path.join(artwork, 'background.png'), path.join(artwork, 'background@2x.png'), '-out', path.join(artwork, 'background.tiff')]);
@@ -203,5 +236,5 @@ await fs.writeFile(dmg + '.sha256', `${sha(await fs.readFile(dmg))}  ${path.base
 const finalSource = await publicSource(root);
 if (finalSource.sha256 !== source.sha256) throw new Error('Source changed during build; do not distribute these outputs');
 await fs.writeFile(dmg + '.source.json', JSON.stringify({ sourceSHA256: source.sha256, files: source.files }, null, 2) + '\n');
-await fs.writeFile(path.join(dist, 'RELEASE_NOTES.md'), `# Codex Co² ${appVersion} (${buildNumber}) — Preview\n\nIndependent experimental project. Apple Silicon; macOS ${minimumMacOS}+. Requires an already running, compatible official Codex Desktop.\n\nAd-hoc signed; not Apple-notarized. No E2EE. Guest messages use the host conversation's existing tools, permissions and allowance. Native tool approvals remain in Desktop.\n\nAssets: ${path.basename(dmg)}, its .sha256 checksum and .source.json source inventory. App licenses are in Contents/Resources/Licenses/.\n\nSource SHA-256: ${source.sha256}\nPublic source commit: pending initial public commit; associate this digest before publishing.\n\nAutomated bundle/synthetic checks do not establish native UI acceptance. Final-package native Desktop, tool approvals, real mobile devices, and clean-Mac browser download/install remain unverified. Enable private vulnerability reporting and configure the real repository/release URL before publication.\n`);
+await fs.writeFile(path.join(dist, 'RELEASE_NOTES.md'), `# Codex Co² ${appVersion} (${buildNumber}) — Preview\n\nIndependent experimental project. Universal (Apple Silicon and Intel); macOS ${minimumMacOS}+. Requires an already running, compatible official Codex Desktop.\n\nAd-hoc signed; not Apple-notarized. No E2EE. Guest messages use the host conversation's existing tools, permissions and allowance. Native tool approvals remain in Desktop.\n\nAssets: ${path.basename(dmg)}, its .sha256 checksum and .source.json source inventory. App licenses are in Contents/Resources/Licenses/.\n\nSource SHA-256: ${source.sha256}\nPublic source commit: associate this source digest with the reviewed public commit before publishing.\n\nAutomated bundle/synthetic checks do not establish native UI acceptance. Final-package native Desktop, tool approvals, Intel and Apple Silicon real machines, real mobile devices, and clean-Mac browser download/install remain unverified.\n`);
 console.log(`Built ${app}\nBuilt ${dmg}\nSource SHA-256: ${source.sha256}`);

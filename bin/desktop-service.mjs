@@ -12,14 +12,42 @@ import { DesktopIpc, desktopIpcPath } from '../lib/desktop-ipc.mjs';
 const { values } = parseArgs({ options: {
   'runtime-dir': { type: 'string' }, 'resource-root': { type: 'string' }, cli: { type: 'string' }, cloudflared: { type: 'string' }, 'desktop-app': { type: 'string' },
   attach: { type: 'boolean' },
+  'parent-ready': { type: 'boolean' },
   'intranet-only': { type: 'boolean' }, 'lan-address': { type: 'string' },
 } });
 for (const key of ['runtime-dir', 'resource-root', 'cloudflared']) if (!path.isAbsolute(values[key] ?? '')) throw new Error('Desktop service requires absolute resource/runtime/binary paths');
 if ((!values.attach || values.cli !== undefined) && !path.isAbsolute(values.cli ?? '')) throw new Error('Isolated Desktop service requires an absolute CLI path');
+if (process.platform === 'win32' && !values.attach) throw new Error('Windows packages require an existing official Desktop; isolated backend startup is unsupported');
+if (values['parent-ready']) {
+  // The Windows manager assigns this child to its kill-on-close job before
+  // releasing this gate. No runtime I/O or descendant process starts first.
+  await new Promise((resolve, reject) => {
+    let buffer = '';
+    const finish = error => {
+      clearTimeout(timer); process.stdin.off('data', data); process.stdin.off('end', ended); process.stdin.off('error', failed);
+      process.stdin.pause(); error ? reject(error) : resolve();
+    };
+    const data = bytes => {
+      buffer += bytes.toString('ascii');
+      if (buffer.length > 64 || buffer.includes('\n') && buffer !== 'CO2_PARENT_READY\n') finish(new Error('Invalid manager lifecycle gate'));
+      else if (buffer === 'CO2_PARENT_READY\n') finish();
+    };
+    const ended = () => finish(new Error('Manager lifecycle gate closed'));
+    const failed = () => finish(new Error('Manager lifecycle gate failed'));
+    const timer = setTimeout(() => finish(new Error('Manager lifecycle gate timed out')), 10000);
+    process.stdin.on('data', data); process.stdin.once('end', ended); process.stdin.once('error', failed);
+  });
+}
 if (!binaryVersion(values.cloudflared).startsWith('cloudflared version 2026.10.1 ')) throw new Error('Expected bundled cloudflared 2026.10.1');
 const appPath = values['desktop-app'] ?? '/Applications/ChatGPT.app';
 const service = new SharingService({ mode: 'host', resourceRoot: values['resource-root'], runtimeDir: values['runtime-dir'],
   cliPath: values.cli, cloudflaredPath: values.cloudflared, lazyPublic: true, appPath, attach: values.attach,
+  ...(process.platform === 'win32' ? { openThread: async threadId => {
+    // Native navigation belongs to the main manager process, outside the
+    // helper's kill-on-close job. Never launch the official Desktop here.
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(threadId)) throw new Error('Invalid Desktop conversation ID');
+    service.emit('resource', { kind: 'desktop-thread', threadId });
+  } } : {}),
   intranetOnly: values['intranet-only'], lanAddress: values['lan-address'] });
 let loginRpc;
 const safeError = message => Object.assign(new Error(message), { safeMessage: message });
@@ -40,7 +68,9 @@ const control = new AppControl({ input: process.stdin, output: process.stdout,
     if (values.attach && type === 'account') return { attached: true };
     if (values.attach && type === 'login') throw safeError('请直接在日常 Codex 中登录，然后重新连接助手。');
     if (values.attach && type === 'open-desktop') {
-      await run('/usr/bin/open', [appPath]); return { ok: true };
+      if (process.platform === 'win32') service.emit('resource', { kind: 'desktop-open' });
+      else await run('/usr/bin/open', [appPath]);
+      return { ok: true };
     }
     if (type === 'account') {
       const rpc = await RpcClient.connect(service.p.socketPath);
@@ -80,3 +110,4 @@ service.on('resource', resource => control.send({ type: 'resource', ...resource 
 for (const signal of ['SIGINT', 'SIGTERM']) process.once(signal, () => void control.close());
 control.once('closed', () => process.exit());
 control.run();
+if (values['parent-ready']) process.stdin.resume();
