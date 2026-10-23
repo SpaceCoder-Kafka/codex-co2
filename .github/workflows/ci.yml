@@ -54,7 +54,6 @@ jobs:
     runs-on: windows-2022
     timeout-minutes: 45
     env:
-      DOTNET_CLI_HOME: ${{ runner.temp }}/co2-dotnet-home
       DOTNET_GENERATE_ASPNET_CERTIFICATE: 'false'
       DOTNET_SKIP_FIRST_TIME_EXPERIENCE: '1'
       DOTNET_CLI_TELEMETRY_OPTOUT: '1'
@@ -68,6 +67,11 @@ jobs:
         with:
           node-version-file: .node-version
           package-manager-cache: false
+      - name: Isolate Windows SDK state
+        run: |
+          $co2DotnetHome = Join-Path $env:RUNNER_TEMP 'co2-dotnet-home'
+          New-Item -ItemType Directory -Force -Path $co2DotnetHome | Out-Null
+          "DOTNET_CLI_HOME=$co2DotnetHome" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
       - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6
         with:
           dotnet-version: '8.0.426'

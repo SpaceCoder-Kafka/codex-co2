@@ -117,7 +117,7 @@ def collect_module(entry, cache, destination):
             target = destination / module / version / relative
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_bytes(content)
-            notices[str(target.relative_to(destination))] = hashlib.sha256(content).hexdigest()
+            notices[target.relative_to(destination).as_posix()] = hashlib.sha256(content).hexdigest()
     return {**entry, 'source': url, 'notices': notices}
 
 

@@ -276,7 +276,13 @@ internal sealed class ManagerWindow : Form
             else if (channel.GetString() == "languagePreference" && body.ValueKind == JsonValueKind.String && body.GetString() is "zh-CN" or "zh-TW" or "en")
             {
                 language = body.GetString()!;
-                File.WriteAllText(Path.Combine(runtime, "windows-settings.json"), JsonSerializer.Serialize(new { language }));
+                var temporary = Path.Combine(runtime, "windows-settings-" + Guid.NewGuid().ToString("N") + ".tmp");
+                try
+                {
+                    PlatformBridge.WritePrivateFile(temporary, Encoding.UTF8.GetBytes(JsonSerializer.Serialize(new { language })));
+                    File.Move(temporary, Path.Combine(runtime, "windows-settings.json"), true);
+                }
+                finally { try { File.Delete(temporary); } catch { } }
             }
             else if (channel.GetString() == "appUpdates" && body.ValueKind == JsonValueKind.Object && body.TryGetProperty("action", out var action))
             {

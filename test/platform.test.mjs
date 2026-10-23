@@ -5,18 +5,23 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
+import { randomUUID } from 'node:crypto';
 import { assertPrivateFile, assertProtectedPath, ensurePrivateDirectory, platformBridgePath,
-  WINDOWS_DESKTOP_PIPE, connectWindowsDesktop } from '../lib/platform.mjs';
+  WINDOWS_DESKTOP_PIPE, connectWindowsDesktop, writePrivateFile } from '../lib/platform.mjs';
 import { desktopIpcPath } from '../lib/desktop-ipc.mjs';
 
 const run = promisify(execFile);
 
 test('private-file checks use synthetic regular files, enforce size and reject aliases', async t => {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'co2-platform-'));
+  // Explicit creation security keeps this synthetic fixture owned by the
+  // current SID even when a Windows CI runner has an elevated default owner.
+  const root = process.platform === 'win32' ? path.join(os.tmpdir(), 'co2-platform-' + randomUUID()) : await fs.mkdtemp(path.join(os.tmpdir(), 'co2-platform-'));
   t.after(() => fs.rm(root, { recursive: true, force: true }));
   await ensurePrivateDirectory(root);
   const file = path.join(root, 'synthetic.json');
-  await fs.writeFile(file, '{}', { mode: 0o600 });
+  await writePrivateFile(file, '{}');
+  await assert.rejects(writePrivateFile(file, 'replacement'), /EEXIST|creation failed/);
+  assert.equal(await fs.readFile(file, 'utf8'), '{}', 'private creation never overwrites an existing file');
   await assertPrivateFile(file, undefined, { maxBytes: 2 });
   await assert.rejects(assertPrivateFile(file, undefined, { maxBytes: 1 }), /私有文件/);
   await assert.rejects(assertPrivateFile(root), /私有文件/);

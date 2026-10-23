@@ -46,6 +46,8 @@ class NoticeTests(unittest.TestCase):
             entry = {'module': 'example.invalid/module', 'version': 'v1.0.0', 'sum': checksum}
             result = notices.collect_module(entry, root, root / 'valid')
             self.assertEqual(len(result['notices']), 2)
+            self.assertIn('example.invalid/module/v1.0.0/LICENSE', result['notices'])
+            self.assertTrue(all('\\' not in name for name in result['notices']))
             self.assertEqual((root / 'valid/example.invalid/module/v1.0.0/LICENSE').read_bytes(), b'Full synthetic license')
             with self.assertRaisesRegex(ValueError, 'checksum mismatch'):
                 notices.collect_module({**entry, 'sum': 'h1:invalid'}, root, root / 'invalid')
