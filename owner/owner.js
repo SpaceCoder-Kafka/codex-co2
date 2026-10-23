@@ -62,11 +62,12 @@ function renderAttention(m) {
     return row;
   }));
 }
-const tabs = ['sessions', 'shared', 'settings'];
+const tabs = ['sessions', 'shared', 'settings', 'about'];
 const tabCopy = {
   sessions: ['选择会话', '共享一条 Codex 会话，一起推进工作。'],
   shared: ['共享会话', '管理正在进行的共享，也可从历史重新分享。'],
   settings: ['设置', '让协作按照你的习惯进行。'],
+  about: ['关于', '了解 Codex Co²，获取最新版本。'],
 };
 function selectTab(name, focus = false) {
   if (!tabs.includes(name)) return;
@@ -94,6 +95,101 @@ for (const [index, tab] of tabs.entries()) {
 }
 // Native Settings menu uses the same navigation, with no additional runtime access.
 window.showCo2Settings = () => selectTab('settings', true);
+window.showCo2About = () => { selectTab('about', true); return true; };
+
+// Update capabilities belong to the native host. Browser clients only receive
+// read-only version metadata; no web request can supply a download URL or path.
+const nativeUpdates = window.webkit?.messageHandlers?.appUpdates;
+let appInfo = window.co2AppInfo ?? null;
+let nativeAppInfoReceived = Boolean(nativeUpdates && appInfo);
+const updatePhases = new Set(['idle', 'checking', 'upToDate', 'available', 'downloading', 'extracting', 'ready', 'installing', 'error']);
+let updateState = updatePhases.has(window.co2UpdateState?.phase) ? window.co2UpdateState : { phase: 'idle' };
+let starDismissed = false;
+try { starDismissed = localStorage.getItem('co2.starDismissed') === 'true'; } catch { /* Native preference is authoritative in the app. */ }
+const updateMessage = {
+  idle: '启动后每天检查新版本，也可随时手动检查。', checking: '正在检查更新…', upToDate: '当前已是最新版本。',
+  available: '发现新版本：{version}', downloading: '正在下载更新…', extracting: '正在校验并准备更新…',
+  ready: '更新已准备就绪。', installing: '正在安装更新，即将重新打开 Codex Co²…', error: '检查更新失败，请检查网络后重试。',
+};
+const versionLabel = (version, build) => `${version ? `v${version}` : t('未知版本')}${build ? ` · Build ${build}` : ''}`;
+function updateAction(action, extra = {}) {
+  if (!nativeUpdates) return false;
+  nativeUpdates.postMessage({ action, ...extra }); return true;
+}
+function openProjectLink(link) {
+  if (!['repository', 'releases'].includes(link)) return;
+  if (updateAction('openLink', { link })) return;
+  window.open?.(`https://github.com/SpaceCoder-Kafka/codex-co2${link === 'releases' ? '/releases' : ''}`, '_blank', 'noopener,noreferrer');
+}
+function renderAbout() {
+  const native = Boolean(nativeUpdates), supported = native && appInfo?.canUpdate === true;
+  const phase = updateState.phase;
+  const available = ['available', 'ready'].includes(phase);
+  const busy = ['checking', 'downloading', 'extracting', 'installing'].includes(phase);
+  const target = versionLabel(updateState.version, updateState.build);
+  $('#about-version').textContent = appInfo?.version ? t('版本 {version}', { version: versionLabel(appInfo.version, appInfo.build) }) : t('正在读取版本…');
+  $('#about-channel').hidden = !appInfo?.channel;
+  $('#about-channel').textContent = t(appInfo?.channel === 'source' ? '源码运行' : appInfo?.channel === 'preview' ? '预览版' : '正式版');
+  $('#about-star').hidden = nativeAppInfoReceived ? appInfo.starDismissed === true : starDismissed;
+  $('#nav-update').hidden = !['available', 'downloading', 'extracting', 'ready', 'installing'].includes(phase);
+  $('#check-update').disabled = !supported || busy;
+  $('#check-update').dataset.update = String(available);
+  $('#check-update').setAttribute('aria-busy', String(busy));
+  $('#check-update-icon').setAttribute('href', available ? '#icon-download' : '#icon-refresh');
+  $('#check-update-label').textContent = available ? t('更新到 {version}', { version: target }) : t(phase === 'checking' ? '正在检查…' : ['downloading', 'extracting', 'installing'].includes(phase) ? '正在更新…' : '检查更新');
+  $('#cancel-update').hidden = !native || !['checking', 'downloading', 'extracting', 'ready'].includes(phase);
+  $('#cancel-update').disabled = false;
+  $('#check-again').hidden = !supported || !available;
+  $('#check-again').disabled = false;
+  $('#about-update-status').dataset.phase = phase;
+  $('#about-update-message').textContent = !native ? t('源码运行不支持应用内更新，请从 GitHub 下载 macOS 安装包。')
+    : t(updateState.message || updateMessage[phase], { version: target });
+  const showProgress = ['downloading', 'extracting'].includes(phase);
+  $('#about-update-progress').hidden = !showProgress;
+  if (Number.isFinite(updateState.progress)) {
+    const progress = Math.max(0, Math.min(1, updateState.progress));
+    $('#about-update-progress').value = progress;
+    $('#about-update-progress').setAttribute('aria-valuetext', `${Math.round(progress * 100)}%`);
+    if (showProgress) $('#about-update-message').textContent += ` ${Math.round(progress * 100)}%`;
+  }
+  else $('#about-update-progress').removeAttribute?.('value');
+  const checked = new Date(updateState.lastChecked ?? NaN);
+  $('#about-last-check').textContent = Number.isNaN(checked.getTime()) ? '' : t('上次检查：{time}', { time: checked.toLocaleString(i18n.language, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) });
+  $('#about-update-note').textContent = native ? t('更新会重新打开 Co²；仍有共享时，将先请你确认结束共享。') : t('协作者无需安装应用，在浏览器打开邀请即可加入。');
+}
+window.receiveCo2AppInfo = info => {
+  if (!info || typeof info !== 'object') return;
+  if (nativeAppInfoReceived && !nativeUpdates) return;
+  appInfo = info; nativeAppInfoReceived = Boolean(nativeUpdates); renderAbout();
+};
+window.receiveCo2UpdateState = state => {
+  if (!state || !updatePhases.has(state.phase)) return;
+  updateState = state; renderAbout();
+};
+function checkUpdates() {
+  if (!nativeUpdates || appInfo?.canUpdate !== true || ['checking', 'downloading', 'extracting', 'installing'].includes(updateState.phase)) return;
+  updateState = { phase: 'checking', lastChecked: updateState.lastChecked }; renderAbout(); updateAction('check');
+}
+$('#check-update').onclick = () => {
+  if ($('#check-update').disabled) return;
+  if (['available', 'ready'].includes(updateState.phase)) {
+    updateState = { ...updateState, phase: 'downloading', message: undefined }; renderAbout(); updateAction('install');
+  } else checkUpdates();
+};
+$('#check-again').onclick = checkUpdates;
+$('#cancel-update').onclick = () => {
+  if ($('#cancel-update').disabled || !['checking', 'downloading', 'extracting', 'ready'].includes(updateState.phase)) return;
+  $('#cancel-update').disabled = true; updateAction('cancel');
+};
+$('#about-repository').onclick = $('#about-star-link').onclick = () => openProjectLink('repository');
+$('#about-releases').onclick = () => openProjectLink('releases');
+$('#dismiss-star').onclick = () => {
+  starDismissed = true;
+  if (appInfo) appInfo = { ...appInfo, starDismissed: true };
+  if (!updateAction('dismissStar')) { try { localStorage.setItem('co2.starDismissed', 'true'); } catch { /* Dismissal still works for this visit. */ } }
+  $('#about-star').hidden = true;
+};
+if (nativeUpdates) updateAction('info');
 $('#new-share').onclick = $('#empty-browse').onclick = () => selectTab('sessions', true);
 $('#edit-profile').onclick = () => { selectTab('settings'); $('#owner-name').focus(); };
 $('#edit-policy').onclick = () => { selectTab('settings'); $('#require-approval').focus(); };
@@ -441,7 +537,7 @@ ws.onopen = () => {
 };
 const disableDisconnectedControls = () => {
   document.querySelectorAll('button').forEach(b => {
-    if (b.getAttribute('role') !== 'tab' && b.getAttribute('aria-expanded') == null && !['new-share', 'empty-browse', 'edit-profile', 'edit-policy'].includes(b.id)) b.disabled = true;
+    if (b.getAttribute('role') !== 'tab' && b.getAttribute('aria-expanded') == null && !['new-share', 'empty-browse', 'edit-profile', 'edit-policy', 'check-update', 'check-again', 'cancel-update', 'about-repository', 'about-releases', 'about-star-link', 'dismiss-star'].includes(b.id)) b.disabled = true;
   });
 };
 ws.onclose = () => {
@@ -543,6 +639,7 @@ ws.onmessage = event => {
     return;
   }
   if (m.type !== 'state') return;
+  if (!nativeUpdates && m.appInfo) { appInfo = m.appInfo; renderAbout(); }
   renderRooms(m);
 };
 function renderRooms(m) {
@@ -650,6 +747,7 @@ function updateLanguage() {
   $('#require-approval').onchange(); updateShare(); updateThreadHint();
   renderInviteLifetimeHint();
   renderShareLimit();
+  renderAbout();
   if (threads.length || lastAttached !== undefined) {
     const scroll = document.querySelector('.catalog-scroll'); const top = scroll?.scrollTop;
     renderThreads(); if (scroll) scroll.scrollTop = top;

@@ -13,6 +13,7 @@
 - Public sharing uses outbound relay infrastructure with ordinary TLS trust, without E2EE. Explicit intranet-only sharing uses a selected RFC1918 IPv4 listener with unencrypted HTTP, real socket peer/Host/Origin checks and no public tunnel or public fallback. Keep the host registration and local manager on loopback. Host disconnection pauses collaboration. Guest messages retain the conversation's existing execution context; sharing does not create a new sandbox or constrain the Agent's model/tool network access.
 - Default authentication and conversation body files must never be read, copied or synchronized. The authenticated host manager may read only thread ID, title, updated time and project path from a read-only SQLite index, filtering archived entries. Do not select previews, first messages, rollout paths, settings or credentials. Read the chosen conversation's body only through existing Desktop IPC after the host selects it for sharing. Tests and automated exploration must not inspect the user's real index, credentials or JSONL.
 - Runtime state, isolated authentication and observations belong in ignored `.coop/`, mode 0700. Do not include these or real conversations in export, diagnostics or visual assets.
+- Sparkle may use its standard macOS caches and preferences for public update packages, signatures and update scheduling. These contain no conversations or credentials and are excluded from exports and diagnostics; Co² service runtime state remains in `.coop/`.
 
 ## Verification and distribution
 

@@ -17,6 +17,7 @@ class Element {
   cloneNode() { const copy = new Element(this.tag); copy.textContent = this.textContent; return copy; }
   setAttribute(name, value) { this[name] = value; }
   getAttribute(name) { return this[name]; }
+  removeAttribute(name) { delete this[name]; }
   focus() { this.focused = true; if (this.document) this.document.activeElement = this; }
   showModal() { assert.ok(!this.open, 'a second modal must not be opened'); this.open = true; }
   close() { this.open = false; this.onclose?.(); }
@@ -24,7 +25,7 @@ class Element {
   select() { this.selected = true; }
   contains(node) { return this === node || this.children.some(c => c.contains(node)); }
 }
-function browser({ storage = new Map(), nativeLanguage, nativeCopy = 'success', browserClipboard } = {}) {
+function browser({ storage = new Map(), nativeLanguage, nativeCopy = 'success', browserClipboard, nativeUpdater = false, appInfo, updateState } = {}) {
   const elements = Object.fromEntries([...html.matchAll(/<(\w+)[^>]*\bid="([^"]+)"[^>]*>/g)].map(m => {
     const node = new Element(m[1]); node.id = m[2];
     for (const attr of m[0].matchAll(/([\w-]+)="([^"]*)"/g)) node.setAttribute(attr[1], attr[2]);
@@ -32,7 +33,7 @@ function browser({ storage = new Map(), nativeLanguage, nativeCopy = 'success', 
     return [m[2], node];
   }));
   elements.rooms.append(new Element());
-  const connection = new Element(), sent = [], copies = [], copyRequests = [], copyTimeouts = new Map(), preferences = [];
+  const connection = new Element(), sent = [], copies = [], copyRequests = [], copyTimeouts = new Map(), preferences = [], updates = [], links = [];
   let copyTimerSequence = 0;
   let socket, redacted;
   class Socket {
@@ -62,7 +63,8 @@ function browser({ storage = new Map(), nativeLanguage, nativeCopy = 'success', 
     addEventListener() {},
   };
   for (const node of Object.values(elements).flatMap(descendants)) node.document = document;
-  const window = { Co2Messages: messages, co2Language: nativeLanguage, innerWidth: 1024, innerHeight: 768, addEventListener() {}, webkit: { messageHandlers: {
+  const window = { Co2Messages: messages, co2Language: nativeLanguage, co2AppInfo: appInfo, co2UpdateState: updateState,
+    innerWidth: 1024, innerHeight: 768, addEventListener() {}, open: (...args) => links.push(args), webkit: { messageHandlers: {
     copyInvite: { postMessage: value => {
       copyRequests.push(JSON.parse(JSON.stringify(value)));
       if (nativeCopy === 'throw') throw new Error('Synthetic native bridge failure');
@@ -71,6 +73,7 @@ function browser({ storage = new Map(), nativeLanguage, nativeCopy = 'success', 
     } }, languagePreference: { postMessage: value => preferences.push(value) },
   } } };
   if (nativeCopy === false) delete window.webkit.messageHandlers.copyInvite;
+  if (nativeUpdater) window.webkit.messageHandlers.appUpdates = { postMessage: value => updates.push(JSON.parse(JSON.stringify(value))) };
   vm.runInNewContext(languageScript + '\n' + script, {
     document,
     WebSocket: Socket, URLSearchParams, location: { hash: '#owner=synthetic-only', pathname: '/' },
@@ -89,7 +92,7 @@ function browser({ storage = new Map(), nativeLanguage, nativeCopy = 'success', 
   const nodes = () => [...descendants(elements.rooms), ...descendants(elements['room-policies'])];
   const click = text => { const b = nodes().find(e => e.tag === 'button' && e.textContent === text); assert.ok(b, `Missing ${text}`); b.onclick(); };
   const threadRows = () => descendants(elements.threads).filter(e => e.className === 'thread-row');
-  return { elements, socket, sent, copies, copyRequests, copyTimeouts, preferences, receive, nodes, click, threadRows, window,
+  return { elements, socket, sent, copies, copyRequests, copyTimeouts, preferences, updates, links, receive, nodes, click, threadRows, window,
     expireCopies() { for (const [id, fn] of [...copyTimeouts]) { copyTimeouts.delete(id); fn(); } },
     acknowledgeCopy(ok, request = copyRequests.at(-1)) { window.co2InviteCopyResult({ requestId: request.requestId, ok }); } };
 }
@@ -915,4 +918,130 @@ test('ended-share acknowledgement and renewal status translate with the manageme
     page.click(acknowledgement);
     assert.deepEqual(page.sent.at(-1), { type: 'dismiss-room', roomId: r.roomId });
   }
+});
+
+test('About shows source metadata without native capabilities, opens fixed links and remembers browser Star dismissal', () => {
+  const storage = new Map(), page = browser({ storage }), e = page.elements;
+  page.receive({ type: 'state', appInfo: { version: '0.3.3', build: null, channel: 'source', canUpdate: false }, rooms: [] });
+  assert.equal(page.window.showCo2About(), true);
+  assert.equal(e['panel-about'].hidden, false);
+  assert.equal(e['tab-about']['aria-selected'], 'true');
+  assert.equal(e['tab-about'].focused, true);
+  assert.equal(e['about-version'].textContent, '版本 v0.3.3');
+  assert.equal(e['about-channel'].textContent, '源码运行');
+  assert.equal(e['check-update'].disabled, true);
+  e['check-update'].onclick();
+  assert.deepEqual(page.updates, []);
+  assert.deepEqual(page.sent.map(m => m.type), ['auth', 'threads']);
+  assert.ok(e['about-update-message'].textContent.includes('GitHub'));
+  e['about-repository'].onclick(); e['about-releases'].onclick(); e['about-star-link'].onclick();
+  assert.deepEqual(page.links, [
+    ['https://github.com/SpaceCoder-Kafka/codex-co2', '_blank', 'noopener,noreferrer'],
+    ['https://github.com/SpaceCoder-Kafka/codex-co2/releases', '_blank', 'noopener,noreferrer'],
+    ['https://github.com/SpaceCoder-Kafka/codex-co2', '_blank', 'noopener,noreferrer'],
+  ]);
+  e['dismiss-star'].onclick();
+  assert.equal(e['about-star'].hidden, true);
+  assert.equal(storage.get('co2.starDismissed'), 'true');
+  assert.equal(browser({ storage }).elements['about-star'].hidden, true);
+  e['tab-settings'].onkeydown({ key: 'End', preventDefault() {} });
+  assert.equal(e['panel-about'].hidden, false);
+});
+
+test('native About keeps installed and available versions separate and prevents repeated update actions', () => {
+  const page = browser({ nativeUpdater: true, appInfo: { version: '0.3.3', build: '13', channel: 'preview', canUpdate: true, starDismissed: false } }), e = page.elements;
+  assert.deepEqual(page.updates, [{ action: 'info' }]);
+  page.receive({ type: 'state', appInfo: { version: '99.0.0', channel: 'source', canUpdate: false }, rooms: [] });
+  assert.equal(e['about-version'].textContent, '版本 v0.3.3 · Build 13');
+  assert.equal(e['about-channel'].textContent, '预览版');
+  e['check-update'].onclick(); e['check-update'].onclick();
+  assert.equal(e['check-update'].disabled, true);
+  assert.equal(e['check-update']['aria-busy'], 'true');
+  assert.deepEqual(page.updates.at(-1), { action: 'check' });
+  assert.equal(page.updates.filter(m => m.action === 'check').length, 1);
+  page.window.receiveCo2UpdateState({ phase: 'available', version: '0.3.3', build: '14', lastChecked: '2026-10-23T02:00:00Z' });
+  assert.equal(e['nav-update'].hidden, false);
+  assert.equal(e['check-update'].disabled, false);
+  assert.equal(e['check-update-label'].textContent, '更新到 v0.3.3 · Build 14');
+  assert.ok(e['about-update-message'].textContent.includes('Build 14'));
+  assert.equal(e['about-version'].textContent, '版本 v0.3.3 · Build 13');
+  assert.ok(e['about-last-check'].textContent.startsWith('上次检查：'));
+  page.receive({ type: 'state', rooms: [] });
+  assert.equal(e['check-update-label'].textContent, '更新到 v0.3.3 · Build 14');
+  assert.equal(e['about-version'].textContent, '版本 v0.3.3 · Build 13');
+  e['check-update'].onclick(); e['check-update'].onclick();
+  assert.equal(page.updates.filter(m => m.action === 'install').length, 1);
+  page.window.receiveCo2UpdateState({ phase: 'downloading', version: '0.3.3', build: '14', progress: 0.5 });
+  assert.equal(e['about-update-progress'].hidden, false);
+  assert.equal(e['about-update-progress'].value, 0.5);
+  assert.equal(e['about-update-progress']['aria-valuetext'], '50%');
+  assert.ok(e['about-update-message'].textContent.endsWith('50%'));
+  assert.equal(e['cancel-update'].hidden, false);
+  e['cancel-update'].onclick(); e['cancel-update'].onclick();
+  assert.equal(page.updates.filter(m => m.action === 'cancel').length, 1);
+  page.window.receiveCo2UpdateState({ phase: 'idle', message: '更新已取消' });
+  assert.equal(e['about-update-progress'].hidden, true);
+  assert.equal(e['about-update-message'].textContent, '更新已取消');
+  assert.equal(e['check-update'].disabled, false);
+  assert.deepEqual(page.sent.map(m => m.type), ['auth', 'threads']);
+});
+
+test('native updater stays usable after helper disconnect and redraws state in all interface languages', () => {
+  const page = browser({ nativeUpdater: true, appInfo: { version: '0.3.3', build: '13', channel: 'preview', canUpdate: true } }), e = page.elements;
+  page.socket.close();
+  assert.equal(e['check-update'].disabled, false);
+  e['check-update'].onclick();
+  page.window.receiveCo2UpdateState({ phase: 'error', message: '更新下载或验证失败，请重试。' });
+  page.window.showCo2About();
+  e.language.value = 'en'; e.language.onchange();
+  assert.equal(e['page-title'].textContent, 'About');
+  assert.equal(e['about-channel'].textContent, 'Preview');
+  assert.equal(e['about-update-message'].textContent, 'The update could not be downloaded or verified. Try again.');
+  assert.equal(e['check-update'].disabled, false);
+  page.window.receiveCo2UpdateState({ phase: 'upToDate', lastChecked: 1792720800000 });
+  assert.equal(e['about-update-message'].textContent, "You're up to date.");
+  assert.equal(e['nav-update'].hidden, true);
+  e.language.value = 'zh-TW'; e.language.onchange();
+  assert.equal(e['about-channel'].textContent, '預覽版');
+  assert.equal(e['about-update-message'].textContent, '目前已是最新版本。');
+  e['about-repository'].onclick();
+  assert.deepEqual(page.updates.at(-1), { action: 'openLink', link: 'repository' });
+  assert.equal(page.links.length, 0);
+  page.window.receiveCo2UpdateState({ phase: 'not-an-updater-phase', message: 'invalid' });
+  assert.equal(e['about-update-message'].textContent, '目前已是最新版本。');
+});
+
+test('native Star preference overrides browser storage and dismissal uses the native preference bridge', () => {
+  const storage = new Map([['co2.starDismissed', 'true']]);
+  const page = browser({ nativeUpdater: true, storage, appInfo: { version: '0.3.3', build: '13', channel: 'preview', canUpdate: false, starDismissed: false } }), e = page.elements;
+  assert.equal(e['about-star'].hidden, false);
+  assert.equal(e['check-update'].disabled, true);
+  e['dismiss-star'].onclick();
+  assert.deepEqual(page.updates.at(-1), { action: 'dismissStar' });
+  assert.equal(e['about-star'].hidden, true);
+  page.window.receiveCo2AppInfo({ version: '0.3.3', build: '13', channel: 'preview', canUpdate: true, starDismissed: true });
+  assert.equal(e['about-star'].hidden, true);
+  assert.equal(e['check-update'].disabled, false);
+});
+
+test('About updates and intranet lifetime UI both redraw, while disconnect cancels the invitation without disabling native updates', () => {
+  const page = lifetimePage({ nativeUpdater: true,
+    appInfo: { version: '0.3.3', build: '17', channel: 'preview', canUpdate: true, starDismissed: false } }), e = page.elements;
+  e.share.focus(); e.share.onclick(); chooseLifetime(page, 'permanent');
+  page.window.receiveCo2UpdateState({ phase: 'available', version: '0.3.3', build: '18' });
+  e.language.value = 'en'; e.language.onchange();
+  assert.equal(e['invite-lifetime-dialog'].open, true);
+  assert.equal(selectedLifetime(page), 'permanent');
+  assert.equal(e['invite-lifetime-hint'].textContent, messages.en['不设固定到期时间，需保持应用和共享运行；停止共享、退出应用或更换入口后失效。']);
+  assert.equal(e['check-update-label'].textContent, 'Update to v0.3.3 · Build 18');
+  assert.equal(e['about-version'].textContent, 'Version v0.3.3 · Build 17');
+  page.socket.close();
+  assert.equal(e['invite-lifetime-dialog'].open, false);
+  assert.equal(e['invite-lifetime-confirm'].disabled, true);
+  assert.equal(e['intranet-only'].disabled, true);
+  assert.equal(e['save-network'].disabled, true);
+  assert.equal(e['check-update'].disabled, false);
+  e['check-update'].onclick();
+  assert.deepEqual(page.updates.at(-1), { action: 'install' });
+  assert.equal(page.sent.some(m => ['share', 'reshare'].includes(m.type)), false);
 });

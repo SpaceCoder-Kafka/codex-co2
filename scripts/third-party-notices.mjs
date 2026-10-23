@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { SPARKLE, digest } from './sparkle-distribution.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const noticeName = /^(?:licen[cs]e|copying|notice)(?:[.\-_].*)?$/i;
@@ -28,6 +29,7 @@ export async function npmNotices(sourceRoot, installedRoot = sourceRoot) {
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  if (digest(await fs.readFile(path.join(root, 'third-party/Sparkle-LICENSE.txt'))) !== SPARKLE.licenseSHA256) throw new Error('Reviewed Sparkle license changed');
   const target = path.join(root, 'third-party/npm-NOTICES.txt');
   const content = await npmNotices(root);
   if (process.argv[2] === '--write') {
