@@ -308,7 +308,9 @@ internal static class PlatformBridge
             try
             {
                 var attributes = new SecurityAttributes { Length = Marshal.SizeOf<SecurityAttributes>(), Descriptor = pipePinned.AddrOfPinnedObject() };
-                serverHandle = CreateNamedPipe(@"\\.\pipe\" + pipeName, 0x400E0003, 0, 1, 4096, 4096, 0, ref attributes);
+                // Duplex already grants DACL-read access. READ_CONTROL is not
+                // a valid CreateNamedPipe open-mode flag (unlike CreateFile).
+                serverHandle = CreateNamedPipe(@"\\.\pipe\" + pipeName, 0x40080003, 0, 1, 4096, 4096, 0, ref attributes);
                 if (serverHandle.IsInvalid) throw new Win32Exception(Marshal.GetLastWin32Error());
             }
             finally { pipePinned.Free(); }

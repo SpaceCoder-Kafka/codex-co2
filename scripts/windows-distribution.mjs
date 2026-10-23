@@ -3,7 +3,9 @@ import path from 'node:path';
 import { createHash } from 'node:crypto';
 
 export const WINDOWS = Object.freeze({ architecture: 'x64', runtime: 'win-x64', minimumBuild: 17763,
-  nodeVersion: '22.23.3', cloudflaredVersion: '2026.10.1', dotnetSDK: '8.0.426', dotnetRuntime: '8.0.32', webView2SDK: '1.0.3537.50',
+  nodeVersion: '22.23.3', cloudflaredVersion: '2026.10.1',
+  cloudflaredSHA256: '4d2490e74082c5d48dbfedaf92576fa5bd1702379ab88eb7faa0cfbe8dc891b6',
+  dotnetSDK: '8.0.426', dotnetRuntime: '8.0.32', webView2SDK: '1.0.3537.50',
   nugetArchiveSHA512: Object.freeze({
     'microsoft.web.webview2': 'QWnduPtmvtQjH07KtLRQgyYa857P1/cyM8stgy052d53P6WoN4mngtL0bGhs+0DyivdYVirm0GOfaRSM7bcc6w==',
     'microsoft.netcore.app.runtime.win-x64': 'I7aVEenFvsRc2xeTBu3iyy2SG9PmA+XQjIXt3SrdL+G+QP7dt/QJlTnqW13kMSSLPv8q/h+cxaGIEHP6ExUwDg==',

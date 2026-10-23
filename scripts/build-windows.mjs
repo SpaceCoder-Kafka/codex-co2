@@ -77,12 +77,10 @@ const nodeDirectory = path.join(nodeExtract, `node-v${WINDOWS.nodeVersion}-win-x
 await fs.copyFile(path.join(nodeDirectory, 'node.exe'), path.join(runtime, 'node.exe'));
 await fs.copyFile(path.join(nodeDirectory, 'LICENSE'), path.join(licenses, 'Node-LICENSE'));
 
-const cloudflaredRelease = JSON.parse(await download(`https://api.github.com/repos/cloudflare/cloudflared/releases/tags/${WINDOWS.cloudflaredVersion}`,
-  path.join(cache, `cloudflared-${WINDOWS.cloudflaredVersion}-release.json`)));
 const cloudflaredName = 'cloudflared-windows-amd64.exe';
-const asset = cloudflaredRelease.assets?.find(item => item.name === cloudflaredName);
-const cloudflaredSHA256 = asset?.digest?.replace(/^sha256:/, '');
-if (!/^[a-f0-9]{64}$/.test(cloudflaredSHA256 ?? '')) throw new Error('Official Windows cloudflared checksum unavailable');
+// Pinned from the official release metadata and verified against the archive.
+// Builds do not depend on the unauthenticated GitHub API rate limit.
+const cloudflaredSHA256 = WINDOWS.cloudflaredSHA256;
 const cloudflared = path.join(cache, `${WINDOWS.cloudflaredVersion}-${cloudflaredName}`);
 await download(`https://github.com/cloudflare/cloudflared/releases/download/${WINDOWS.cloudflaredVersion}/${cloudflaredName}`, cloudflared, cloudflaredSHA256);
 await fs.copyFile(cloudflared, path.join(runtime, 'cloudflared.exe'));
@@ -141,7 +139,7 @@ const directories = new Set();
 for (const file of installedFiles) { let dir = path.posix.dirname(file); while (dir !== '.') { directories.add(dir); dir = path.posix.dirname(dir); } }
 await fs.writeFile(uninstallList, installedFiles.map(name => `Delete "$INSTDIR\\${nsisPath(name)}"`).join('\n') + '\n'
   + [...directories].sort((a, b) => b.length - a.length).map(name => `RMDir "$INSTDIR\\${nsisPath(name)}"`).join('\n') + '\n');
-run(nsis, [`${nsisDefine}APP_DIR=${app}`, `${nsisDefine}OUTPUT_FILE=${installer}`, `${nsisDefine}APP_VERSION=${release.version}`,
+run(nsis, [process.platform === 'win32' ? '/WX' : '-WX', `${nsisDefine}APP_DIR=${app}`, `${nsisDefine}OUTPUT_FILE=${installer}`, `${nsisDefine}APP_VERSION=${release.version}`,
   `${nsisDefine}UNINSTALL_LIST=${uninstallList}`, path.join(root, 'windows/installer.nsi')]);
 run(python, ['-c', 'from pathlib import Path; import sys,zipfile; root=Path(sys.argv[1]); z=zipfile.ZipFile(sys.argv[2],"w",zipfile.ZIP_DEFLATED); [z.write(p,str(Path(root.name)/p.relative_to(root))) for p in sorted(root.rglob("*")) if p.is_file()]; z.close()', app, portable]);
 if ((await publicSource(root)).sha256 !== source.sha256) throw new Error('Source changed during build; do not distribute these outputs');

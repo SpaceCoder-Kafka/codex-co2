@@ -15,7 +15,7 @@ if (manifest.platform !== 'win32' || manifest.architecture !== 'x64' || manifest
     || manifest.versions?.node !== WINDOWS.nodeVersion || manifest.versions?.cloudflared !== WINDOWS.cloudflaredVersion
     || manifest.versions?.dotnet !== WINDOWS.dotnetRuntime) throw new Error('Unexpected Windows distribution metadata');
 if (!manifest.source?.files || sha256(JSON.stringify(manifest.source.files)) !== manifest.source.sha256) throw new Error('Invalid source inventory');
-if (!/^[a-f0-9]{64}$/.test(manifest.dependencies?.nodeArchiveSHA256 ?? '') || !/^[a-f0-9]{64}$/.test(manifest.dependencies?.cloudflaredSHA256 ?? '')) throw new Error('Missing official dependency checksums');
+if (!/^[a-f0-9]{64}$/.test(manifest.dependencies?.nodeArchiveSHA256 ?? '') || manifest.dependencies?.cloudflaredSHA256 !== WINDOWS.cloudflaredSHA256) throw new Error('Missing official dependency checksums');
 const files = await fileInventory(app); delete files['resources/manifest.json'];
 if (JSON.stringify(files) !== JSON.stringify(manifest.files)) throw new Error('Windows bundle file set/digests differ from manifest');
 for (const name of ['CodexCo2.exe', 'resources/runtime/node.exe', 'resources/runtime/cloudflared.exe', 'WebView2Loader.dll'])

@@ -65,7 +65,7 @@ test('Windows installer compiler accepts a synthetic payload and exact uninstall
     await fs.writeFile(path.join(payload, 'synthetic.txt'), 'synthetic release payload only');
     const uninstall = path.join(dir, 'uninstall.nsh'); await fs.writeFile(uninstall, 'Delete "$INSTDIR\\synthetic.txt"\n');
     const out = path.join(dir, 'synthetic-setup.exe'); const define = process.platform === 'win32' ? '/D' : '-D';
-    execFileSync(nsis, [`${define}APP_DIR=${payload}`, `${define}OUTPUT_FILE=${out}`, `${define}APP_VERSION=0.0.0`,
+    execFileSync(nsis, [process.platform === 'win32' ? '/WX' : '-WX', `${define}APP_DIR=${payload}`, `${define}OUTPUT_FILE=${out}`, `${define}APP_VERSION=0.0.0`,
       `${define}UNINSTALL_LIST=${uninstall}`, path.join(root, 'windows/installer.nsi')], { encoding: 'utf8', timeout: 25000, stdio: 'pipe' });
     // NSIS uses a 32-bit bootstrap which explicitly gates to a 64-bit OS.
     assert.equal(peArchitecture(await fs.readFile(out)), 'x86');

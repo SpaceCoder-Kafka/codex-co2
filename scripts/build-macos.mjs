@@ -14,6 +14,12 @@ const release = await releaseConfiguration(root);
 release.architecture = 'universal';
 const appVersion = release.version, buildNumber = release.build;
 const nodeVersion = '22.23.3', tunnelVersion = '2026.10.1';
+// Reviewed SHA256 values from the official 2026.10.1 release metadata. Keep
+// downloads reproducible and independent of GitHub's anonymous API rate limit.
+const tunnelArchives = Object.freeze({
+  arm64: { name: 'cloudflared-darwin-arm64.tgz', sha256: '647615df99d49cd179ea5e13ef760b9bbfb33630f6ae62f87e33dfadda60adcc' },
+  x86_64: { name: 'cloudflared-darwin-amd64.tgz', sha256: '3b0dbaf378337e9d7fb6cd235a76d1d6a7dee434c2d8edf9281164fb6a3837ab' },
+});
 const cache = path.join(root, '.coop/build-cache');
 const universalCache = path.join(cache, 'universal');
 const dist = path.resolve(process.env.CO2_BUILD_DIST ?? path.join(root, 'dist'));
@@ -47,9 +53,6 @@ if (release.testing && !release.publicKey) {
 }
 const sums = path.join(cache, `node-${nodeVersion}-SHASUMS256.txt`);
 await download(`https://nodejs.org/dist/v${nodeVersion}/SHASUMS256.txt`, sums);
-const metadata = path.join(cache, `cloudflared-${tunnelVersion}-release.json`);
-await download(`https://api.github.com/repos/cloudflare/cloudflared/releases/tags/${tunnelVersion}`, metadata);
-const tunnelRelease = JSON.parse(await fs.readFile(metadata, 'utf8'));
 const runtimeSources = {}, nodeArchiveSHA256 = {}, cloudflaredArchiveSHA256 = {};
 for (const architecture of MACOS_ARCHITECTURES) {
   const nodeArchitecture = architecture === 'x86_64' ? 'x64' : architecture;
@@ -63,9 +66,7 @@ for (const architecture of MACOS_ARCHITECTURES) {
   await fs.rm(extracted, { recursive: true, force: true }); await fs.mkdir(extracted, { recursive: true });
   run('/usr/bin/tar', ['-xzf', archive, '-C', extracted]);
   const nodeDirectory = path.join(extracted, `node-v${nodeVersion}-darwin-${nodeArchitecture}`);
-  const name = `cloudflared-darwin-${architecture === 'x86_64' ? 'amd64' : architecture}.tgz`;
-  const asset = tunnelRelease.assets?.find(item => item.name === name);
-  const checksum = asset?.digest?.replace(/^sha256:/, '');
+  const { name, sha256: checksum } = tunnelArchives[architecture];
   if (!/^[a-f0-9]{64}$/.test(checksum ?? '')) throw new Error(`Official cloudflared release checksum is unavailable (${architecture})`);
   cloudflaredArchiveSHA256[architecture] = checksum;
   const tunnelArchive = path.join(cache, `${tunnelVersion}-${name}`);

@@ -65,7 +65,7 @@ Section "Codex Co²"
   CreateShortcut "$SMPROGRAMS\Codex Co2\Uninstall.lnk" "$INSTDIR\Uninstall.exe"
   WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\CodexCo2" "DisplayName" "Codex Co²"
   WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\CodexCo2" "DisplayVersion" "${APP_VERSION}"
-  WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\CodexCo2" "UninstallString" '$"$INSTDIR\Uninstall.exe$"'
+  WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\CodexCo2" "UninstallString" '"$INSTDIR\Uninstall.exe"'
   WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\CodexCo2" "DisplayIcon" "$INSTDIR\CodexCo2.exe"
   WriteRegDWORD HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\CodexCo2" "NoModify" 1
   WriteRegDWORD HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\CodexCo2" "NoRepair" 1

@@ -26,6 +26,7 @@
   "bin/coop.mjs",
   "bin/desktop-service.mjs",
   "bin/share.mjs",
+  "global.json",
   "lib/app-control.mjs",
   "lib/app-info.mjs",
   "lib/attachment-paths.mjs",
