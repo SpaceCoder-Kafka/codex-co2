@@ -20,6 +20,8 @@ jobs:
       - run: npm run check:public
       - run: npm run notices:check
       - run: npm run test:licenses
+      - name: Prepare verified Sparkle for native update tests
+        run: node --input-type=module -e 'import { sparkleDistribution } from "./scripts/sparkle-distribution.mjs"; await sparkleDistribution(".coop/build-cache");'
       - run: npm test
       - name: Install isolated test backend only
         run: |

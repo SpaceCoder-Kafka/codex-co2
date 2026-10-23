@@ -29,6 +29,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
     var ownerURL: URL?
     var managerOrigin: URL?
     var exiting = false
+    var activeRooms: Int?
+    var pendingAbout = false
+    var helperStopWaiters: [(Bool) -> Void] = []
+    var helperStopToken: UUID?
+    var helperStopForce = false
+    let updates = AppUpdates()
     var sequence = 0
     var helperGeneration = 0
     var tunnelProcesses: [Int32: String] = [:]
@@ -65,9 +71,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
     func setStatus(_ source: String) { statusSource = source; statusLabel?.stringValue = localized(source) }
     func setStatusTitle(_ source: String) { statusTitleSource = source; statusItem?.button?.title = localized(source) }
     func installLanguageScript(_ controller: WKUserContentController) {
-        guard let bytes = try? JSONSerialization.data(withJSONObject: [language]), let json = String(data: bytes, encoding: .utf8) else { return }
+        guard let bytes = try? JSONSerialization.data(withJSONObject: ["language": language, "info": updates.appInfo, "state": updates.state]),
+              let json = String(data: bytes, encoding: .utf8) else { return }
         controller.removeAllUserScripts()
-        controller.addUserScript(WKUserScript(source: "window.co2Language = \(json)[0];", injectionTime: .atDocumentStart, forMainFrameOnly: true))
+        controller.addUserScript(WKUserScript(source: "{ const data = \(json); window.co2Language = data.language; window.co2AppInfo = data.info; window.co2UpdateState = data.state; }", injectionTime: .atDocumentStart, forMainFrameOnly: true))
+    }
+    func configureUpdates() {
+        updates.localize = { [weak self] source in self?.localized(source) ?? source }
+        updates.stateDidChange = { [weak self] in self?.publishUpdates() }
+        updates.showAbout = { [weak self] in self?.showAboutPage() ?? false }
+        updates.prepareInstallation = { [weak self] completion in
+            guard let self = self else { completion(.failed); return }
+            self.prepareUpdateInstallation(completion)
+        }
+        updates.start()
+    }
+    func publishUpdates() {
+        guard let view = webView else { return }
+        installLanguageScript(view.configuration.userContentController)
+        guard let owner = managerOrigin, let current = view.url,
+              current.scheme == owner.scheme, current.host == owner.host, current.port == owner.port,
+              let bytes = try? JSONSerialization.data(withJSONObject: ["info": updates.appInfo, "state": updates.state]),
+              let json = String(data: bytes, encoding: .utf8) else { return }
+        view.evaluateJavaScript("{ const data = \(json); window.co2AppInfo = data.info; window.co2UpdateState = data.state; window.receiveCo2AppInfo?.(data.info); window.receiveCo2UpdateState?.(data.state); }", completionHandler: nil)
     }
     var defaultRuntimeDir: String {
         FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support/Codex Co²/.coop").path
@@ -87,7 +113,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
             existing.activate(options: [.activateAllWindows]); NSApp.terminate(nil); return
         }
         NSApp.setActivationPolicy(.regular)
-        buildMenus(); buildWindow(); showWindow(); launchHelper()
+        buildMenus(); buildWindow(); configureUpdates(); showWindow(); launchHelper()
         let center = UNUserNotificationCenter.current(); center.delegate = self
         // Clear notifications from a previous process: their room IDs cannot
         // authorize or recover a new sharing service.
@@ -109,6 +135,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
     func buildMenus() {
         let main = NSMenu(); let appItem = NSMenuItem(); let appMenu = NSMenu()
         appMenu.addItem(withTitle: localized("关于 Codex Co²"), action: #selector(about), keyEquivalent: "")
+        appMenu.addItem(withTitle: localized("检查更新…"), action: #selector(checkUpdates), keyEquivalent: "")
         appMenu.addItem(withTitle: localized("设置…"), action: #selector(showSettings), keyEquivalent: ",")
         appMenu.addItem(.separator())
         appMenu.addItem(withTitle: localized("退出 Codex Co²"), action: #selector(quit), keyEquivalent: "q")
@@ -147,6 +174,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         config.userContentController.add(self, name: "copyInvite")
         config.userContentController.add(self, name: "languagePreference")
         config.userContentController.add(self, name: "notificationSettings")
+        config.userContentController.add(self, name: "appUpdates")
         installLanguageScript(config.userContentController)
         webView = WKWebView(frame: .zero, configuration: config); webView.navigationDelegate = self; webView.uiDelegate = self
         for view in [statusLabel!, webView!] {
@@ -170,23 +198,39 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
     func windowShouldClose(_ sender: NSWindow) -> Bool { sender.orderOut(nil); return false }
     @objc func about() {
+        if showAboutPage() { return }
+        pendingAbout = true; showWindow()
         let alert = NSAlert(); alert.messageText = "Codex Co²"
         let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?"
         let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "?"
         let versionLabel = localized("版本 {version}（{build}）").replacingOccurrences(of: "{version}", with: version).replacingOccurrences(of: "{build}", with: build)
         alert.informativeText = [versionLabel, "Real-time collaboration for Codex", localized("共享一条 Codex 会话，一起推进工作。"), "",
                                  localized("Apple Silicon 内部试用包 · 未公证"), localized("连接日常 Codex，默认直接接收协作消息，可按会话开启审批。")].joined(separator: "\n")
-        alert.runModal()
+        alert.addButton(withTitle: localized("好")); alert.addButton(withTitle: localized("检查更新…"))
+        alert.addButton(withTitle: "GitHub")
+        let answer = alert.runModal()
+        if answer == .alertSecondButtonReturn { updates.check() }
+        else if answer == .alertThirdButtonReturn, let url = UpdatePolicy.link("repository") { NSWorkspace.shared.open(url) }
     }
+    @discardableResult func showAboutPage() -> Bool {
+        guard let owner = managerOrigin, let current = webView?.url,
+              current.scheme == owner.scheme, current.host == owner.host, current.port == owner.port else { return false }
+        showWindow(); pendingAbout = true
+        webView.evaluateJavaScript("window.showCo2About?.()") { [weak self] result, _ in
+            if result as? Bool == true { self?.pendingAbout = false }
+        }
+        return true
+    }
+    @objc func checkUpdates() { updates.check() }
     func message(_ text: String) { setStatus(text); let alert = NSAlert(); alert.messageText = "Codex Co²"; alert.informativeText = localized(text); alert.runModal() }
 
     func launchHelper() {
-        guard helper == nil, let resources = Bundle.main.resourceURL else { return }
+        guard helper == nil, !updates.installationAuthorized, let resources = Bundle.main.resourceURL else { return }
         guard !CommandLine.arguments.contains("--isolated") else {
             let explanation = "此安装包仅支持连接日常 Codex。隔离实验请从源码运行。"
             setStatus(explanation); message(explanation); return
         }
-        ownerURL = nil; helperGeneration += 1; let generation = helperGeneration
+        ownerURL = nil; activeRooms = nil; helperGeneration += 1; let generation = helperGeneration
         setStatus("正在启动本地管理…"); setStatusTitle("Co² · 启动中")
         let service = resources.appendingPathComponent("service")
         let binaries = resources.appendingPathComponent("runtime")
@@ -220,12 +264,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
             }
         }
         process.terminationHandler = { [weak self] _ in DispatchQueue.main.async {
-            guard let self = self, self.helperGeneration == generation else { return }
-            self.output?.fileHandleForReading.readabilityHandler = nil; self.helper = nil; self.ownerURL = nil
-            self.updateAttention([])
-            self.retireOrphanTunnels()
-            if self.exiting { NSApp.reply(toApplicationShouldTerminate: true) }
-            else { self.setStatus("助手已停止，可从菜单栏重新连接"); self.setStatusTitle("Co² · 已停止") }
+            self?.didStopHelper(process, generation: generation)
         } }
         do { helper = process; try process.run() }
         catch { helper = nil; setStatus("启动失败"); message("无法启动内置助手。请重新安装完整的应用包。"); }
@@ -250,6 +289,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         if type == "status" {
             if let items = object["attention"] as? [[String: Any]] { updateAttention(items) }
             let phase = object["phase"] as? String ?? "starting", rooms = object["rooms"] as? Int ?? 0, pending = object["pending"] as? Int ?? 0
+            activeRooms = rooms
             let network = (object["connection"] as? [String: Any])?["state"] as? String ?? ""
             setStatusTitle(pending > 0 ? "Co² · 待确认 \(pending)" : rooms > 0 ? "Co² · 共享 \(rooms)" : "Co²")
             if phase == "stopped" { updateAttention([]); setStatus("共享已停止") }
@@ -377,11 +417,60 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         } catch { message("无法保存运行目录，请检查目录权限。") }
     }
     @objc func quit() { NSApp.terminate(nil) }
-    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        if helper?.isRunning != true { return .terminateNow }
-        exiting = true; send("shutdown")
+    func didStopHelper(_ process: Process, generation: Int) {
+        guard helperGeneration == generation, helper === process else { return }
+        output?.fileHandleForReading.readabilityHandler = nil; helper = nil; ownerURL = nil
+        updateAttention([]); retireOrphanTunnels(); activeRooms = 0
+        finishHelperShutdown(true)
+        if !exiting { setStatus("助手已停止，可从菜单栏重新连接"); setStatusTitle("Co² · 已停止") }
+    }
+    func beginHelperShutdown(forceOnTimeout: Bool, completion: @escaping (Bool) -> Void) {
+        guard let process = helper else { completion(true); return }
+        if !process.isRunning { didStopHelper(process, generation: helperGeneration); completion(true); return }
+        let generation = helperGeneration
+        helperStopWaiters.append(completion); helperStopForce = helperStopForce || forceOnTimeout
+        guard helperStopToken == nil else { return }
+        let token = UUID(); helperStopToken = token
+        send("shutdown")
         DispatchQueue.main.asyncAfter(deadline: .now() + 10) { [weak self] in
-            if self?.helper?.isRunning == true { self?.helper?.terminate() }
+            guard let self = self, self.helperStopToken == token else { return }
+            if !process.isRunning { self.didStopHelper(process, generation: generation); return }
+            // Updating never force-kills the service: fail closed if its
+            // lifecycle cleanup did not complete. Ordinary Quit keeps its
+            // existing ability to terminate our own child after a grace period.
+            if self.helperStopForce {
+                process.terminate()
+                DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
+                    guard let self = self, self.helperStopToken == token else { return }
+                    if !process.isRunning { self.didStopHelper(process, generation: generation) }
+                    else { self.finishHelperShutdown(false) }
+                }
+            } else { self.finishHelperShutdown(false) }
+        }
+    }
+    func finishHelperShutdown(_ success: Bool) {
+        helperStopToken = nil; helperStopForce = false
+        let waiters = helperStopWaiters; helperStopWaiters.removeAll()
+        for callback in waiters { callback(success) }
+    }
+    func prepareUpdateInstallation(_ completion: @escaping (UpdatePreparationResult) -> Void) {
+        if helper?.isRunning == true && activeRooms != 0 {
+            let alert = NSAlert(); alert.messageText = localized("结束共享并更新")
+            alert.informativeText = localized("更新会结束当前共享，安装后重新打开 Codex Co²。原邀请不会自动恢复。")
+            alert.addButton(withTitle: localized("结束共享并更新")); alert.addButton(withTitle: localized("取消"))
+            guard alert.runModal() == .alertFirstButtonReturn else { completion(.cancelled); return }
+        }
+        beginHelperShutdown(forceOnTimeout: false) { success in completion(success ? .ready : .failed) }
+    }
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        if updates.preventsTermination {
+            updates.cancel(); setStatus("更新正在取消，请稍后再次退出。"); return .terminateCancel
+        }
+        if helper?.isRunning != true { return .terminateNow }
+        exiting = true
+        beginHelperShutdown(forceOnTimeout: true) { [weak self] success in
+            if !success { self?.exiting = false }
+            NSApp.reply(toApplicationShouldTerminate: success)
         }
         return .terminateLater
     }
@@ -399,15 +488,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         // The existing Desktop interface exposes no account display name.
         // Use the local macOS name without reading Codex credentials or profiles.
         webView.evaluateJavaScript("window.setCo2SuggestedName?.(\(argument)[0])", completionHandler: nil)
+        publishUpdates()
+        if pendingAbout { showAboutPage() }
         openPendingAttention()
     }
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
         // Language is a local preference and remains editable if the helper stops.
         // Invitation copying still requires the currently active owner endpoint.
-        guard message.frameInfo.isMainFrame, let owner = message.name == "languagePreference" ? managerOrigin : ownerURL,
+        guard message.frameInfo.isMainFrame, message.webView === webView,
+              let owner = ["languagePreference", "appUpdates"].contains(message.name) ? managerOrigin : ownerURL,
               message.frameInfo.securityOrigin.protocol == owner.scheme,
               message.frameInfo.securityOrigin.host == owner.host,
               message.frameInfo.securityOrigin.port == owner.port else { return }
+        if message.name == "appUpdates" {
+            guard let object = message.body as? [String: Any] else { return }
+            updates.handle(object); return
+        }
         if message.name == "languagePreference" {
             guard let value = message.body as? String, ["zh-CN", "zh-TW", "en"].contains(value) else { return }
             language = value; UserDefaults.standard.set(value, forKey: "interfaceLanguage")
@@ -427,7 +523,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         NSPasteboard.general.clearContents(); NSPasteboard.general.setString(raw, forType: .string)
     }
 }
-let delegate = AppDelegate()
-let application = NSApplication.shared
-application.delegate = delegate
-application.run()
+@main
+enum CodexCo2Application {
+    static func main() {
+        let delegate = AppDelegate()
+        let application = NSApplication.shared
+        application.delegate = delegate
+        withExtendedLifetime(delegate) { application.run() }
+    }
+}

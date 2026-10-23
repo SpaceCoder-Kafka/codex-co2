@@ -17,6 +17,11 @@
     <symbol id="icon-arrow" viewBox="0 0 24 24"><path d="M5 12h14m-6-6 6 6-6 6"/></symbol>
     <symbol id="icon-check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></symbol>
     <symbol id="icon-lock" viewBox="0 0 24 24"><rect x="5" y="10" width="14" height="11" rx="3"/><path d="M8 10V7a4 4 0 0 1 8 0v3m-4 5v2"/></symbol>
+    <symbol id="icon-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v6m0-10v.1"/></symbol>
+    <symbol id="icon-refresh" viewBox="0 0 24 24"><path d="M20 8a8 8 0 0 0-14-2L3 9m0-6v6h6m-5 7a8 8 0 0 0 14 2l3-3m0 6v-6h-6"/></symbol>
+    <symbol id="icon-external" viewBox="0 0 24 24"><path d="M14 3h7v7m0-7L10 14m1-9H5a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-6"/></symbol>
+    <symbol id="icon-star" viewBox="0 0 24 24"><path d="m12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2L12 17.3l-5.6 2.9 1.1-6.2L3 9.6l6.2-.9z"/></symbol>
+    <symbol id="icon-download" viewBox="0 0 24 24"><path d="M12 3v12m-5-5 5 5 5-5M4 15v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4"/></symbol>
   </defs></svg>
   <div class="app-shell">
     <aside class="sidebar" aria-label="应用导航" data-i18n-aria-label="应用导航">
@@ -25,6 +30,7 @@
         <button id="tab-sessions" class="nav-tab" role="tab" aria-selected="true" aria-controls="panel-sessions" tabindex="0"><svg><use href="#icon-sessions"/></svg><span><span data-i18n="选择会话">选择会话</span></span></button>
         <button id="tab-shared" class="nav-tab" role="tab" aria-selected="false" aria-controls="panel-shared" tabindex="-1"><svg><use href="#icon-share"/></svg><span><span data-i18n="共享会话">共享会话</span></span><span id="nav-pending" class="nav-count" hidden>0</span></button>
         <button id="tab-settings" class="nav-tab nav-settings" role="tab" aria-selected="false" aria-controls="panel-settings" tabindex="-1"><svg><use href="#icon-settings"/></svg><span><span data-i18n="设置">设置</span></span></button>
+        <button id="tab-about" class="nav-tab" role="tab" aria-selected="false" aria-controls="panel-about" tabindex="-1"><svg><use href="#icon-info"/></svg><span><span data-i18n="关于">关于</span></span><span id="nav-update" class="nav-update" aria-label="有新版本" data-i18n-aria-label="有新版本" hidden></span></button>
       </div>
       <div class="sidebar-caption"><span data-i18n="一起，向前。">一起，向前。</span><span>Real-time collaboration</span></div>
     </aside>
@@ -83,7 +89,22 @@
           <section class="settings-card"><div class="settings-heading"><h2><span data-i18n="个人资料">个人资料</span></h2><p><span data-i18n="让同伴知道正在和谁一起工作。">让同伴知道正在和谁一起工作。</span></p></div><div class="settings-row"><div><label for="owner-name"><span data-i18n="显示名称">显示名称</span></label><p class="muted" id="name-hint"><span data-i18n="用于新共享会话中的消息署名，1–40 个字符。">用于新共享会话中的消息署名，1–40 个字符。</span></p></div><input id="owner-name" type="text" maxlength="80" autocomplete="nickname" placeholder="填写你的名字" data-i18n-placeholder="填写你的名字" required aria-describedby="name-hint"></div></section>
           <section class="settings-card"><div class="settings-heading"><h2><span data-i18n="消息与审批">消息与审批</span></h2><p><span data-i18n="决定同伴加入后，消息如何进入共享会话。">决定同伴加入后，消息如何进入共享会话。</span></p></div><div class="settings-row"><div><label for="require-approval"><span data-i18n="新共享的消息需审批后接收">新共享的消息需审批后接收</span></label><p class="muted" id="approval-hint"><span data-i18n="默认关闭。同伴加入后，新消息直接交给 Agent。">默认关闭。同伴加入后，新消息直接交给 Agent。</span></p></div><input id="require-approval" class="switch" type="checkbox" role="switch" aria-describedby="approval-hint"></div><div class="settings-note"><span data-i18n="此选项用于接下来创建的共享。已有共享可在下方单独调整。">此选项用于接下来创建的共享。已有共享可在下方单独调整。</span></div><div id="room-policies" class="room-policies"><p class="muted"><span data-i18n="暂无正在共享的会话。">暂无正在共享的会话。</span></p></div></section>
           <div class="settings-footnote"><svg><use href="#icon-lock"/></svg><p><span data-i18n="切换消息策略仅影响新消息；已待审批的消息仍需逐条确认。">切换消息策略仅影响新消息；已待审批的消息仍需逐条确认。</span><br><span data-i18n="工具执行审批始终由你在 Codex 中处理。">工具执行审批始终由你在 Codex 中处理。</span></p></div>
-          <div class="about-line"><strong>Codex Co²</strong><span>Real-time collaboration for Codex</span></div>
+        </div>
+      </div>
+
+      <div id="panel-about" class="tab-panel" role="tabpanel" aria-labelledby="tab-about" hidden>
+        <div class="panel-scroll about-scroll">
+          <section class="about-card" aria-label="Codex Co²">
+            <div class="about-app">
+              <div class="about-identity"><img class="about-icon" src="/app-icon.png" alt="" width="72" height="72"><div><h2>Codex Co²</h2><p>Real-time collaboration for Codex</p><div class="about-version-row"><span id="about-version">正在读取版本…</span><span id="about-channel" class="badge" hidden></span></div></div></div>
+              <div class="about-update-actions"><button id="check-update" class="about-update-button" disabled><svg><use id="check-update-icon" href="#icon-refresh"/></svg><span id="check-update-label">检查更新</span></button><button id="cancel-update" class="text-button" data-i18n="取消更新" hidden>取消更新</button></div>
+            </div>
+            <div id="about-update-status" class="about-update-status" role="status" aria-live="polite" aria-atomic="true"><p id="about-update-message"></p><progress id="about-update-progress" max="1" aria-label="更新进度" data-i18n-aria-label="更新进度" hidden></progress><div class="about-check-detail"><p id="about-last-check" class="muted"></p><button id="check-again" class="text-button" data-i18n="重新检查" hidden>重新检查</button></div></div>
+            <div class="about-links"><button id="about-repository"><svg><use href="#icon-external"/></svg><span data-i18n="GitHub 项目">GitHub 项目</span></button><button id="about-releases"><svg><use href="#icon-external"/></svg><span data-i18n="更新日志">更新日志</span></button></div>
+            <div id="about-star" class="about-star"><svg class="about-star-icon" aria-hidden="true"><use href="#icon-star"/></svg><p data-i18n="如果 Codex Co² 帮到了你，欢迎在 GitHub 点个 Star，支持我们继续改进。">如果 Codex Co² 帮到了你，欢迎在 GitHub 点个 Star，支持我们继续改进。</p><button id="about-star-link"><svg><use href="#icon-star"/></svg><span data-i18n="去点 Star">去点 Star</span></button><button id="dismiss-star" class="icon-button" aria-label="关闭 Star 提示" data-i18n-aria-label="关闭 Star 提示"><span aria-hidden="true">×</span></button></div>
+          </section>
+          <p class="about-footnote" data-i18n="共享一条 Codex 会话，一起推进工作。">共享一条 Codex 会话，一起推进工作。</p>
+          <p id="about-update-note" class="muted about-update-note"></p>
         </div>
       </div>
     </main>

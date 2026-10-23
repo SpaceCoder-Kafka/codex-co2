@@ -26,11 +26,22 @@ For transport or lifecycle changes run both `npm test` and `npm run test:integra
 For macOS builds use an Apple Silicon Mac, Xcode command line tools and Python 3.9+:
 
 ```sh
+npm run updates:key
 npm run build:macos
 npm run check:macos
 ```
 
-`CO2_BUILD_DIST` selects a separate output directory. Outputs and caches are ignored. Builds record a digest of the public source file set; associate the reviewed public source commit with the Release. Do not replace a running installation during tests.
+`updates:key` explicitly creates or reuses a dedicated update-signing key in macOS Keychain and saves only its public key to `macos/release.json`. Review that public metadata before building. Production builds require this configured public key (or `CO2_UPDATE_PUBLIC_KEY`) and fail closed when it is missing. The updater uses pinned Sparkle binaries and signed metadata and archives; retain the private signing key independently of Codex credentials.
+
+`CO2_BUILD_DIST` selects a separate output directory. Outputs and caches are ignored. Builds record a digest of the public source file set; associate the reviewed public source commit with the Release. Do not replace a running installation during tests. `CO2_BUILD_UPDATE_TESTING=1 npm run build:macos` creates an explicitly non-distributable bundle with a temporary test signing seed under the ignored build cache; it never accesses Keychain. An explicit loopback `CO2_UPDATE_FEED_URL` is allowed only for these test bundles. Test bundles must not be published or installed over a user's app.
+
+Application build numbers in `macos/release.json` increase globally, including across application versions and channels. After verifying a production bundle, prepare signed update metadata locally:
+
+```sh
+npm run updates:prepare -- --app "dist/Codex Co².app" --dmg dist/Codex-Co2-0.3.3-build17-arm64-preview.dmg --output dist/appcast.xml --initial
+```
+
+Use `--initial` only for the first feed. Later updates must pass `--previous-feed <previous-signed-appcast.xml>` instead, preserving older channel entries and checking the global build increase. Preparation verifies the DMG, source inventory, embedded bundle and matching signing key, and does not publish anything. Publish matching Release assets first, then the signed feed unchanged as `appcast.xml` on the existing repository's separate `updates` branch. Keep generated appcasts outside the source inventory to avoid a digest cycle. Coordinate `auto_updates true` in the existing Homebrew cask when publishing the first updater-enabled release. Existing Build 12 installations still need one manual upgrade.
 
 After dependency changes, run `npm ci --ignore-scripts`, regenerate notices with `npm run notices:write`, and review license changes. Builds check notices against a fresh lockfile installation.
 

@@ -7,11 +7,11 @@ import { createHash } from 'node:crypto';
 import { binaryVersion } from '../lib/runtime.mjs';
 import { npmNotices } from './third-party-notices.mjs';
 import { publicSource } from './public-source.mjs';
+import { SPARKLE, createTestSigningKey, frameworkInventory, releaseConfiguration, sparkleDistribution, updateAssetName, xmlEscape } from './sparkle-distribution.mjs';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const source = await publicSource(root);
-const appVersion = JSON.parse(await fs.readFile(path.join(root, 'package.json'), 'utf8')).version;
-if (!/^\d+\.\d+\.\d+$/.test(appVersion)) throw new Error('Application version must have three numeric components');
-const buildNumber = '12';
+const release = await releaseConfiguration(root);
+const appVersion = release.version, buildNumber = release.build;
 const nodeVersion = '22.23.3', tunnelVersion = '2026.10.1';
 const cache = path.join(root, '.coop/build-cache');
 const dist = path.resolve(process.env.CO2_BUILD_DIST ?? path.join(root, 'dist'));
@@ -35,6 +35,12 @@ run(process.execPath, ['--test', ...tests.map(name => path.join(root, 'test', na
 run(process.env.CO2_BUILD_PYTHON ?? 'python3', ['-m', 'unittest', 'discover', '-s', path.join(root, 'test'), '-p', 'test_cloudflared_notices.py']);
 await fs.mkdir(cache, { recursive: true, mode: 0o700 }); await fs.chmod(path.join(root, '.coop'), 0o700);
 await fs.mkdir(dist, { recursive: true });
+const sparkle = await sparkleDistribution(cache);
+if (release.testing && !release.publicKey) {
+  const key = await createTestSigningKey(path.join(cache, 'update-testing'));
+  release.publicKey = key.publicKey;
+  console.log('Building a NON-DISTRIBUTABLE synthetic updater bundle; temporary signing seed remains in the ignored build cache.');
+}
 const archiveName = `node-v${nodeVersion}-darwin-arm64.tar.gz`;
 const archive = path.join(cache, archiveName);
 const sums = path.join(cache, `node-${nodeVersion}-SHASUMS256.txt`);
@@ -73,6 +79,12 @@ await fs.rm(app, { recursive: true, force: true });
 await fs.mkdir(path.join(app, 'Contents/MacOS'), { recursive: true });
 await fs.mkdir(runtime, { recursive: true }); await fs.mkdir(service, { recursive: true });
 await fs.mkdir(path.join(resources, 'Licenses'));
+const frameworks = path.join(app, 'Contents/Frameworks'); await fs.mkdir(frameworks);
+await fs.cp(sparkle.framework, path.join(frameworks, 'Sparkle.framework'), { recursive: true, verbatimSymlinks: true });
+if (JSON.stringify(await frameworkInventory(path.join(frameworks, 'Sparkle.framework'))) !== JSON.stringify(sparkle.files)) throw new Error('Sparkle framework changed while copying');
+const sparkleLicense = await fs.readFile(path.join(sparkle.distribution, 'LICENSE'));
+if (!sparkleLicense.equals(await fs.readFile(path.join(root, 'third-party/Sparkle-LICENSE.txt')))) throw new Error('Reviewed Sparkle license does not match the official distribution');
+await fs.writeFile(path.join(resources, 'Licenses/Sparkle-LICENSE.txt'), sparkleLicense);
 const iconset = path.join(cache, 'AppIcon.iconset');
 await fs.rm(iconset, { recursive: true, force: true });
 await fs.mkdir(iconset);
@@ -88,6 +100,7 @@ for (const [name, bytes] of source.contents) {
   if (!['lib', 'owner', 'public'].includes(name.split('/')[0])) continue;
   const target = path.join(service, name); await fs.mkdir(path.dirname(target), { recursive: true }); await fs.writeFile(target, bytes);
 }
+await fs.copyFile(path.join(root, 'macos/AppIcon.png'), path.join(service, 'owner/app-icon.png'));
 // Install only locked production dependencies in a fresh directory. Never
 // copy the developer's node_modules (which may contain extra files or links).
 const dependencies = await fs.mkdtemp(path.join(cache, 'production-'));
@@ -122,7 +135,9 @@ for (const [name, source] of Object.entries(binaries)) {
   run('/usr/bin/codesign', ['--force', '--sign', '-', '--preserve-metadata=entitlements', target]);
 }
 const executable = path.join(app, 'Contents/MacOS/CodexCo2');
-run('/usr/bin/swiftc', ['-O', '-target', `arm64-apple-macos${minimumMacOS}`, '-framework', 'AppKit', '-framework', 'WebKit', path.join(root, 'macos/App.swift'), '-o', executable]);
+run('/usr/bin/swiftc', ['-O', '-target', `arm64-apple-macos${minimumMacOS}`, '-framework', 'AppKit', '-framework', 'WebKit',
+  '-F', frameworks, '-framework', 'Sparkle', '-Xlinker', '-rpath', '-Xlinker', '@executable_path/../Frameworks',
+  path.join(root, 'macos/App.swift'), path.join(root, 'macos/Updater.swift'), '-o', executable]);
 await fs.writeFile(path.join(app, 'Contents/Info.plist'), `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
@@ -131,6 +146,11 @@ await fs.writeFile(path.join(app, 'Contents/Info.plist'), `<?xml version="1.0" e
 <key>CFBundleExecutable</key><string>CodexCo2</string><key>CFBundlePackageType</key><string>APPL</string>
 <key>CFBundleIconFile</key><string>AppIcon.icns</string>
 <key>CFBundleShortVersionString</key><string>${appVersion}</string><key>CFBundleVersion</key><string>${buildNumber}</string>
+<key>Co2UpdateChannel</key><string>${release.channel}</string><key>Co2UpdateTesting</key><${release.testing}/>
+<key>SUFeedURL</key><string>${xmlEscape(release.feedURL)}</string><key>SUPublicEDKey</key><string>${release.publicKey}</string>
+<key>SUEnableAutomaticChecks</key><true/><key>SUScheduledCheckInterval</key><integer>86400</integer>
+<key>SUAutomaticallyUpdate</key><false/><key>SUAllowsAutomaticUpdates</key><false/>
+<key>SUVerifyUpdateBeforeExtraction</key><true/><key>SURequireSignedFeed</key><true/><key>SUSendProfileInfo</key><false/>
 <key>LSMinimumSystemVersion</key><string>${minimumMacOS}</string><key>NSHighResolutionCapable</key><true/>
 <key>NSAppTransportSecurity</key><dict><key>NSAllowsLocalNetworking</key><true/></dict>
 </dict></plist>\n`);
@@ -146,13 +166,16 @@ async function inventory(dir, prefix = '') {
 }
 await inventory(resources);
 await fs.writeFile(path.join(resources, 'manifest.json'), JSON.stringify({ name: 'Codex Co²', version: appVersion, build: buildNumber, architecture: 'arm64', notarized: false,
-  channel: 'preview', source: { sha256: source.sha256, files: source.files }, cloudflaredSourceSHA256,
+  channel: release.channel, distributable: !release.testing,
+  updater: { version: SPARKLE.version, archiveSHA256: SPARKLE.sha256, feedURL: release.feedURL, publicKey: release.publicKey,
+    testing: release.testing, framework: sparkle.files },
+  source: { sha256: source.sha256, files: source.files }, cloudflaredSourceSHA256,
   runtimeMode: 'desktop-attach', minimumMacOS, versions: { node: nodeVersion, cloudflared: tunnelVersion }, nodeArchiveSHA256: expected, cloudflaredArchiveSHA256,
   licenses, files }, null, 2) + '\n');
 run('/usr/bin/codesign', ['--force', '--sign', '-', app]);
 run('/usr/bin/codesign', ['--verify', '--deep', '--strict', app]);
 const stage = path.join(cache, 'dmg-stage'); await fs.rm(stage, { recursive: true, force: true }); await fs.mkdir(stage);
-await fs.cp(app, path.join(stage, 'Codex Co².app'), { recursive: true });
+await fs.cp(app, path.join(stage, 'Codex Co².app'), { recursive: true, verbatimSymlinks: true });
 await fs.symlink('/Applications', path.join(stage, 'Applications'));
 await fs.copyFile(path.join(resources, 'PREVIEW.txt'), path.join(stage, 'PREVIEW.txt'));
 await fs.copyFile(path.join(root, 'macos/INSTALL.html'), path.join(stage, '安装说明.html'));
@@ -173,7 +196,7 @@ if (await fs.readFile(toolStamp, 'utf8').catch(() => '') !== requirementsHash) {
   run(python, ['-m', 'pip', 'install', '--disable-pip-version-check', '--require-hashes', '--only-binary=:all:', '-r', requirements]);
   await fs.writeFile(toolStamp, requirementsHash);
 }
-const dmg = path.join(dist, `Codex-Co2-${appVersion}-build${buildNumber}-arm64-preview.dmg`);
+const dmg = path.join(dist, updateAssetName(release));
 await fs.rm(dmg, { force: true });
 run(python, [path.join(root, 'scripts/package-macos.py'), stage, artwork, dmg, `Codex Co² ${appVersion} (${buildNumber})`]);
 await fs.writeFile(dmg + '.sha256', `${sha(await fs.readFile(dmg))}  ${path.basename(dmg)}\n`);

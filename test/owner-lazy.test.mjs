@@ -26,6 +26,34 @@ test('language resources are fixed local assets and never initialize a backend o
   assert.equal(owner.rooms.size, 0);
 });
 
+test('about metadata needs manager authentication and its icon exposes no update execution route', async t => {
+  let backendCalls = 0;
+  const owner = await startOwner({ ownerDir: new URL('../owner', import.meta.url).pathname, registrationSecret: secret(),
+    rpcFactory: () => { backendCalls++; throw new Error('About must not connect to a backend'); },
+    ensureRelay: () => { throw new Error('About must not open public access'); } });
+  t.after(() => owner.close());
+  const icon = await fetch(owner.baseUrl + '/app-icon.png');
+  assert.equal(icon.status, 200); assert.equal(icon.headers.get('content-type'), 'image/png');
+  assert.deepEqual(Buffer.from(await icon.arrayBuffer()).subarray(0, 8), Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
+  for (const route of ['/app-icon.png/extra', '/updates', '/updates/install', '/macos/release.json']) {
+    assert.equal((await fetch(owner.baseUrl + route)).status, 404);
+  }
+  const denied = new WebSocket(owner.baseUrl.replace('http:', 'ws:') + '/owner', { origin: owner.baseUrl });
+  const deniedMessages = []; denied.on('message', bytes => deniedMessages.push(bytes));
+  await once(denied, 'open'); const closed = once(denied, 'close');
+  denied.send(JSON.stringify({ type: 'auth', token: 'synthetic-invalid' }));
+  assert.equal((await closed)[0], 1008); assert.equal(deniedMessages.length, 0);
+
+  const local = new WebSocket(owner.baseUrl.replace('http:', 'ws:') + '/owner', { origin: owner.baseUrl });
+  t.after(() => local.terminate()); await once(local, 'open');
+  const message = once(local, 'message');
+  local.send(JSON.stringify({ type: 'auth', token: new URLSearchParams(new URL(owner.url).hash.slice(1)).get('owner') }));
+  const state = JSON.parse((await message)[0]);
+  assert.equal(state.type, 'state'); assert.match(state.appInfo.version, /^\d+\.\d+\.\d+$/);
+  assert.equal(state.appInfo.channel, 'source'); assert.equal(state.appInfo.build, null); assert.equal(state.appInfo.canUpdate, false);
+  assert.equal(backendCalls, 0); assert.equal(owner.rooms.size, 0);
+});
+
 test('invalid requests never start a tunnel; revoke-all cancels pending shares; a retry cannot duplicate a pending thread', async t => {
   let finish, starts = 0, rpcCalls = 0;
   const owner = await startOwner({ socketPath: 'synthetic', ownerDir: new URL('../owner', import.meta.url).pathname,
