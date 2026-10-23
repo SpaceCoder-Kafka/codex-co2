@@ -77,6 +77,13 @@
 
       <div id="panel-settings" class="tab-panel" role="tabpanel" aria-labelledby="tab-settings" hidden>
         <div class="panel-scroll settings-scroll">
+          <section id="network-setting" class="settings-card">
+            <div class="settings-heading"><h2 data-i18n="访问范围">访问范围</h2><p id="network-current" role="status" aria-live="polite"></p></div>
+            <div class="settings-row"><div><label for="intranet-only" data-i18n="仅内网可访问">仅内网可访问</label><p id="network-hint" class="muted"></p></div><input id="intranet-only" class="switch" type="checkbox" role="switch" aria-describedby="network-hint network-note" disabled></div>
+            <div id="lan-address-row" class="settings-row network-address" hidden><div><label for="lan-address" data-i18n="内网地址">内网地址</label><p id="lan-address-hint" class="muted" data-i18n="地址来自电脑已有的 Wi-Fi、有线、VPN 或虚拟网卡，并非 Co² 分配。仅使用所选地址，请选择与同事互通的网络。">地址来自电脑已有的 Wi-Fi、有线、VPN 或虚拟网卡，并非 Co² 分配。仅使用所选地址，请选择与同事互通的网络。</p></div><select id="lan-address" aria-label="内网地址" data-i18n-aria-label="内网地址" aria-describedby="lan-address-hint" disabled></select></div>
+            <p id="network-note" class="settings-note"></p>
+            <div class="network-actions"><button id="save-network" data-i18n="保存访问范围" disabled>保存访问范围</button><p id="network-status" class="muted" role="status" aria-live="polite"></p></div>
+          </section>
           <section id="share-limit-setting" class="settings-card"><div class="settings-heading"><h2 data-i18n="共享数量">共享数量</h2><p data-i18n="默认最多同时共享 10 条会话，可自定义或选择无限制。">默认最多同时共享 10 条会话，可自定义或选择无限制。</p></div><div class="settings-row"><div><label for="share-limit-mode" data-i18n="同时共享上限">同时共享上限</label><p id="share-limit-hint" class="muted" data-i18n="保存后立即生效并保留；调低上限不会停止已有共享。">保存后立即生效并保留；调低上限不会停止已有共享。</p></div><div class="share-limit-controls"><select id="share-limit-mode" aria-label="共享上限模式" data-i18n-aria-label="共享上限模式" aria-describedby="share-limit-hint"><option value="limited" data-i18n="自定义数量">自定义数量</option><option value="unlimited" data-i18n="无限制">无限制</option></select><input id="share-limit" type="number" min="1" step="1" value="10" required aria-label="共享会话数量" data-i18n-aria-label="共享会话数量" aria-describedby="share-limit-hint"><button id="save-share-limit" data-i18n="保存">保存</button></div></div><p id="share-limit-status" class="muted" role="status" aria-live="polite"></p></section>
           <section class="settings-card"><div class="settings-heading"><h2 data-i18n="协作通知">协作通知</h2><p data-i18n="访客申请、消息审批与协作异常会及时提醒；点击可查看对应事项。">访客申请、消息审批与协作异常会及时提醒；点击可查看对应事项。</p></div><div class="settings-row"><p class="muted" data-i18n="应用内提醒始终可用。系统通知需要 macOS 授权，通知中不包含消息正文。">应用内提醒始终可用。系统通知需要 macOS 授权，通知中不包含消息正文。</p><button id="notification-settings" data-i18n="启用系统通知…" hidden>启用系统通知…</button></div></section>
           <section class="settings-card"><div class="settings-heading"><h2><span data-i18n="语言与地区">语言与地区</span></h2><p><span data-i18n="选择你偏好的界面语言。">选择你偏好的界面语言。</span></p></div><div class="settings-row"><div><label for="language"><span data-i18n="界面语言">界面语言</span></label><p class="muted"><span data-i18n="切换后立即生效，并在下次打开应用时保留。">切换后立即生效，并在下次打开应用时保留。</span></p></div><select id="language" aria-label="界面语言" data-i18n-aria-label="界面语言"><option value="zh-CN" lang="zh-CN">简体中文</option><option value="zh-TW" lang="zh-TW">繁體中文</option><option value="en" lang="en">English</option></select></div></section>
@@ -89,5 +96,21 @@
     </main>
   </div>
   <div id="thread-menu" class="thread-menu" role="menu" aria-label="会话操作" data-i18n-aria-label="会话操作" hidden><button id="menu-share" role="menuitem"><span data-i18n="分享会话">分享会话</span></button></div>
+  <dialog id="invite-lifetime-dialog" class="invite-lifetime-dialog" aria-labelledby="invite-lifetime-title" aria-describedby="invite-lifetime-description">
+    <h2 id="invite-lifetime-title" data-i18n="内网邀请有效期">内网邀请有效期</h2>
+    <p id="invite-lifetime-description" class="muted" data-i18n="为本次内网共享选择有效期。">为本次内网共享选择有效期。</p>
+    <fieldset id="invite-lifetime" class="invite-lifetime-choices" aria-describedby="invite-lifetime-hint">
+      <legend data-i18n="邀请有效期">邀请有效期</legend>
+      <label class="invite-lifetime-choice" for="invite-lifetime-1h"><input id="invite-lifetime-1h" type="radio" name="invite-lifetime" value="1h" checked><span id="invite-lifetime-label-1h" data-i18n="1 小时">1 小时</span></label>
+      <label class="invite-lifetime-choice" for="invite-lifetime-1d"><input id="invite-lifetime-1d" type="radio" name="invite-lifetime" value="1d"><span id="invite-lifetime-label-1d" data-i18n="1 天">1 天</span></label>
+      <label class="invite-lifetime-choice" for="invite-lifetime-7d"><input id="invite-lifetime-7d" type="radio" name="invite-lifetime" value="7d"><span id="invite-lifetime-label-7d" data-i18n="7 天">7 天</span></label>
+      <div id="invite-lifetime-permanent-option" class="invite-lifetime-permanent-option">
+        <label class="invite-lifetime-choice" for="invite-lifetime-permanent"><input id="invite-lifetime-permanent" type="radio" name="invite-lifetime" value="permanent" aria-describedby="invite-permanent-tooltip"><span id="invite-lifetime-label-permanent" data-i18n="永久">永久</span></label>
+        <p id="invite-permanent-tooltip" class="invite-permanent-tooltip" role="tooltip" data-i18n="永久表示不设固定到期时间，但停止共享、退出应用或更换入口后，仍需生成新链接。">永久表示不设固定到期时间，但停止共享、退出应用或更换入口后，仍需生成新链接。</p>
+      </div>
+    </fieldset>
+    <p id="invite-lifetime-hint" class="muted" aria-live="polite"></p>
+    <div class="invite-lifetime-actions"><button id="invite-lifetime-cancel" data-i18n="取消">取消</button><button id="invite-lifetime-confirm" class="primary" data-i18n="生成邀请">生成邀请</button></div>
+  </dialog>
 </body>
 </html>

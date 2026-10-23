@@ -125,6 +125,8 @@ The host can remove a collaborator, stop one share or stop all sharing. Closing 
 - Only the local host can change message approval. Changes affect new messages; already pending messages still need a decision. **Native tool approvals remain in official Desktop**; message approval does not replace them.
 - The authenticated local manager reads IDs, titles, update times and project paths from the Desktop index. That catalog is not sent to guests or the relay. Selected content is read through Desktop IPC; the app does not copy default credentials or conversation files.
 - Public sharing uses ordinary TLS and trusts the relay/tunnel infrastructure. **It is not end-to-end encrypted.** Host disconnection pauses collaboration; some failures require a new invitation. Temporary URLs may change and availability is not guaranteed. [Quick Tunnels are intended for testing and development](https://developers.cloudflare.com/tunnel/get-started/quick-tunnels/).
+- Source builds add **Settings → Access scope → Intranet only**. Select a private IPv4 address and save, then invite colleagues through the private IP without creating a Cloudflare entry. End existing shares before changing scope. **Direct intranet access uses unencrypted HTTP; browser system notifications are unavailable.** Chat, admission and message approval remain available. This restricts the collaboration entry; model, tool and remote-image traffic keep their existing network behavior. Cross-device access and company firewall rules still need field acceptance.
+- When creating an intranet invitation, choose **1 hour, 1 day, 7 days or Permanent**. Timed invitations end sharing at a fixed deadline and do not roll forward. Permanent removes that deadline; stopping sharing, quitting, replacing the entry, or loss of network or Desktop availability can still end access. It does not guarantee a fixed address or reuse of the link after restart.
 - Invitations and visitor recovery files are sensitive. Browser storage may retain a visitor identity. Revoking access stops further delivery but cannot erase content a recipient has already copied or saved.
 
 Review history and attachments before sharing. Avoid disclosing secrets or material you do not have permission to share.
@@ -135,7 +137,7 @@ Review history and attachments before sharing. Avoid disclosing secrets or mater
 
 **Why can't I connect?** Confirm official Desktop is running, has a nonempty conversation, and exposes a compatible local interface. Co² fails closed if unavailable or incompatible. It does not restart Desktop, replace a profile or create a fallback backend. Desktop updates may affect compatibility.
 
-**Why has my invitation stopped working?** With a compatible relay and healthy connections, Co² automatically renews the current invitation without changing its link. Actual expiry, stopping sharing, quitting the app or rebuilding the public entry can require a new invitation. Share again from history; choose “Got it” to dismiss an ended share while keeping its history. Check uncertain submissions in Desktop before resending.
+**Why has my invitation stopped working?** Public invitations renew with a compatible relay and healthy connections, keeping the same link; the Cloudflare temporary hostname has no one-hour hard deadline. Timed intranet invitations end sharing at their fixed deadline. Permanent invitations still depend on the host and network. Expiry, stopping sharing, quitting or replacing the entry can require a new invitation. Share again from history; choose “Got it” to dismiss an ended share while keeping its history. Check uncertain submissions in Desktop before resending.
 
 **What has been verified?** Synthetic tests cover admission, message policy, scoped transport and revocation. Earlier manual sessions verified individual local/public paths. The current release candidate still needs final-package native Desktop, native tool approval and clean-Mac download/install acceptance. Scripted RPC tests do not prove native UI behavior.
 
@@ -149,6 +151,8 @@ npm run host -- --attach --public --open
 ```
 
 Open the local manager printed by the command. Without `--public`, access stays local. No separate Codex CLI is needed for attachment.
+
+For direct intranet access from source, run `npm run host -- --attach --intranet-only --open`. If multiple private addresses are detected, select the sharing address in the manager or specify a current interface address with `--lan-address 192.168.1.20`. Intranet mode never falls back to public sharing after failure. Check the connection and share again after an address change. Company routing, VPN and Wi-Fi client isolation still determine whether devices can reach each other.
 
 Building needs Apple Silicon macOS, Xcode command line tools, Python 3.9+ and network access:
 

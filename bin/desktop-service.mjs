@@ -12,13 +12,15 @@ import { DesktopIpc, desktopIpcPath } from '../lib/desktop-ipc.mjs';
 const { values } = parseArgs({ options: {
   'runtime-dir': { type: 'string' }, 'resource-root': { type: 'string' }, cli: { type: 'string' }, cloudflared: { type: 'string' }, 'desktop-app': { type: 'string' },
   attach: { type: 'boolean' },
+  'intranet-only': { type: 'boolean' }, 'lan-address': { type: 'string' },
 } });
 for (const key of ['runtime-dir', 'resource-root', 'cloudflared']) if (!path.isAbsolute(values[key] ?? '')) throw new Error('Desktop service requires absolute resource/runtime/binary paths');
 if ((!values.attach || values.cli !== undefined) && !path.isAbsolute(values.cli ?? '')) throw new Error('Isolated Desktop service requires an absolute CLI path');
 if (!binaryVersion(values.cloudflared).startsWith('cloudflared version 2026.10.1 ')) throw new Error('Expected bundled cloudflared 2026.10.1');
 const appPath = values['desktop-app'] ?? '/Applications/ChatGPT.app';
 const service = new SharingService({ mode: 'host', resourceRoot: values['resource-root'], runtimeDir: values['runtime-dir'],
-  cliPath: values.cli, cloudflaredPath: values.cloudflared, lazyPublic: true, appPath, attach: values.attach });
+  cliPath: values.cli, cloudflaredPath: values.cloudflared, lazyPublic: true, appPath, attach: values.attach,
+  intranetOnly: values['intranet-only'], lanAddress: values['lan-address'] });
 let loginRpc;
 const safeError = message => Object.assign(new Error(message), { safeMessage: message });
 const run = promisify(execFile);
@@ -26,7 +28,10 @@ const control = new AppControl({ input: process.stdin, output: process.stdout,
   start: () => service.start(),
   close: async () => { loginRpc?.close(); await service.close(); },
   command: async type => {
-    if (type === 'check-network') { await service.monitor?.check(); return { ok: true }; }
+    if (type === 'check-network') {
+      if (service.getNetwork().intranetOnly) await service.checkConnection(); else await service.monitor?.check();
+      return { ok: true };
+    }
     if (type === 'revoke-all') { service.revokeAll(); return { ok: true }; }
     if (type === 'connect-current') {
       if (!values.attach) throw safeError('当前为隔离实验模式，请使用日常 Codex 接入模式。');

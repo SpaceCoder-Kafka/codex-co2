@@ -3,6 +3,51 @@ import WebKit
 import CryptoKit
 import UserNotifications
 
+struct InvitationClipboard {
+    static func isPrivateIPv4(_ host: String) -> Bool {
+        let parts = host.split(separator: ".", omittingEmptySubsequences: false)
+        guard parts.count == 4 else { return false }
+        let octets = parts.compactMap { Int($0) }
+        guard octets.count == 4, zip(parts, octets).allSatisfy({ String($0.1) == $0.0 && (0...255).contains($0.1) }) else { return false }
+        return octets[0] == 10 || (octets[0] == 172 && (16...31).contains(octets[1])) || (octets[0] == 192 && octets[1] == 168)
+    }
+    static func isToken(_ raw: String) -> Bool {
+        guard raw.range(of: "^[A-Za-z0-9_-]{43}$", options: .regularExpression) != nil,
+              let bytes = Data(base64Encoded: raw.replacingOccurrences(of: "-", with: "+").replacingOccurrences(of: "_", with: "/") + "="), bytes.count == 32 else { return false }
+        return bytes.base64EncodedString().replacingOccurrences(of: "+", with: "-").replacingOccurrences(of: "/", with: "_").replacingOccurrences(of: "=", with: "") == raw
+    }
+    static func accepts(_ raw: String) -> Bool {
+        guard raw.utf8.count < 4096, !raw.unicodeScalars.contains(where: { CharacterSet.whitespacesAndNewlines.union(.controlCharacters).contains($0) }),
+              let url = URLComponents(string: raw), let host = url.host, !host.isEmpty,
+              url.user == nil, url.password == nil, url.query == nil, ["", "/"].contains(url.path),
+              url.port == nil || (1...65535).contains(url.port!), let fragment = url.percentEncodedFragment else { return false }
+        if url.scheme?.lowercased() == "http" {
+            guard isPrivateIPv4(host), url.percentEncodedHost == host, url.port != nil else { return false }
+        } else if url.scheme?.lowercased() != "https" { return false }
+        var fields: [String: String] = [:]
+        for field in fragment.split(separator: "&", omittingEmptySubsequences: false) {
+            let pair = field.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: false)
+            guard pair.count == 2, ["room", "invite", "scope"].contains(String(pair[0])), fields[String(pair[0])] == nil else { return false }
+            fields[String(pair[0])] = String(pair[1])
+        }
+        guard let room = fields["room"], room.range(of: "^[A-Za-z0-9_-]{8,128}$", options: .regularExpression) != nil,
+              let invite = fields["invite"], isToken(invite) else { return false }
+        return fields["scope"].map { $0.range(of: "^[A-Za-z0-9_-]{1,128}$", options: .regularExpression) != nil } ?? true
+    }
+    static func copy(_ raw: String, to board: NSPasteboard = .general) -> Bool {
+        guard accepts(raw) else { return false }
+        board.clearContents()
+        return board.setString(raw, forType: .string)
+    }
+    static func response(to body: Any, board: NSPasteboard = .general) -> [String: Any]? {
+        guard let request = body as? [String: Any], let requestID = request["requestId"] as? String,
+              requestID.utf8.count <= 64, requestID.range(of: "^copy-[1-9][0-9]*$", options: .regularExpression) != nil else { return nil }
+        let validShape = Set(request.keys) == Set(["requestId", "url"])
+        let ok = validShape && (request["url"] as? String).map { copy($0, to: board) } == true
+        return ["requestId": requestID, "ok": ok]
+    }
+}
+
 struct AttentionLedger {
     private var announced: [String: Set<String>] = [:]
     mutating func reconcile(_ current: [String: Set<String>], enabled: Bool) -> [String] {
@@ -422,9 +467,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
             } }
             return
         }
-        guard message.name == "copyInvite", let raw = message.body as? String, raw.utf8.count < 4096, let url = URL(string: raw),
-              url.scheme == "https", url.fragment?.contains("invite=") == true else { return }
-        NSPasteboard.general.clearContents(); NSPasteboard.general.setString(raw, forType: .string)
+        guard message.name == "copyInvite", let result = InvitationClipboard.response(to: message.body),
+              let bytes = try? JSONSerialization.data(withJSONObject: result), let json = String(data: bytes, encoding: .utf8) else { return }
+        webView.evaluateJavaScript("window.co2InviteCopyResult?.(\(json))", completionHandler: nil)
     }
 }
 let delegate = AppDelegate()

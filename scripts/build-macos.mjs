@@ -11,7 +11,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const source = await publicSource(root);
 const appVersion = JSON.parse(await fs.readFile(path.join(root, 'package.json'), 'utf8')).version;
 if (!/^\d+\.\d+\.\d+$/.test(appVersion)) throw new Error('Application version must have three numeric components');
-const buildNumber = '12';
+const buildNumber = '16';
 const nodeVersion = '22.23.3', tunnelVersion = '2026.10.1';
 const cache = path.join(root, '.coop/build-cache');
 const dist = path.resolve(process.env.CO2_BUILD_DIST ?? path.join(root, 'dist'));
