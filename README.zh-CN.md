@@ -15,7 +15,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/SpaceCoder-Kafka/codex-co2/releases/tag/v0.3.3-preview.12"><img src="https://img.shields.io/badge/preview-v0.3.3--preview.12-2563eb" alt="预览版本 v0.3.3-preview.12"></a>
+  <a href="https://github.com/SpaceCoder-Kafka/codex-co2/releases/tag/v0.3.3-preview.17"><img src="https://img.shields.io/badge/preview-v0.3.3--preview.17-2563eb" alt="预览版本 v0.3.3-preview.17"></a>
   <img src="https://img.shields.io/badge/host-macOS%2015%2B%20%C2%B7%20Apple%20Silicon-555555" alt="分享者：macOS 15+，Apple Silicon">
   <img src="https://img.shields.io/badge/guest-browser-2563eb" alt="协作者：浏览器">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-22c55e" alt="许可：MIT"></a>
@@ -26,7 +26,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/SpaceCoder-Kafka/codex-co2/releases/tag/v0.3.3-preview.12">下载</a> ·
+  <a href="https://github.com/SpaceCoder-Kafka/codex-co2/releases/tag/v0.3.3-preview.17">下载</a> ·
   <a href="#新用户使用homebrew">快速开始</a> ·
   <a href="#应用截图">应用截图</a> ·
   <a href="#共享前需要知道">共享须知</a> ·
@@ -89,21 +89,28 @@ brew install --cask SpaceCoder-Kafka/tap/codex-co2 && open "$(brew --repository 
 
 ### 通过 DMG 安装
 
-也可以从 [Releases](https://github.com/SpaceCoder-Kafka/codex-co2/releases/tag/v0.3.3-preview.12) 下载 DMG 和对应 `.sha256` 文件，下载后执行：
+也可以从 [Releases](https://github.com/SpaceCoder-Kafka/codex-co2/releases/tag/v0.3.3-preview.17) 下载 DMG 和对应 `.sha256` 文件，下载后执行：
 
 ```sh
-shasum -a 256 -c Codex-Co2-0.3.3-build12-arm64-preview.dmg.sha256
+shasum -a 256 -c Codex-Co2-0.3.3-build17-arm64-preview.dmg.sha256
 ```
 
 预览包采用临时签名，**未经 Apple 公证**，首次打开可能受系统拦截。先尝试从 Applications 打开 Co²，再到「系统设置 → 隐私与安全性 → 仍要打开」确认。Homebrew 会直接安装应用，不会展示 DMG 的安装引导窗口。请参考 [Apple 指引](https://support.apple.com/zh-cn/102445)。
 
 ### 关于与更新
 
-包含更新器的版本在侧栏和 macOS 应用菜单提供「关于」入口，显示实际安装的版本、渠道和 Build，并提供「检查更新」、GitHub 和更新日志。底部可关闭的 Star 提示会在浏览器打开项目仓库。
+Build 17 起在侧栏和 macOS 应用菜单提供「关于」入口，显示实际安装的版本、渠道和 Build，并提供「检查更新」、GitHub 和更新日志。底部可关闭的 Star 提示会在浏览器打开项目仓库。
 
 应用每天最多在后台检查一次。Preview 接收更新的预览版及正式版，正式版只接收正式版。点击「更新到…」下载并校验更新；仍有共享时，确认结束共享后才安装并重开 Co²。官方 Codex Desktop 保持运行，更新后可重新分享。取消安装不会留下下次退出时自动更新的任务。源码浏览器模式和只读安装盘运行提供手动下载入口。
 
-当前链接中的 Build 12 尚无更新器，需要先通过 Homebrew 或 DMG 手动升级一次。应用内更新需要已发布的签名更新源，仍遵守 macOS 的安全检查。
+Build 16 及以前需先通过 Homebrew 或 DMG 手动升级一次，之后才能使用应用内更新。升级前先停止共享并退出 Co²。通过 Homebrew 升级时，此 Cask 支持应用自行更新，需加 `--greedy`：
+
+```sh
+brew update
+brew upgrade --cask --greedy SpaceCoder-Kafka/tap/codex-co2
+```
+
+应用内更新会校验更新信息与安装包的签名，仍遵守 macOS 的安全检查。
 
 ### 分享者操作
 

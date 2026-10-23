@@ -15,7 +15,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/SpaceCoder-Kafka/codex-co2/releases/tag/v0.3.3-preview.12"><img src="https://img.shields.io/badge/preview-v0.3.3--preview.12-2563eb" alt="Preview v0.3.3-preview.12"></a>
+  <a href="https://github.com/SpaceCoder-Kafka/codex-co2/releases/tag/v0.3.3-preview.17"><img src="https://img.shields.io/badge/preview-v0.3.3--preview.17-2563eb" alt="Preview v0.3.3-preview.17"></a>
   <img src="https://img.shields.io/badge/host-macOS%2015%2B%20%C2%B7%20Apple%20Silicon-555555" alt="Host: macOS 15+ on Apple Silicon">
   <img src="https://img.shields.io/badge/guest-browser-2563eb" alt="Guest: browser">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-22c55e" alt="License: MIT"></a>
@@ -26,7 +26,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/SpaceCoder-Kafka/codex-co2/releases/tag/v0.3.3-preview.12">Download</a> ·
+  <a href="https://github.com/SpaceCoder-Kafka/codex-co2/releases/tag/v0.3.3-preview.17">Download</a> ·
   <a href="#new-users-install-with-homebrew">Quick start</a> ·
   <a href="#screenshots">Screenshots</a> ·
   <a href="#what-sharing-grants">Sharing boundaries</a> ·
@@ -93,21 +93,28 @@ The command opens a local first-launch guide after successful installation. Use 
 
 ### Install from a DMG
 
-Alternatively, download the DMG and matching `.sha256` file from [Releases](https://github.com/SpaceCoder-Kafka/codex-co2/releases/tag/v0.3.3-preview.12), then check the file:
+Alternatively, download the DMG and matching `.sha256` file from [Releases](https://github.com/SpaceCoder-Kafka/codex-co2/releases/tag/v0.3.3-preview.17), then check the file:
 
 ```sh
-shasum -a 256 -c Codex-Co2-0.3.3-build12-arm64-preview.dmg.sha256
+shasum -a 256 -c Codex-Co2-0.3.3-build17-arm64-preview.dmg.sha256
 ```
 
 The preview is **ad-hoc signed and not notarized by Apple**. macOS may block its first launch. Attempt to open Co² from Applications, then go to **System Settings → Privacy & Security → Open Anyway** and confirm. Homebrew installs the app directly without showing the DMG's installation window. See [Apple's guidance](https://support.apple.com/en-us/102445).
 
 ### About and updates
 
-Updater-enabled builds provide **About** in the sidebar and the macOS app menu. About shows the installed version, channel and build, offers **Check for updates**, and links to GitHub and release notes. The dismissible Star invitation opens the project repository in your browser.
+Build 17 and later provide **About** in the sidebar and the macOS app menu. About shows the installed version, channel and build, offers **Check for updates**, and links to GitHub and release notes. The dismissible Star invitation opens the project repository in your browser.
 
 The app checks for updates at most once a day in the background. Preview builds receive newer preview and stable builds; stable builds receive stable updates. Click **Update to…** to download and verify an update. If sharing is active, confirm that it can end before Co² installs and restarts. Official Codex Desktop stays running; share again after updating. Canceling installation does not schedule it for your next quit. Source/browser mode and read-only disk images offer manual downloads instead.
 
-The currently linked Build 12 predates the updater and needs one manual upgrade through Homebrew or a DMG. In-app updates require a published signed update feed; they do not bypass macOS security checks.
+Build 16 and earlier need one manual upgrade through Homebrew or a DMG before in-app updates are available. Stop sharing and quit Co² first. For Homebrew, include `--greedy` because the cask supports self-updating:
+
+```sh
+brew update
+brew upgrade --cask --greedy SpaceCoder-Kafka/tap/codex-co2
+```
+
+In-app updates verify signed update metadata and packages and remain subject to macOS security checks.
 
 ### Host: share a conversation
 
