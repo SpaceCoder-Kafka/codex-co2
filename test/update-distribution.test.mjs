@@ -4,7 +4,9 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { createPrivateKey, createPublicKey, randomBytes, sign, verify } from 'node:crypto';
-import { appcastXML, compareMacOSVersions, createTestSigningKey, frameworkBinaryInspection, frameworkInventory, inspectMacOSBinary, previousAppcastItems, releaseConfiguration, updateAssetName } from '../scripts/sparkle-distribution.mjs';
+import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
+import { appcastXML, compareMacOSVersions, createTestSigningKey, frameworkBinaryInspection, frameworkInventory, inspectMacOSBinary, MACOS_MINIMUM_VERSION, previousAppcastItems, releaseConfiguration, requireMacOSCompatibility, updateAssetName } from '../scripts/sparkle-distribution.mjs';
 
 const repository = 'SpaceCoder-Kafka/codex-co2';
 const feedURL = 'https://raw.githubusercontent.com/SpaceCoder-Kafka/codex-co2/updates/appcast.xml';
@@ -88,6 +90,15 @@ test('Universal releases use one compatible update archive while historical ARM 
   assert.throws(() => updateAssetName({ ...release, architecture: '../../invalid' }), /architecture/);
 });
 
+test('macOS 14 updates preserve the original minimum of historical releases', () => {
+  const historical = appcastXML({ release: { version: '0.3.3', build: '18', channel: 'preview', architecture: 'universal' }, minimumMacOS: '15.0', size: 100, signature });
+  const release = { version: '0.3.3', build: '19', channel: 'preview', architecture: 'universal' };
+  const items = previousAppcastItems(appcastXML({ release, minimumMacOS: MACOS_MINIMUM_VERSION, size: 200, signature, previousItems: previousAppcastItems(historical) }));
+  assert.match(items[0], /<sparkle:minimumSystemVersion>14\.0<\/sparkle:minimumSystemVersion>/);
+  assert.match(items[1], /<sparkle:minimumSystemVersion>15\.0<\/sparkle:minimumSystemVersion>/);
+  assert.match(items[0], /build19-universal-preview\.dmg/);
+});
+
 function inspectionTool({ architectures = 'arm64 x86_64', minimums = { arm64: '13.0', x86_64: '15.0' }, library = '/usr/lib/libSystem.B.dylib' } = {}) {
   return (binary, args) => {
     if (binary.endsWith('/lipo')) return architectures + '\n';
@@ -106,6 +117,24 @@ test('native inspection requires both slices and evaluates dependencies and depl
   assert.throws(() => inspectMacOSBinary('/synthetic/app', { execute: inspectionTool({ library: '@rpath/Unexpected.framework/Unexpected' }), embeddedSparkle: true }), /Non-system/);
   assert.doesNotThrow(() => inspectMacOSBinary('/synthetic/app', { execute: inspectionTool({ library: '@rpath/Sparkle.framework/Versions/B/Sparkle' }), embeddedSparkle: true }));
 });
+
+test('macOS 14 compatibility rejects a raised dependency floor even when the host slice is compatible', () => {
+  const inspect = minimums => inspectMacOSBinary('/synthetic/runtime', { execute: inspectionTool({ minimums }) });
+  assert.doesNotThrow(() => requireMacOSCompatibility(inspect({ arm64: '11.0', x86_64: '14.0' })));
+  assert.throws(() => requireMacOSCompatibility(inspect({ arm64: '14.0', x86_64: '15.0' })), /x86_64.*requires macOS 15\.0; target is 14\.0/);
+  assert.throws(() => requireMacOSCompatibility(inspect({ arm64: '14.1', x86_64: '14.0' })), /arm64.*requires macOS 14\.1/);
+  assert.throws(() => requireMacOSCompatibility({ architectures: ['arm64', 'x86_64'], slices: { arm64: { minimumMacOS: '14.0' } } }), /Missing minimum macOS.*x86_64/);
+});
+
+test('bundle checker cannot accept a macOS 14 claim through the legacy ARM-only provenance path', () => temporary(async directory => {
+  const resources = path.join(directory, 'Contents/Resources'); await fs.mkdir(resources, { recursive: true });
+  for (const extra of [{ architecture: 'arm64' }, { architecture: 'arm64', cloudflaredBuild: {} }, { architecture: 'universal' }]) {
+    await fs.writeFile(path.join(resources, 'manifest.json'), JSON.stringify({ runtimeMode: 'desktop-attach', minimumMacOS: '14.0', ...extra }));
+    const result = spawnSync(process.execPath, [fileURLToPath(new URL('../scripts/check-macos-bundle.mjs', import.meta.url)), directory], { encoding: 'utf8' });
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /macOS 14 requires a Universal bundle with controlled cloudflared build provenance/);
+  }
+}));
 
 test('an external dependency present only in the Intel slice still rejects a Universal runtime', () => {
   const systemOnly = inspectionTool(), external = inspectionTool({ library: '/opt/local/lib/unbundled.dylib' });

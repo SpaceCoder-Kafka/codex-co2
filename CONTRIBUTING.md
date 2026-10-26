@@ -38,12 +38,16 @@ npm run check:macos
 Application build numbers in `macos/release.json` increase globally, including across application versions and channels. After verifying a production bundle, prepare signed update metadata locally:
 
 ```sh
-npm run updates:prepare -- --app "dist/Codex Co².app" --dmg dist/Codex-Co2-0.3.3-build18-universal-preview.dmg --output dist/appcast.xml --initial
+npm run updates:prepare -- --app "dist/Codex Co².app" --dmg dist/Codex-Co2-0.3.3-build19-universal-preview.dmg --output dist/appcast.xml --initial
 ```
 
 Use `--initial` only for the first feed. Later updates must pass `--previous-feed <previous-signed-appcast.xml>` instead, preserving older channel entries and checking the global build increase. Preparation verifies the DMG, source inventory, embedded bundle and matching signing key, and does not publish anything. Publish matching Release assets first, then the signed feed unchanged as `appcast.xml` on the existing repository's separate `updates` branch. Keep generated appcasts outside the source inventory to avoid a digest cycle. Coordinate `auto_updates true` in the existing Homebrew cask when publishing the first updater-enabled release. Existing Build 12 installations still need one manual upgrade.
 
 Universal builds combine separately verified arm64 and x86_64 main executables, Node and cloudflared. Sparkle and every native helper must also contain both slices. Inspect minimum macOS and linked libraries per slice; the host-native runtime check does not prove the other architecture works. Each cloudflared slice gets its own verified Go module/license inventory. Keep historical ARM appcast items unchanged.
+
+The current Universal candidate targets macOS **14.0**. `scripts/cloudflared-macos.mjs` builds the pinned cloudflared source with a verified Go toolchain and an explicit deployment target for each architecture; it does not use an arbitrary local binary or patch an existing binary's minimum-version metadata. Downloads, isolated build state and toolchains stay in `.coop/`; no global Go installation is required. Preserve the source/toolchain checksums and per-architecture build provenance in the release manifest. Dependency updates must continue to pass the deployment-target gate.
+
+CI builds and checks these targets on macOS 26. GitHub's hosted macOS 14 images [retire on November 2, 2026](https://github.blog/changelog/2026-10-01-github-actions-macos-14-runner-image-retirement/), so the workflow does not depend on those labels. Before claiming native macOS 14 acceptance, use a macOS 14 test machine to verify installation, compatible official Desktop attachment, native approvals, sharing/reconnection, notifications and app updates. Validate Intel and Apple Silicon separately. A newer-host build or synthetic IPC test is not macOS 14 runtime acceptance.
 
 ## Windows builds
 

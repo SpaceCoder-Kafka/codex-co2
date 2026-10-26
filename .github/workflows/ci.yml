@@ -6,7 +6,9 @@ permissions:
   contents: read
 jobs:
   synthetic:
-    name: macOS synthetic checks and Universal package
+    name: macOS synthetic checks and Universal macOS 14 deployment
+    # GitHub retires hosted macos-14 images on 2026-11-02. This job checks
+    # deployment targets on macOS 26; macOS 14 native acceptance is separate.
     runs-on: macos-26
     timeout-minutes: 45
     steps:
@@ -37,6 +39,9 @@ jobs:
         run: npm run build:macos
       - name: Verify Universal bundle and both native architecture slices
         run: npm run check:macos
+      - name: Assert macOS 14 package deployment target
+        run: |
+          node --input-type=module -e 'import fs from "node:fs"; import assert from "node:assert/strict"; const manifest = JSON.parse(fs.readFileSync("dist/Codex Co².app/Contents/Resources/manifest.json", "utf8")); assert.equal(manifest.minimumMacOS, "14.0");'
       - name: Save macOS preview artifacts
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:

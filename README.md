@@ -72,17 +72,17 @@ https://github.com/user-attachments/assets/743766be-3549-4928-9f1e-d720314f8989
 
 The macOS preview attaches to your **already running official Codex Desktop**, keeping its existing Agent, login and tool approval settings.
 
-- **Host:** Apple Silicon Mac. Current bundle requires macOS **15.0+**. Native checks have only been recorded on macOS **26.4.1** with Codex Desktop **26.1007.30912**; other combinations are unverified.
+- **Published Build 17 host:** Apple Silicon Mac, macOS **15.0+**. Native checks have only been recorded on macOS **26.4.1** with Codex Desktop **26.1007.30912**; other combinations are unverified.
 - **Guest:** a browser with JavaScript and WebSocket support.
 - **Network:** both participants need access to the generated public address. The default temporary entry uses Cloudflare Quick Tunnels.
 
 ### Universal macOS and Windows candidates
 
-The source build now targets these desktop packages; the published Build 17 downloads above remain Apple Silicon packages.
+The source build now targets these desktop packages; the published Build 17 downloads above remain Apple Silicon packages requiring macOS 15+.
 
 | Package | Target | Acceptance |
 | --- | --- | --- |
-| Universal DMG | macOS 15+; Apple Silicon and Intel | Two native slices; Intel and clean-Mac native acceptance still required |
+| Universal DMG | macOS 14+; Apple Silicon and Intel | Two native slices; macOS 14, Intel and clean-Mac native acceptance still required |
 | Windows setup EXE and portable ZIP | Windows 10 version 1809+ / Windows 11, x64 | Native Windows Desktop, installation and tool-approval acceptance still required |
 
 Both attach to an already running official Codex Desktop; guests continue to use a browser. Windows uses Microsoft Edge WebView2 Runtime and offers manual updates through the project Releases page. Preview packages remain ad-hoc signed/unnotarized on macOS and unsigned on Windows. Linux packages are not built.
@@ -186,6 +186,8 @@ Building the Universal DMG needs Apple Silicon or Intel macOS, Xcode command lin
 npm run build:macos
 npm run check:macos
 ```
+
+The macOS 14 candidate rebuilds the pinned cloudflared source with a verified Go toolchain. Build tools and caches stay local to the repository; no global Go installation is required. Package checks inspect every native slice's deployment target. They do not establish that Desktop attachment, tool approvals or installation work on macOS 14.
 
 For Windows packages, install .NET SDK 8.0.426, Python 3.9+, NSIS 3.13 and npm dependencies, then run:
 

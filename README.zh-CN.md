@@ -70,15 +70,15 @@ https://github.com/user-attachments/assets/b1c2f544-3684-432e-9e03-f32ac15b9370
 
 ## 体验预览版
 
-分享者需要 Apple Silicon Mac 和已运行的官方 Codex Desktop。安装包最低要求 macOS **15.0**；原生检查仅记录于 macOS **26.4.1**、Desktop **26.1007.30912**，其他组合尚未验证。协作者使用支持 JavaScript 和 WebSocket 的浏览器；双方网络需能访问生成的公网地址。
+已发布的 **Build 17** 需要 Apple Silicon Mac、macOS **15.0+** 和已运行的官方 Codex Desktop。原生检查仅记录于 macOS **26.4.1**、Desktop **26.1007.30912**，其他组合尚未验证。协作者使用支持 JavaScript 和 WebSocket 的浏览器；双方网络需能访问生成的公网地址。
 
 ### Universal macOS 与 Windows 候选包
 
-源码构建新增以下桌面产物；上方已发布的 Build 17 下载仍为 Apple Silicon 安装包。
+源码构建新增以下桌面产物；上方已发布的 Build 17 下载仍为要求 macOS 15+ 的 Apple Silicon 安装包。
 
 | 安装包 | 目标系统 | 验收范围 |
 | --- | --- | --- |
-| Universal DMG | macOS 15+；Apple Silicon 与 Intel | 包含两种原生架构；Intel 与干净 Mac 原生验收仍待完成 |
+| Universal DMG | macOS 14+；Apple Silicon 与 Intel | 包含两种原生架构；macOS 14、Intel 与干净 Mac 原生验收仍待完成 |
 | Windows 安装 EXE 与便携 ZIP | Windows 10 1809+ / Windows 11，x64 | 官方 Desktop、安装与原生工具审批仍待 Windows 验收 |
 
 两端均接入已经运行的官方 Codex Desktop，协作者继续使用浏览器。Windows 使用 Microsoft Edge WebView2 Runtime，通过项目 Releases 页面手动更新。预览包在 macOS 上仍为临时签名、未经公证；Windows 包暂未签名。不构建 Linux 包。
@@ -180,6 +180,8 @@ Universal DMG 构建另需 Apple Silicon 或 Intel macOS、Xcode 命令行工具
 npm run build:macos
 npm run check:macos
 ```
+
+macOS 14 候选包使用经过校验的 Go 工具链重新编译固定版本的 cloudflared 源码。构建工具和缓存保留在仓库内，无需全局安装 Go。包检查会核对每个原生架构的最低系统要求，不能代替 macOS 14 上的 Desktop 接入、工具审批与安装验收。
 
 Windows 构建另需 .NET SDK 8.0.426、Python 3.9+、NSIS 3.13 和 npm 依赖：
 

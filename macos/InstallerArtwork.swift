@@ -55,7 +55,7 @@ let background = image(NSSize(width: 760, height: 600)) {
     blue.setStroke(); arrow.lineWidth = 3; arrow.stroke()
     text("首次打开被拦截？", 60, 355, 640, 17, .semibold)
     text("先尝试打开应用，再双击下方入口，手动选择“仍要打开”。", 60, 387, 640, 13, .regular, muted)
-    text("macOS 15+ · Apple Silicon · 需要已运行的官方 Codex Desktop", 60, 575, 640, 11, .regular, muted)
+    text("macOS 14+ · Apple Silicon / Intel · 需要已运行的官方 Codex Desktop", 60, 575, 640, 11, .regular, muted)
 }
 for case let bitmap as NSBitmapImageRep in background.representations {
     let name = bitmap.pixelsWide == 760 ? "background.png" : "background@2x.png"

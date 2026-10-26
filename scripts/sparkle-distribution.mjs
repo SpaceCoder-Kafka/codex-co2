@@ -14,10 +14,23 @@ export const SPARKLE = Object.freeze({
 export const digest = bytes => createHash('sha256').update(bytes).digest('hex');
 export const validPublicKey = value => typeof value === 'string' && /^[A-Za-z0-9+/]{43}=$/.test(value) && Buffer.from(value, 'base64').length === 32;
 export const MACOS_ARCHITECTURES = Object.freeze(['arm64', 'x86_64']);
+export const MACOS_MINIMUM_VERSION = '14.0';
 export function compareMacOSVersions(a, b) {
   const av = a.split('.').map(Number), bv = b.split('.').map(Number);
   for (let i = 0; i < 3; i++) { const delta = (av[i] ?? 0) - (bv[i] ?? 0); if (delta) return delta; }
   return 0;
+}
+
+// A dependency upgrade must fail the build instead of silently raising the
+// supported OS floor. Check every slice, including nested framework helpers.
+export function requireMacOSCompatibility(inspection, minimum = MACOS_MINIMUM_VERSION, label = 'Native binary') {
+  if (!/^\d+\.\d+(?:\.\d+)?$/.test(minimum) || !inspection?.architectures?.length) throw new Error('Missing macOS compatibility target or architecture inventory');
+  for (const architecture of inspection.architectures) {
+    const required = inspection.slices?.[architecture]?.minimumMacOS;
+    if (!/^\d+\.\d+(?:\.\d+)?$/.test(required ?? '')) throw new Error(`Missing minimum macOS for ${label} (${architecture})`);
+    if (compareMacOSVersions(required, minimum) > 0) throw new Error(`${label} (${architecture}) requires macOS ${required}; target is ${minimum}`);
+  }
+  return inspection;
 }
 
 // Inspect every slice independently: a host-native execution or `file` match

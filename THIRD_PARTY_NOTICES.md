@@ -17,6 +17,8 @@ Full npm copyright and license texts are preserved in [third-party/npm-NOTICES.t
 
 The desktop previews also distribute **Node.js 22.23.3** and **cloudflared 2026.10.1**. `Contents/Resources/Licenses/` contains the project license, npm notices, Node's full bundled license (including third-party terms), cloudflared's Apache-2.0 license, the matching Go toolchain license, and license/notice texts from the exact module versions embedded in the cloudflared binary (including replacements). Module source archives are checked against their embedded Go h1 checksums before collecting notices. Supplemental module notices may cover code not linked into this platform's executable. Executables are re-signed ad hoc for this preview; their code is not patched by the build.
 
+The macOS 14 Universal candidate builds cloudflared from its pinned, unmodified upstream source using a checksum-verified Go toolchain. Its release manifest records source, toolchain and per-architecture build provenance. These cloudflared binaries are Co² builds, not Cloudflare's prebuilt release assets. Build tooling stays in the ignored repository cache and is not distributed in the app.
+
 Build-only Python tools (`dmgbuild`, `ds_store`, `mac_alias`) are pinned with hashes in `scripts/requirements-macos.txt`; their code is not bundled. The installer compatibility workaround refers to [dmgbuild #275](https://github.com/dmgbuild/dmgbuild/pull/275).
 
 Official sources: [Node license](https://github.com/nodejs/node/blob/v22.23.3/LICENSE), [cloudflared license](https://github.com/cloudflare/cloudflared/blob/2026.10.1/LICENSE), [Go license](https://go.dev/LICENSE). Retain licenses and applicable notices when redistributing. See [asset provenance](ASSET_PROVENANCE.md) for project visuals.
