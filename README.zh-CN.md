@@ -15,7 +15,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/SpaceCoder-Kafka/codex-co2/releases/tag/v0.3.3-preview.12"><img src="https://img.shields.io/badge/preview-v0.3.3--preview.12-2563eb" alt="预览版本 v0.3.3-preview.12"></a>
+  <a href="https://github.com/SpaceCoder-Kafka/codex-co2/releases/tag/v0.1.0"><img src="https://img.shields.io/badge/release-v0.1.0-2563eb" alt="版本 v0.1.0"></a>
   <img src="https://img.shields.io/badge/host-macOS%2015%2B%20%C2%B7%20Apple%20Silicon-555555" alt="分享者：macOS 15+，Apple Silicon">
   <img src="https://img.shields.io/badge/guest-browser-2563eb" alt="协作者：浏览器">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-22c55e" alt="许可：MIT"></a>
@@ -26,7 +26,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/SpaceCoder-Kafka/codex-co2/releases/tag/v0.3.3-preview.12">下载</a> ·
+  <a href="https://github.com/SpaceCoder-Kafka/codex-co2/releases/tag/v0.1.0">下载</a> ·
   <a href="#新用户使用homebrew">快速开始</a> ·
   <a href="#应用截图">应用截图</a> ·
   <a href="#共享前需要知道">共享须知</a> ·
@@ -68,7 +68,9 @@ https://github.com/user-attachments/assets/b1c2f544-3684-432e-9e03-f32ac15b9370
 
 [下载宣传视频](assets/promotional_video_cn.mp4)
 
-## 体验预览版
+**0.1.0** 以此前发布的 **0.3.3 Preview · Build 17** 为功能基线；后续本地功能归入 0.2.0。详见[更新日志](CHANGELOG.md)。
+
+## 安装 Codex Co²
 
 分享者需要 Apple Silicon Mac 和已运行的官方 Codex Desktop。安装包最低要求 macOS **15.0**；原生检查仅记录于 macOS **26.4.1**、Desktop **26.1007.30912**，其他组合尚未验证。协作者使用支持 JavaScript 和 WebSocket 的浏览器；双方网络需能访问生成的公网地址。
 
@@ -89,13 +91,13 @@ brew install --cask SpaceCoder-Kafka/tap/codex-co2 && open "$(brew --repository 
 
 ### 通过 DMG 安装
 
-也可以从 [Releases](https://github.com/SpaceCoder-Kafka/codex-co2/releases/tag/v0.3.3-preview.12) 下载 DMG 和对应 `.sha256` 文件，下载后执行：
+也可以从 [Releases](https://github.com/SpaceCoder-Kafka/codex-co2/releases/tag/v0.1.0) 下载 DMG 和对应 `.sha256` 文件，下载后执行：
 
 ```sh
-shasum -a 256 -c Codex-Co2-0.3.3-build12-arm64-preview.dmg.sha256
+shasum -a 256 -c Codex-Co2-0.1.0-build23-arm64.dmg.sha256
 ```
 
-预览包采用临时签名，**未经 Apple 公证**，首次打开可能受系统拦截。先尝试从 Applications 打开 Co²，再到「系统设置 → 隐私与安全性 → 仍要打开」确认。Homebrew 会直接安装应用，不会展示 DMG 的安装引导窗口。请参考 [Apple 指引](https://support.apple.com/zh-cn/102445)。
+安装包采用临时签名，**未经 Apple 公证**，首次打开可能受系统拦截。先尝试从 Applications 打开 Co²，再到「系统设置 → 隐私与安全性 → 仍要打开」确认。Homebrew 会直接安装应用，不会展示 DMG 的安装引导窗口。请参考 [Apple 指引](https://support.apple.com/zh-cn/102445)。
 
 ### 关于与更新
 
@@ -170,3 +172,5 @@ npm run check:macos
 普通问题通过 Issues 反馈，附应用构建号与 Desktop 版本，删除私密正文、个人路径、邀请和恢复凭据。安全问题按 [SECURITY](SECURITY.md) 私下报告。
 
 项目代码使用 [MIT](LICENSE)，第三方组件保留[各自许可](THIRD_PARTY_NOTICES.md)。图标及示意图来源见[素材声明](ASSET_PROVENANCE.md)。
+
+本次从 0.3.3 迁移至 0.1.0，Build 17 用户可使用「关于 → 检查更新」，内部 Build 持续递增。旧 Homebrew 用户手动迁移时，先停止共享并退出 Co²，再执行 `brew update` 和 `brew reinstall --cask SpaceCoder-Kafka/tap/codex-co2`。

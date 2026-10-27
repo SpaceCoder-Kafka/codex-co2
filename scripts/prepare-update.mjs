@@ -11,16 +11,18 @@ const args = process.argv.slice(2), options = {};
 for (let i = 0; i < args.length; i++) {
   const key = args[i];
   if (['--initial', '--testing'].includes(key)) options[key.slice(2)] = true;
+  else if (key === '--retire-build' && /^[1-9]\d*$/.test(args[i + 1] ?? '')) (options.retireBuilds ??= []).push(args[++i]);
   else if (['--app', '--dmg', '--output', '--previous-feed', '--key-file'].includes(key) && args[i + 1] && !args[i + 1].startsWith('--')) options[key.slice(2)] = args[++i];
-  else throw new Error('Usage: npm run updates:prepare -- --app <app> --dmg <dmg> --output <appcast.xml> (--initial | --previous-feed <signed-appcast.xml>) [--key-file <private-seed-file>] [--testing]');
+  else throw new Error('Usage: npm run updates:prepare -- --app <app> --dmg <dmg> --output <appcast.xml> (--initial | --previous-feed <signed-appcast.xml>) [--retire-build <build> ...] [--key-file <private-seed-file>] [--testing]');
 }
 if (!options.app || !options.dmg || !options.output || Boolean(options.initial) === Boolean(options['previous-feed'])) throw new Error('Provide app, dmg, output, and exactly one of --initial or --previous-feed');
+if (options.retireBuilds?.length && !options['previous-feed']) throw new Error('Retiring builds requires a verified previous feed');
 if (process.platform !== 'darwin') throw new Error('Preparing a Sparkle update requires macOS');
 const app = path.resolve(options.app), dmg = path.resolve(options.dmg), output = path.resolve(options.output);
 if (!output.endsWith('.xml') || output === path.resolve(options['previous-feed'] ?? '') || output === dmg || output.startsWith(app + path.sep)) throw new Error('Write the new appcast to a separate .xml file outside the app and previous feed');
 const manifest = JSON.parse(await fs.readFile(path.join(app, 'Contents/Resources/manifest.json'), 'utf8'));
 if (!manifest.updater || Boolean(manifest.updater.testing) !== Boolean(options.testing) || manifest.updater.testing && manifest.distributable !== false) throw new Error('Bundle/update testing mode mismatch; synthetic keys cannot produce a distributable update');
-const release = { version: manifest.version, build: manifest.build, channel: manifest.channel };
+const release = { version: manifest.version, build: manifest.build, channel: manifest.channel, architecture: manifest.architecture };
 if (path.basename(dmg) !== updateAssetName(release)) throw new Error('DMG name does not match the bundle release metadata');
 execFileSync(process.execPath, [path.join(root, 'scripts/check-macos-bundle.mjs'), app, root], { stdio: 'inherit' });
 const checksum = await fs.readFile(dmg + '.sha256', 'utf8'), source = JSON.parse(await fs.readFile(dmg + '.source.json', 'utf8'));
@@ -70,7 +72,7 @@ if (options['previous-feed']) {
 const signature = execFileSync(sign, [...keyArgs, '-p', dmg], { encoding: 'utf8' }).trim();
 await fs.mkdir(path.dirname(output), { recursive: true });
 if (await fs.stat(output).catch(() => null)) throw new Error('Refusing to overwrite an existing appcast; choose a new output file');
-const xml = appcastXML({ release, minimumMacOS: manifest.minimumMacOS, size: (await fs.stat(dmg)).size, signature, previousItems });
+const xml = appcastXML({ release, minimumMacOS: manifest.minimumMacOS, size: (await fs.stat(dmg)).size, signature, previousItems, retireBuilds: options.retireBuilds });
 await fs.writeFile(output, xml, { flag: 'wx' });
 try {
   execFileSync(sign, [...keyArgs, output], { stdio: 'pipe' });
@@ -78,5 +80,5 @@ try {
   execFileSync('/usr/bin/xmllint', ['--nonet', '--noout', output], { stdio: 'pipe' });
 } catch (error) { await fs.rm(output, { force: true }); throw error; }
 console.log(JSON.stringify({ prepared: output, distributable: !options.testing, version: release.version, build: release.build,
-  channel: release.channel, sourceSHA256: manifest.source.sha256, published: false,
+  channel: release.channel, retiredBuilds: options.retireBuilds ?? [], sourceSHA256: manifest.source.sha256, published: false,
   next: 'After separately publishing the matching release assets, publish this signed feed unchanged on the repository updates branch. Coordinate the Homebrew cask auto_updates stanza.' }));

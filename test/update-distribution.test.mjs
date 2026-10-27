@@ -3,8 +3,12 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { spawnSync } from 'node:child_process';
 import { createPrivateKey, createPublicKey, randomBytes, sign, verify } from 'node:crypto';
 import { appcastXML, createTestSigningKey, frameworkInventory, previousAppcastItems, releaseConfiguration, updateAssetName } from '../scripts/sparkle-distribution.mjs';
+
+import { releaseNotes } from '../scripts/release-notes.mjs';
 
 const repository = 'SpaceCoder-Kafka/codex-co2';
 const feedURL = 'https://raw.githubusercontent.com/SpaceCoder-Kafka/codex-co2/updates/appcast.xml';
@@ -76,3 +80,49 @@ test('appcast preserves stable and preview entries while enforcing global build 
   assert.throws(() => previousAppcastItems(old.replace('</item>', '')), /complete/);
   assert.throws(() => appcastXML({ release: stable, minimumMacOS: '15.0', size: 150, signature: 'invalid' }), /metadata/);
 });
+
+test('version normalization retires selected builds only after checking the entire previous build history', () => {
+  const old = appcastXML({ release: { version: '0.3.3', build: '17', channel: 'preview' }, minimumMacOS: '15.0', size: 100, signature });
+  const previousItems = previousAppcastItems(old);
+  const release = { version: '0.1.0', build: '23', channel: 'stable', architecture: 'universal' };
+  const options = { release, minimumMacOS: '14.0', size: 200, signature, previousItems };
+  assert.equal(previousAppcastItems(appcastXML(options)).length, 2);
+  const feed = appcastXML({ ...options, retireBuilds: ['17'] });
+  assert.equal(previousAppcastItems(feed).length, 1);
+  assert.match(feed, /<sparkle:version>23<\/sparkle:version>/);
+  assert.match(feed, /<sparkle:shortVersionString>0\.1\.0<\/sparkle:shortVersionString>/);
+  assert.match(feed, /releases\/download\/v0\.1\.0\/Codex-Co2-0\.1\.0-build23-arm64\.dmg/);
+  assert.doesNotMatch(feed, /preview|build17|0\.3\.3/);
+  for (const build of ['1', '17']) assert.throws(() => appcastXML({ ...options, release: { ...release, build }, retireBuilds: ['17'] }), /globally/);
+  for (const retireBuilds of [['18'], ['17', '17'], ['0'], ['017'], [17], '17']) assert.throws(() => appcastXML({ ...options, retireBuilds }), /retire|Retired/);
+  const next = appcastXML({ ...options, release: { ...release, version: '0.2.0', build: '24' }, previousItems: previousAppcastItems(feed) });
+  assert.equal(previousAppcastItems(next).length, 2);
+  assert.match(next, /releases\/tag\/v0\.2\.0/);
+  const old12 = appcastXML({ release: { version: '0.3.3', build: '12', channel: 'preview' }, minimumMacOS: '15.0', size: 100, signature });
+  const multiple = { ...options, previousItems: [...previousItems, ...previousAppcastItems(old12)] };
+  assert.equal(previousAppcastItems(appcastXML({ ...multiple, retireBuilds: ['17', '12'] })).length, 1);
+  assert.match(appcastXML({ ...multiple, retireBuilds: ['12'] }), /build17/);
+});
+
+test('update preparation rejects retirement without a previous signed feed or with invalid build arguments', () => {
+  const prepare = fileURLToPath(new URL('../scripts/prepare-update.mjs', import.meta.url));
+  for (const args of [['--initial', '--retire-build', '17'], ['--previous-feed', 'previous.xml', '--retire-build', '0'], ['--previous-feed', 'previous.xml', '--retire-build']]) {
+    const result = spawnSync(process.execPath, [prepare, '--app', 'unused.app', '--dmg', 'unused.dmg', '--output', 'unused.xml', ...args], { encoding: 'utf8' });
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /verified previous feed|Usage:/);
+  }
+});
+
+test('release notes select only the requested version and derive the preview label from its channel', () => temporary(async root => {
+  await fs.writeFile(path.join(root, 'CHANGELOG.md'), '# Changes\n\n## 0.2.0\n\nNew functionality.\n\n## 0.1.0\n\nOriginal baseline.\n');
+  const release = { version: '0.1.0', build: '23', channel: 'stable' }, sourceSHA256 = 'a'.repeat(64);
+  const stable = await releaseNotes({ root, release, sourceSHA256 });
+  assert.match(stable, /^# Codex Co² 0\.1\.0\n/);
+  assert.match(stable, /Original baseline/);
+  assert.doesNotMatch(stable, /New functionality|Preview/);
+  const preview = await releaseNotes({ root, release: { ...release, version: '0.2.0', channel: 'preview' }, sourceSHA256 });
+  assert.match(preview, /^# Codex Co² 0\.2\.0 Preview\n/);
+  assert.doesNotMatch(preview, /Original baseline/);
+  await assert.rejects(releaseNotes({ root, release: { ...release, version: '0.2.1' }, sourceSHA256 }), /CHANGELOG entry/);
+}));
+

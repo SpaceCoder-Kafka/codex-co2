@@ -92,18 +92,26 @@ export function updateTag({ version, build, channel }) { return channel === 'pre
 export function updateAssetName({ version, build, channel }) { return `Codex-Co2-${version}-build${build}-arm64${channel === 'preview' ? '-preview' : ''}.dmg`; }
 export const xmlEscape = value => String(value).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&apos;');
 
-export function appcastXML({ release, minimumMacOS, size, signature, previousItems = [], date = new Date() }) {
+export function appcastXML({ release, minimumMacOS, size, signature, previousItems = [], retireBuilds = [], date = new Date() }) {
   if (!/^[1-9]\d*$/.test(release.build) || !/^\d+\.\d+\.\d+$/.test(release.version)
       || !/^\d+(?:\.\d+){1,2}$/.test(minimumMacOS) || !Number.isSafeInteger(size) || size < 1
       || !/^[A-Za-z0-9+/]{86}==$/.test(signature)) throw new Error('Invalid signed update metadata');
+  if (!Array.isArray(retireBuilds) || retireBuilds.some(build => typeof build !== 'string' || !/^[1-9]\d*$/.test(build))
+      || new Set(retireBuilds).size !== retireBuilds.length) throw new Error('Retired builds must be distinct positive build numbers');
+  const previousBuilds = new Set();
+  // Validate every previous build before pruning. Retirement must never make
+  // a lower build eligible or bypass verification of the previous signed feed.
   for (const item of previousItems) {
     const build = item.match(/<sparkle:version>([1-9]\d*)<\/sparkle:version>/)?.[1];
     if (!build || BigInt(build) >= BigInt(release.build)) throw new Error('Release build must increase globally across all channels and versions');
+    previousBuilds.add(build);
   }
+  if (retireBuilds.some(build => !previousBuilds.has(build))) throw new Error('Cannot retire a build absent from the previous appcast');
+  const retainedItems = previousItems.filter(item => !retireBuilds.includes(item.match(/<sparkle:version>([1-9]\d*)<\/sparkle:version>/)[1]));
   const repository = 'https://github.com/SpaceCoder-Kafka/codex-co2';
   const tag = updateTag(release), asset = updateAssetName(release);
   const item = `    <item>\n      <title>Codex Co² ${xmlEscape(release.version)} (Build ${release.build})</title>\n      <link>${repository}/releases/tag/${tag}</link>\n      <pubDate>${date.toUTCString()}</pubDate>\n      <sparkle:version>${release.build}</sparkle:version>\n      <sparkle:shortVersionString>${release.version}</sparkle:shortVersionString>\n${release.channel === 'preview' ? '      <sparkle:channel>preview</sparkle:channel>\n' : ''}      <sparkle:minimumSystemVersion>${minimumMacOS}</sparkle:minimumSystemVersion>\n      <enclosure url="${repository}/releases/download/${tag}/${asset}" sparkle:edSignature="${signature}" length="${size}" type="application/octet-stream" />\n    </item>`;
-  return `<?xml version="1.0" encoding="utf-8"?>\n<rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">\n  <channel>\n    <title>Codex Co² updates</title>\n    <link>${repository}</link>\n    <description>Real-time collaboration for Codex</description>\n${[item, ...previousItems].join('\n')}\n  </channel>\n</rss>\n`;
+  return `<?xml version="1.0" encoding="utf-8"?>\n<rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">\n  <channel>\n    <title>Codex Co² updates</title>\n    <link>${repository}</link>\n    <description>Real-time collaboration for Codex</description>\n${[item, ...retainedItems].join('\n')}\n  </channel>\n</rss>\n`;
 }
 
 export function previousAppcastItems(xml) {

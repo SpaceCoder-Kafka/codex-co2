@@ -54,3 +54,9 @@ npm run export:public -- /absolute/path/to/new-public-candidate
 ```
 
 The destination must not exist and must be outside this checkout. Export copies only `scripts/public-files.json`, scans it and stages a new `main` branch. It does not copy history, set an author, commit, configure a remote or publish. Review the adjacent `.review.json`, configure a public Git identity, then create the initial commit. Add new public files to the allowlist explicitly.
+
+## Versioning and release normalization
+
+0.1.0 retains the runtime behavior of the historical 0.3.3 Preview Build 17; subsequent local functionality belongs to 0.2.0. Patch releases fix bugs (0.1.1); minor releases add functionality (0.2.0). Keep package.json and package-lock.json versions synchronized. Internal Build numbers increase globally across product versions and channels, including repeated builds. Stable releases use tag v<version>; previews use v<version>-preview.<build>. Published tags and asset bytes are never reused. Both channel and signing limitations must be stated honestly.
+
+Prepare each release from its CHANGELOG entry. Archive and verify historical release metadata, assets, tag commits, signed feed and cask before deleting old Releases; keep old tags and source history. Pass --previous-feed with optional repeated --retire-build <build> arguments to retire entries. The previous signature and all historical Build numbers are checked before selected entries are removed and the new feed is signed. Never use --initial to bypass continuity checks. Publish replacement assets first, then the signed feed and Homebrew cask, and remove retired Releases only after all new entrypoints pass verification. Historical 0.3.3 Homebrew installations need one manual reinstall when migrating to the new numbering.
