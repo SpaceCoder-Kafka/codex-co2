@@ -7,6 +7,7 @@ import { createHash } from 'node:crypto';
 import { binaryVersion } from '../lib/runtime.mjs';
 import { npmNotices } from './third-party-notices.mjs';
 import { publicSource } from './public-source.mjs';
+import { releaseNotes } from './release-notes.mjs';
 import { buildCloudflaredMacOS, CLOUDFLARED_MACOS } from './cloudflared-macos.mjs';
 import { SPARKLE, MACOS_ARCHITECTURES, MACOS_MINIMUM_VERSION, createTestSigningKey, frameworkBinaryInspection, frameworkInventory, inspectMacOSBinary, releaseConfiguration, requireMacOSCompatibility, sparkleDistribution, updateAssetName, xmlEscape } from './sparkle-distribution.mjs';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -184,7 +185,7 @@ await fs.writeFile(path.join(app, 'Contents/Info.plist'), `<?xml version="1.0" e
 <key>LSMinimumSystemVersion</key><string>${minimumMacOS}</string><key>NSHighResolutionCapable</key><true/>
 <key>NSAppTransportSecurity</key><dict><key>NSAllowsLocalNetworking</key><true/></dict>
 </dict></plist>\n`);
-await fs.writeFile(path.join(resources, 'PREVIEW.txt'), `Codex Co² — Universal experimental preview for Apple Silicon and Intel. Requires macOS ${minimumMacOS} or later.\nAd-hoc signed; NOT notarized. Requires official Codex Desktop installed separately and already running.\nNo credentials or conversation data are included. This package only attaches to the existing Desktop; no Codex backend is bundled. Isolated experiments remain available from source.\n`);
+await fs.writeFile(path.join(resources, 'RELEASE.txt'), `Codex Co² ${appVersion} (Build ${buildNumber}) — Universal ${release.channel} package for Apple Silicon and Intel. Requires macOS ${minimumMacOS} or later.\nAd-hoc signed; NOT notarized. Requires official Codex Desktop installed separately and already running.\nNo credentials or conversation data are included. This package only attaches to the existing Desktop; no Codex backend is bundled. Isolated experiments remain available from source.\n`);
 const files = {};
 async function inventory(dir, prefix = '') {
   for (const entry of await fs.readdir(dir, { withFileTypes: true })) {
@@ -208,7 +209,7 @@ run('/usr/bin/codesign', ['--verify', '--deep', '--strict', app]);
 const stage = path.join(universalCache, 'dmg-stage'); await fs.rm(stage, { recursive: true, force: true }); await fs.mkdir(stage);
 await fs.cp(app, path.join(stage, 'Codex Co².app'), { recursive: true, verbatimSymlinks: true });
 await fs.symlink('/Applications', path.join(stage, 'Applications'));
-await fs.copyFile(path.join(resources, 'PREVIEW.txt'), path.join(stage, 'PREVIEW.txt'));
+await fs.copyFile(path.join(resources, 'RELEASE.txt'), path.join(stage, 'RELEASE.txt'));
 await fs.copyFile(path.join(root, 'macos/INSTALL.html'), path.join(stage, '安装说明.html'));
 await fs.copyFile(path.join(root, 'macos/Open-Privacy-Security.inetloc'), path.join(stage, '打开隐私与安全性.inetloc'));
 const artwork = path.join(universalCache, 'dmg-artwork');
@@ -234,5 +235,5 @@ await fs.writeFile(dmg + '.sha256', `${sha(await fs.readFile(dmg))}  ${path.base
 const finalSource = await publicSource(root);
 if (finalSource.sha256 !== source.sha256) throw new Error('Source changed during build; do not distribute these outputs');
 await fs.writeFile(dmg + '.source.json', JSON.stringify({ sourceSHA256: source.sha256, files: source.files }, null, 2) + '\n');
-await fs.writeFile(path.join(dist, 'RELEASE_NOTES.md'), `# Codex Co² ${appVersion} (${buildNumber}) — Preview\n\nIndependent experimental project. Universal (Apple Silicon and Intel); macOS ${minimumMacOS}+. Requires an already running, compatible official Codex Desktop.\n\nAd-hoc signed; not Apple-notarized. No E2EE. Guest messages use the host conversation's existing tools, permissions and allowance. Native tool approvals remain in Desktop.\n\nAssets: ${path.basename(dmg)}, its .sha256 checksum and .source.json source inventory. App licenses are in Contents/Resources/Licenses/.\n\nSource SHA-256: ${source.sha256}\nPublic source commit: associate this source digest with the reviewed public commit before publishing.\n\nAutomated bundle/synthetic checks do not establish native UI acceptance. Final-package native Desktop, tool approvals, Intel and Apple Silicon real machines, real mobile devices, and clean-Mac browser download/install remain unverified.\n`);
+await fs.writeFile(path.join(dist, 'RELEASE_NOTES.md'), await releaseNotes({ root, release, sourceSHA256: source.sha256 }));
 console.log(`Built ${app}\nBuilt ${dmg}\nSource SHA-256: ${source.sha256}`);

@@ -15,8 +15,8 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/SpaceCoder-Kafka/codex-co2/releases/tag/v0.3.3-preview.17"><img src="https://img.shields.io/badge/preview-v0.3.3--preview.17-2563eb" alt="预览版本 v0.3.3-preview.17"></a>
-  <img src="https://img.shields.io/badge/host-macOS%2015%2B%20%C2%B7%20Apple%20Silicon-555555" alt="分享者：macOS 15+，Apple Silicon">
+  <a href="https://github.com/SpaceCoder-Kafka/codex-co2/releases/tag/v0.2.0"><img src="https://img.shields.io/badge/release-v0.2.0-2563eb" alt="版本 v0.2.0"></a>
+  <img src="https://img.shields.io/badge/host-macOS%2014%2B%20%C2%B7%20Universal-555555" alt="分享者：macOS 14+，Universal">
   <img src="https://img.shields.io/badge/guest-browser-2563eb" alt="协作者：浏览器">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-22c55e" alt="许可：MIT"></a>
 </p>
@@ -26,7 +26,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/SpaceCoder-Kafka/codex-co2/releases/tag/v0.3.3-preview.17">下载</a> ·
+  <a href="https://github.com/SpaceCoder-Kafka/codex-co2/releases/tag/v0.2.0">下载</a> ·
   <a href="#新用户使用homebrew">快速开始</a> ·
   <a href="#应用截图">应用截图</a> ·
   <a href="#共享前需要知道">共享须知</a> ·
@@ -68,20 +68,18 @@ https://github.com/user-attachments/assets/b1c2f544-3684-432e-9e03-f32ac15b9370
 
 [下载宣传视频](assets/promotional_video_cn.mp4)
 
-## 体验预览版
+## 安装 Codex Co²
 
-已发布的 **Build 17** 需要 Apple Silicon Mac、macOS **15.0+** 和已运行的官方 Codex Desktop。原生检查仅记录于 macOS **26.4.1**、Desktop **26.1007.30912**，其他组合尚未验证。协作者使用支持 JavaScript 和 WebSocket 的浏览器；双方网络需能访问生成的公网地址。
+**0.1.0** 以原 Build 17 为功能基线；当前 **0.2.0** 包含后续本地改进，新增跨平台安装包、邀请恢复与 macOS 后台服务。[更新日志](CHANGELOG.md)包含功能概览与迁移说明。
 
-### Universal macOS 与 Windows 候选包
-
-源码构建新增以下桌面产物；上方已发布的 Build 17 下载仍为要求 macOS 15+ 的 Apple Silicon 安装包。
+分享者接入**已经运行的官方 Codex Desktop**，继续使用原有 Agent、登录与工具审批设置。协作者使用支持 JavaScript 和 WebSocket 的浏览器。公网共享需要访问生成的公网地址；显式内网共享需要访问所选私有网络。
 
 | 安装包 | 目标系统 | 验收范围 |
 | --- | --- | --- |
 | Universal DMG | macOS 14+；Apple Silicon 与 Intel | 包含两种原生架构；macOS 14、Intel 与干净 Mac 原生验收仍待完成 |
 | Windows 安装 EXE 与便携 ZIP | Windows 10 1809+ / Windows 11，x64 | 官方 Desktop、安装与原生工具审批仍待 Windows 验收 |
 
-两端均接入已经运行的官方 Codex Desktop，协作者继续使用浏览器。Windows 使用 Microsoft Edge WebView2 Runtime，通过项目 Releases 页面手动更新。预览包在 macOS 上仍为临时签名、未经公证；Windows 包暂未签名。不构建 Linux 包。
+Windows 需要 Microsoft Edge WebView2 Runtime，通过项目 Releases 页面手动更新。macOS 包仍采用临时签名、未经 Apple 公证，Windows 包暂未签名。不构建 Linux 包；常规发布不代表所有目标平台都已经通过原生验收。
 
 ### 新用户使用（Homebrew）
 
@@ -96,17 +94,17 @@ brew install --cask SpaceCoder-Kafka/tap/codex-co2 && open "$(brew --repository 
 
 如果你的 Homebrew 版本提示需要显式信任 Cask，先检查定义，再执行 `brew trust --cask SpaceCoder-Kafka/tap/codex-co2`，随后重试安装。
 
-安装成功后，上述命令会在默认浏览器打开本地首次使用引导，页面顶部提供 **中文 / English** 切换按钮。Homebrew 已将应用放入 Applications，无需再次拖拽。如果已经安装，只需执行 `brew update`，再单独执行上面的 `open` 命令，无需重新安装。
+安装成功后，上述命令会在默认浏览器打开本地首次使用引导，页面顶部提供 **中文 / English** 切换按钮。Homebrew 已将应用放入 Applications，无需再次拖拽。如果从 0.3.3 迁移，请按下方的一次性迁移说明操作。
 
 ### 通过 DMG 安装
 
-也可以从 [Releases](https://github.com/SpaceCoder-Kafka/codex-co2/releases/tag/v0.3.3-preview.17) 下载 DMG 和对应 `.sha256` 文件，下载后执行：
+也可以从 [Releases](https://github.com/SpaceCoder-Kafka/codex-co2/releases/tag/v0.2.0) 下载 DMG 和对应 `.sha256` 文件，下载后执行：
 
 ```sh
-shasum -a 256 -c Codex-Co2-0.3.3-build17-arm64-preview.dmg.sha256
+shasum -a 256 -c Codex-Co2-0.2.0-build24-universal.dmg.sha256
 ```
 
-预览包采用临时签名，**未经 Apple 公证**，首次打开可能受系统拦截。先尝试从 Applications 打开 Co²，再到「系统设置 → 隐私与安全性 → 仍要打开」确认。Homebrew 会直接安装应用，不会展示 DMG 的安装引导窗口。请参考 [Apple 指引](https://support.apple.com/zh-cn/102445)。
+macOS 包采用临时签名，**未经 Apple 公证**，首次打开可能受系统拦截。先尝试从 Applications 打开 Co²，再到「系统设置 → 隐私与安全性 → 仍要打开」确认。Homebrew 会直接安装应用，不会展示 DMG 的安装引导窗口。请参考 [Apple 指引](https://support.apple.com/zh-cn/102445)。
 
 ### 关于与更新
 
@@ -114,12 +112,14 @@ Build 17 起在侧栏和 macOS 应用菜单提供「关于」入口，显示实�
 
 应用每天最多在后台检查一次。Preview 接收更新的预览版及正式版，正式版只接收正式版。点击「更新到…」下载并校验更新；仍有共享时，确认结束共享后才安装并重开 Co²。官方 Codex Desktop 保持运行，更新后可重新分享。取消安装不会留下下次退出时自动更新的任务。源码浏览器模式和只读安装盘运行提供手动下载入口。
 
-Build 16 及以前需先通过 Homebrew 或 DMG 手动升级一次，之后才能使用应用内更新。升级前先停止共享并退出 Co²。通过 Homebrew 升级时，此 Cask 支持应用自行更新，需加 `--greedy`：
+本次从 0.3.3 切换至新的 0.1.0／0.2.0 发布系列，Build 17 及之后可使用应用内更新：显示版本重新编号，内部 Build 仍持续递增。更早版本需要手动迁移。旧 Homebrew 用户本次使用重新安装，避免普通升级将 0.1.0 判断为旧版。操作前先停止共享、关闭后台运行，再退出 Co²；保持官方 Codex Desktop 运行：
 
 ```sh
 brew update
-brew upgrade --cask --greedy SpaceCoder-Kafka/tap/codex-co2
+brew reinstall --cask SpaceCoder-Kafka/tap/codex-co2
 ```
+
+完成迁移后，后续版本可使用应用内更新或 `brew upgrade --cask --greedy SpaceCoder-Kafka/tap/codex-co2`。Windows 用户从 Releases 下载安装 EXE 或便携 ZIP，退出旧版 Co² 后手动替换。
 
 应用内更新会校验更新信息与安装包的签名，仍遵守 macOS 的安全检查。
 

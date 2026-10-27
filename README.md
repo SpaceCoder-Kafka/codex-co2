@@ -15,8 +15,8 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/SpaceCoder-Kafka/codex-co2/releases/tag/v0.3.3-preview.17"><img src="https://img.shields.io/badge/preview-v0.3.3--preview.17-2563eb" alt="Preview v0.3.3-preview.17"></a>
-  <img src="https://img.shields.io/badge/host-macOS%2015%2B%20%C2%B7%20Apple%20Silicon-555555" alt="Host: macOS 15+ on Apple Silicon">
+  <a href="https://github.com/SpaceCoder-Kafka/codex-co2/releases/tag/v0.2.0"><img src="https://img.shields.io/badge/release-v0.2.0-2563eb" alt="Release v0.2.0"></a>
+  <img src="https://img.shields.io/badge/host-macOS%2014%2B%20%C2%B7%20Universal-555555" alt="Host: macOS 14+ Universal">
   <img src="https://img.shields.io/badge/guest-browser-2563eb" alt="Guest: browser">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-22c55e" alt="License: MIT"></a>
 </p>
@@ -26,7 +26,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/SpaceCoder-Kafka/codex-co2/releases/tag/v0.3.3-preview.17">Download</a> ·
+  <a href="https://github.com/SpaceCoder-Kafka/codex-co2/releases/tag/v0.2.0">Download</a> ·
   <a href="#new-users-install-with-homebrew">Quick start</a> ·
   <a href="#screenshots">Screenshots</a> ·
   <a href="#what-sharing-grants">Sharing boundaries</a> ·
@@ -68,24 +68,18 @@ https://github.com/user-attachments/assets/743766be-3549-4928-9f1e-d720314f8989
 
 [Download the promotional video](assets/promotional_video_en.mp4)
 
-## Try the preview
+## Install Codex Co²
 
-The macOS preview attaches to your **already running official Codex Desktop**, keeping its existing Agent, login and tool approval settings.
+Version **0.1.0** establishes the original Build 17 feature baseline; **0.2.0** adds the subsequent local improvements, including cross-platform packages, invitation recovery and the macOS background service. See the [changelog](CHANGELOG.md) for release highlights and migration details.
 
-- **Published Build 17 host:** Apple Silicon Mac, macOS **15.0+**. Native checks have only been recorded on macOS **26.4.1** with Codex Desktop **26.1007.30912**; other combinations are unverified.
-- **Guest:** a browser with JavaScript and WebSocket support.
-- **Network:** both participants need access to the generated public address. The default temporary entry uses Cloudflare Quick Tunnels.
-
-### Universal macOS and Windows candidates
-
-The source build now targets these desktop packages; the published Build 17 downloads above remain Apple Silicon packages requiring macOS 15+.
+The host attaches to your **already running official Codex Desktop**, keeping its existing Agent, login and tool approval settings. Guests use a browser with JavaScript and WebSocket support. Public sharing requires access to the generated public address; explicit intranet sharing requires access to the selected private network.
 
 | Package | Target | Acceptance |
 | --- | --- | --- |
 | Universal DMG | macOS 14+; Apple Silicon and Intel | Two native slices; macOS 14, Intel and clean-Mac native acceptance still required |
 | Windows setup EXE and portable ZIP | Windows 10 version 1809+ / Windows 11, x64 | Native Windows Desktop, installation and tool-approval acceptance still required |
 
-Both attach to an already running official Codex Desktop; guests continue to use a browser. Windows uses Microsoft Edge WebView2 Runtime and offers manual updates through the project Releases page. Preview packages remain ad-hoc signed/unnotarized on macOS and unsigned on Windows. Linux packages are not built.
+Windows requires Microsoft Edge WebView2 Runtime and offers manual updates through the project Releases page. Packages remain ad-hoc signed/unnotarized on macOS and unsigned on Windows. Linux packages are not built. A regular release does not establish native acceptance on every target.
 
 ### New users: install with Homebrew
 
@@ -100,17 +94,17 @@ brew install --cask SpaceCoder-Kafka/tap/codex-co2 && open "$(brew --repository 
 
 If your Homebrew version requests explicit cask trust, review the cask and run `brew trust --cask SpaceCoder-Kafka/tap/codex-co2`, then retry installation.
 
-The command opens a local first-launch guide after successful installation. Use the **中文 / English** buttons at the top to choose your language. Homebrew has already placed the app in Applications, so no drag-and-drop step is needed. If you already installed it, run `brew update` and then only the `open` command above; reinstalling is unnecessary.
+The command opens a local first-launch guide after successful installation. Use the **中文 / English** buttons at the top to choose your language. Homebrew has already placed the app in Applications, so no drag-and-drop step is needed. If you are migrating from 0.3.3, follow the one-time migration instructions below.
 
 ### Install from a DMG
 
-Alternatively, download the DMG and matching `.sha256` file from [Releases](https://github.com/SpaceCoder-Kafka/codex-co2/releases/tag/v0.3.3-preview.17), then check the file:
+Alternatively, download the DMG and matching `.sha256` file from [Releases](https://github.com/SpaceCoder-Kafka/codex-co2/releases/tag/v0.2.0), then check the file:
 
 ```sh
-shasum -a 256 -c Codex-Co2-0.3.3-build17-arm64-preview.dmg.sha256
+shasum -a 256 -c Codex-Co2-0.2.0-build24-universal.dmg.sha256
 ```
 
-The preview is **ad-hoc signed and not notarized by Apple**. macOS may block its first launch. Attempt to open Co² from Applications, then go to **System Settings → Privacy & Security → Open Anyway** and confirm. Homebrew installs the app directly without showing the DMG's installation window. See [Apple's guidance](https://support.apple.com/en-us/102445).
+The macOS package is **ad-hoc signed and not notarized by Apple**. macOS may block its first launch. Attempt to open Co² from Applications, then go to **System Settings → Privacy & Security → Open Anyway** and confirm. Homebrew installs the app directly without showing the DMG's installation window. See [Apple's guidance](https://support.apple.com/en-us/102445).
 
 ### About and updates
 
@@ -118,12 +112,14 @@ Build 17 and later provide **About** in the sidebar and the macOS app menu. Abou
 
 The app checks for updates at most once a day in the background. Preview builds receive newer preview and stable builds; stable builds receive stable updates. Click **Update to…** to download and verify an update. If sharing is active, confirm that it can end before Co² installs and restarts. Official Codex Desktop stays running; share again after updating. Canceling installation does not schedule it for your next quit. Source/browser mode and read-only disk images offer manual downloads instead.
 
-Build 16 and earlier need one manual upgrade through Homebrew or a DMG before in-app updates are available. Stop sharing and quit Co² first. For Homebrew, include `--greedy` because the cask supports self-updating:
+For this one-time transition from 0.3.3 to the new release series, Build 17 and later can use the in-app updater: the internal Build continues increasing even though the displayed version becomes 0.1.0 or 0.2.0. Older builds need a manual upgrade. Homebrew users migrating manually should reinstall once, because a normal upgrade can treat 0.1.0 as an older version. First stop sharing, turn off background running if enabled, then quit Co²; keep official Codex Desktop running:
 
 ```sh
 brew update
-brew upgrade --cask --greedy SpaceCoder-Kafka/tap/codex-co2
+brew reinstall --cask SpaceCoder-Kafka/tap/codex-co2
 ```
+
+After migration, use the in-app updater or `brew upgrade --cask --greedy SpaceCoder-Kafka/tap/codex-co2` for subsequent releases. Windows users download the setup EXE or portable ZIP from Releases and quit the previous Co² app before replacing it.
 
 In-app updates verify signed update metadata and packages and remain subject to macOS security checks.
 

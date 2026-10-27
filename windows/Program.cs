@@ -23,7 +23,7 @@ internal static class Program
         using var instance = new Mutex(true, "Local\\CodexCo2.Manager", out var first);
         if (!first) { MessageBox.Show("Codex Co² is already running. Open it from the notification area.", "Codex Co²"); return 0; }
         try { Application.Run(new ManagerWindow()); return 0; }
-        catch { MessageBox.Show("Codex Co² could not start. Reinstall the complete preview package and check your private data folder permissions.", "Codex Co²"); return 1; }
+        catch { MessageBox.Show("Codex Co² could not start. Reinstall the complete package and check your private data folder permissions.", "Codex Co²"); return 1; }
     }
 }
 

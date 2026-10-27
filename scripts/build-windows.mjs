@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { publicSource } from './public-source.mjs';
+import { releaseNotes } from './release-notes.mjs';
 import { npmNotices } from './third-party-notices.mjs';
 import { WINDOWS, fileInventory, peArchitecture, sha256, windowsAssetName } from './windows-distribution.mjs';
 
@@ -123,7 +124,7 @@ for (const [id, version] of [['microsoft.web.webview2', WINDOWS.webView2SDK], ['
 }
 for (const file of ['CodexCo2.exe', 'resources/runtime/node.exe', 'resources/runtime/cloudflared.exe', 'WebView2Loader.dll'])
   if (peArchitecture(await fs.readFile(path.join(app, file))) !== 'x64') throw new Error(`Expected x64 native executable: ${file}`);
-await fs.writeFile(path.join(app, 'PREVIEW.txt'), `Codex Co² ${release.version} (Build ${release.build}) — Windows x64 preview.\nWindows 10 version 1809 (build 17763) or newer. Unsigned.\nRequires Microsoft Edge WebView2 Runtime and an already running compatible official Codex Desktop.\nNo Codex backend, credentials or conversations are included. Windows native acceptance remains pending.\nUpdates: download a new installer from ${'https://github.com/SpaceCoder-Kafka/codex-co2/releases'}; exit Co² before installing.\n`);
+await fs.writeFile(path.join(app, 'RELEASE.txt'), `Codex Co² ${release.version} (Build ${release.build}) — Windows x64 ${release.channel}.\nWindows 10 version 1809 (build 17763) or newer. Unsigned experimental package.\nRequires Microsoft Edge WebView2 Runtime and an already running compatible official Codex Desktop.\nNo Codex backend, credentials or conversations are included. Windows native acceptance remains pending.\nUpdates: download a new installer from ${'https://github.com/SpaceCoder-Kafka/codex-co2/releases'}; exit Co² before installing.\n`);
 await fs.writeFile(path.join(resources, 'manifest.json'), JSON.stringify({ name: 'Codex Co²', version: release.version, build: release.build, channel: release.channel,
   platform: 'win32', architecture: 'x64', minimumWindowsBuild: WINDOWS.minimumBuild, signed: false, runtimeMode: 'desktop-attach',
   updater: { automatic: false }, webView2: { sdk: WINDOWS.webView2SDK, runtimeBundled: false },
@@ -147,5 +148,6 @@ for (const artifact of [installer, portable]) {
   await fs.writeFile(artifact + '.sha256', `${sha256(await fs.readFile(artifact))}  ${path.basename(artifact)}\n`);
   await fs.writeFile(artifact + '.source.json', JSON.stringify({ sourceSHA256: source.sha256, files: source.files }, null, 2) + '\n');
 }
+await fs.writeFile(path.join(dist, 'RELEASE_NOTES.md'), await releaseNotes({ root, release, sourceSHA256: source.sha256 }));
 console.log(`Built ${installer}\nBuilt ${portable}\nSource SHA-256: ${source.sha256}\nWindows native Desktop and clean-machine acceptance remain unverified.`);
 } finally { await fs.rm(packages, { recursive: true, force: true }); }

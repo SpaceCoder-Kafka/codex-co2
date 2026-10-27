@@ -35,17 +35,17 @@ jobs:
           test "$("$co2_test_binary" --version)" = "codex-cli 0.163.0"
           printf 'CODEX_COOP_CLI=%s\n' "$co2_test_binary" >> "$GITHUB_ENV"
       - run: npm run test:integration:required
-      - name: Build Universal preview without replacing an installed application
+      - name: Build Universal package without replacing an installed application
         run: npm run build:macos
       - name: Verify Universal bundle and both native architecture slices
         run: npm run check:macos
       - name: Assert macOS 14 package deployment target
         run: |
           node --input-type=module -e 'import fs from "node:fs"; import assert from "node:assert/strict"; const manifest = JSON.parse(fs.readFileSync("dist/Codex Co².app/Contents/Resources/manifest.json", "utf8")); assert.equal(manifest.minimumMacOS, "14.0");'
-      - name: Save macOS preview artifacts
+      - name: Save macOS artifacts
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
-          name: macos-universal-preview-unnotarized
+          name: macos-universal-unnotarized
           if-no-files-found: error
           retention-days: 14
           path: |
@@ -100,7 +100,7 @@ jobs:
           dotnet build windows/PolicyTests/PolicyTests.csproj --configuration Release --output "$co2PolicyRoot/bin" "-p:BaseIntermediateOutputPath=$co2PolicyRoot/obj/"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           dotnet (Join-Path $co2PolicyRoot 'bin/PolicyTests.dll')
-      - name: Build Windows preview with bundled runtime
+      - name: Build Windows package with bundled runtime
         run: npm run build:windows
       - name: Verify Windows package provenance and PE architecture
         run: npm run check:windows
@@ -108,10 +108,10 @@ jobs:
         run: |
           $env:CO2_PLATFORM_BRIDGE = Join-Path $env:GITHUB_WORKSPACE 'dist/windows/CodexCo2/CodexCo2.exe'
           node --test test/attachment-paths.test.mjs test/platform.test.mjs test/windows-packaging.test.mjs
-      - name: Save Windows preview artifacts
+      - name: Save Windows artifacts
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
-          name: windows-x64-preview-unsigned
+          name: windows-x64-unsigned
           if-no-files-found: error
           retention-days: 14
           path: |
