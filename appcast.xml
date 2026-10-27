@@ -6,17 +6,25 @@ IMPORTANT: This file was signed by Sparkle. Any modifications to this file requi
     <link>https://github.com/SpaceCoder-Kafka/codex-co2</link>
     <description>Real-time collaboration for Codex</description>
     <item>
-      <title>Codex Co² 0.3.3 (Build 17)</title>
-      <link>https://github.com/SpaceCoder-Kafka/codex-co2/releases/tag/v0.3.3-preview.17</link>
-      <pubDate>Fri, 23 Oct 2026 04:00:31 GMT</pubDate>
-      <sparkle:version>17</sparkle:version>
-      <sparkle:shortVersionString>0.3.3</sparkle:shortVersionString>
-      <sparkle:channel>preview</sparkle:channel>
+      <title>Codex Co² 0.2.0 (Build 24)</title>
+      <link>https://github.com/SpaceCoder-Kafka/codex-co2/releases/tag/v0.2.0</link>
+      <pubDate>Tue, 27 Oct 2026 07:23:18 GMT</pubDate>
+      <sparkle:version>24</sparkle:version>
+      <sparkle:shortVersionString>0.2.0</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <enclosure url="https://github.com/SpaceCoder-Kafka/codex-co2/releases/download/v0.2.0/Codex-Co2-0.2.0-build24-universal.dmg" sparkle:edSignature="zG0UT/6eg9xptxMomhj+Eu8lqaCQjd2FyGm9Jdu+OAsMgXFffwFTXJ2JXss3TOowiA5DQCLCg7pmIxakiYAJBA==" length="131121520" type="application/octet-stream"></enclosure>
+    </item>
+<item>
+      <title>Codex Co² 0.1.0 (Build 23)</title>
+      <link>https://github.com/SpaceCoder-Kafka/codex-co2/releases/tag/v0.1.0</link>
+      <pubDate>Tue, 27 Oct 2026 07:22:22 GMT</pubDate>
+      <sparkle:version>23</sparkle:version>
+      <sparkle:shortVersionString>0.1.0</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
-      <enclosure url="https://github.com/SpaceCoder-Kafka/codex-co2/releases/download/v0.3.3-preview.17/Codex-Co2-0.3.3-build17-arm64-preview.dmg" sparkle:edSignature="/Jq+KaDKBRIja+cDMnOe0+8Rnp4xfJwv76Eez1QJhvq8JO2XQyWlDpvBCYeVaAnUB9gsDXjIUQGQE7kcKlTgAg==" length="65914930" type="application/octet-stream"></enclosure>
+      <enclosure url="https://github.com/SpaceCoder-Kafka/codex-co2/releases/download/v0.1.0/Codex-Co2-0.1.0-build23-arm64.dmg" sparkle:edSignature="Iu2ey8DbMmllZ3UabxGOie7FgIXB+fUWVbL6xdcac4+pyR+y9kQNAseUHtzzlx26xgpxfINr3qqPRNNyXLPrCw==" length="65914510" type="application/octet-stream"></enclosure>
     </item>
   </channel>
 </rss><!-- sparkle-signatures:
-edSignature: 85hZWO4GZEAxMMQrvlL8WLnNWTCduYkKbrVmG8VVRGr4ESgNWj6CHJjZ7ff6P5cvcsFLzK5DAuXKxK3/AsZ/DA==
-length: 1354
+edSignature: ZFw7ymLa/pI0ueO+lFexZK/lpPqtv5MFsjtYOt/CFyW17F2KpyzvssAn7ZORQIlc8l/BBYzH3CPswS3Msn00Bw==
+length: 1975
 -->
