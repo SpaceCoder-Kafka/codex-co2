@@ -123,17 +123,19 @@ test('update preparation rejects retirement without a previous signed feed or wi
   }
 });
 
-test('release notes select only the requested version and derive the preview label from its channel', () => temporary(async root => {
-  await fs.writeFile(path.join(root, 'CHANGELOG.md'), '# Changes\n\n## 0.2.0\n\nNew functionality.\n\n## 0.1.0\n\nOriginal baseline.\n');
-  const release = { version: '0.1.0', build: '23', channel: 'stable' }, sourceSHA256 = 'a'.repeat(64);
-  const stable = await releaseNotes({ root, release, sourceSHA256 });
-  assert.match(stable, /^# Codex Co² 0\.1\.0\n/);
+test('release notes select only the requested entry without adding non-changelog sections or provenance', () => temporary(async root => {
+  const link = '[中文版 →](https://github.com/SpaceCoder-Kafka/codex-co2/blob/main/docs/release-notes/v0.1.0-zh.md)';
+  const baseline = `${link}\n\n**New Features**\n\n1. **Collaborate**: Original baseline.`;
+  await fs.writeFile(path.join(root, 'CHANGELOG.md'), `# Changelog\n\n## 0.2.0\n\n**Chore**\n\n1. **Maintain**: New functionality.\n\n## 0.1.0\n\n${baseline}\n`);
+  const release = { version: '0.1.0', build: '23', channel: 'stable' };
+  const stable = await releaseNotes({ root, release });
+  assert.equal(stable, baseline + '\n');
   assert.match(stable, /Original baseline/);
-  assert.doesNotMatch(stable, /New functionality|Preview/);
-  const preview = await releaseNotes({ root, release: { ...release, version: '0.2.0', channel: 'preview' }, sourceSHA256 });
-  assert.match(preview, /^# Codex Co² 0\.2\.0 Preview\n/);
+  assert.doesNotMatch(stable, /New functionality|Build 23|Source SHA|Upgrade|Known limitations|Bug Fixes|Chore/);
+  const preview = await releaseNotes({ root, release: { ...release, version: '0.2.0', channel: 'preview' } });
+  assert.equal(preview, '**Chore**\n\n1. **Maintain**: New functionality.\n');
   assert.doesNotMatch(preview, /Original baseline/);
-  await assert.rejects(releaseNotes({ root, release: { ...release, version: '0.2.1' }, sourceSHA256 }), /CHANGELOG entry/);
+  await assert.rejects(releaseNotes({ root, release: { ...release, version: '0.2.1' } }), /CHANGELOG entry/);
 }));
 
 test('macOS 14 updates preserve the original minimum of historical releases', () => {

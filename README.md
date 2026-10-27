@@ -70,7 +70,7 @@ https://github.com/user-attachments/assets/743766be-3549-4928-9f1e-d720314f8989
 
 ## Install Codex Co²
 
-Version **0.1.0** establishes the original Build 17 feature baseline; **0.2.0** adds the subsequent local improvements, including cross-platform packages, invitation recovery and the macOS background service. See the [changelog](CHANGELOG.md) for release highlights and migration details.
+Version **0.1.0** establishes the original Build 17 feature baseline; **0.2.0** adds the subsequent local improvements, including cross-platform packages, invitation recovery and the macOS background service. See the [changelog](CHANGELOG.md) for release highlights.
 
 The host attaches to your **already running official Codex Desktop**, keeping its existing Agent, login and tool approval settings. Guests use a browser with JavaScript and WebSocket support. Public sharing requires access to the generated public address; explicit intranet sharing requires access to the selected private network.
 

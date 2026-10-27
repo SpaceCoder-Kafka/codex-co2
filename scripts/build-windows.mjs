@@ -148,6 +148,6 @@ for (const artifact of [installer, portable]) {
   await fs.writeFile(artifact + '.sha256', `${sha256(await fs.readFile(artifact))}  ${path.basename(artifact)}\n`);
   await fs.writeFile(artifact + '.source.json', JSON.stringify({ sourceSHA256: source.sha256, files: source.files }, null, 2) + '\n');
 }
-await fs.writeFile(path.join(dist, 'RELEASE_NOTES.md'), await releaseNotes({ root, release, sourceSHA256: source.sha256 }));
+await fs.writeFile(path.join(dist, 'RELEASE_NOTES.md'), await releaseNotes({ root, release }));
 console.log(`Built ${installer}\nBuilt ${portable}\nSource SHA-256: ${source.sha256}\nWindows native Desktop and clean-machine acceptance remain unverified.`);
 } finally { await fs.rm(packages, { recursive: true, force: true }); }

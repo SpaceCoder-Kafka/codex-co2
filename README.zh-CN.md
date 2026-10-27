@@ -70,7 +70,7 @@ https://github.com/user-attachments/assets/b1c2f544-3684-432e-9e03-f32ac15b9370
 
 ## 安装 Codex Co²
 
-**0.1.0** 以原 Build 17 为功能基线；当前 **0.2.0** 包含后续本地改进，新增跨平台安装包、邀请恢复与 macOS 后台服务。[更新日志](CHANGELOG.md)包含功能概览与迁移说明。
+**0.1.0** 以原 Build 17 为功能基线；当前 **0.2.0** 包含后续本地改进，新增跨平台安装包、邀请恢复与 macOS 后台服务。[更新日志](docs/release-notes/v0.2.0-zh.md)介绍各版本的主要变化。
 
 分享者接入**已经运行的官方 Codex Desktop**，继续使用原有 Agent、登录与工具审批设置。协作者使用支持 JavaScript 和 WebSocket 的浏览器。公网共享需要访问生成的公网地址；显式内网共享需要访问所选私有网络。
 

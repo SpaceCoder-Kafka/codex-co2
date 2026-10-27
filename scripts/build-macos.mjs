@@ -235,5 +235,5 @@ await fs.writeFile(dmg + '.sha256', `${sha(await fs.readFile(dmg))}  ${path.base
 const finalSource = await publicSource(root);
 if (finalSource.sha256 !== source.sha256) throw new Error('Source changed during build; do not distribute these outputs');
 await fs.writeFile(dmg + '.source.json', JSON.stringify({ sourceSHA256: source.sha256, files: source.files }, null, 2) + '\n');
-await fs.writeFile(path.join(dist, 'RELEASE_NOTES.md'), await releaseNotes({ root, release, sourceSHA256: source.sha256 }));
+await fs.writeFile(path.join(dist, 'RELEASE_NOTES.md'), await releaseNotes({ root, release }));
 console.log(`Built ${app}\nBuilt ${dmg}\nSource SHA-256: ${source.sha256}`);
