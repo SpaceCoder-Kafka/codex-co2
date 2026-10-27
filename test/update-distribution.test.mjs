@@ -125,4 +125,3 @@ test('release notes select only the requested version and derive the preview lab
   assert.doesNotMatch(preview, /Original baseline/);
   await assert.rejects(releaseNotes({ root, release: { ...release, version: '0.2.1' }, sourceSHA256 }), /CHANGELOG entry/);
 }));
-
