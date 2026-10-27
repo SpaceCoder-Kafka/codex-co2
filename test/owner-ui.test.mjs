@@ -25,7 +25,7 @@ class Element {
   select() { this.selected = true; }
   contains(node) { return this === node || this.children.some(c => c.contains(node)); }
 }
-function browser({ storage = new Map(), nativeLanguage, nativeCopy = 'success', browserClipboard, nativeUpdater = false, appInfo, updateState } = {}) {
+function browser({ storage = new Map(), nativeLanguage, nativeCopy = 'success', browserClipboard, nativeUpdater = false, nativeBackground = false, backgroundState, appInfo, updateState } = {}) {
   const elements = Object.fromEntries([...html.matchAll(/<(\w+)[^>]*\bid="([^"]+)"[^>]*>/g)].map(m => {
     const node = new Element(m[1]); node.id = m[2];
     for (const attr of m[0].matchAll(/([\w-]+)="([^"]*)"/g)) node.setAttribute(attr[1], attr[2]);
@@ -33,7 +33,7 @@ function browser({ storage = new Map(), nativeLanguage, nativeCopy = 'success', 
     return [m[2], node];
   }));
   elements.rooms.append(new Element());
-  const connection = new Element(), sent = [], copies = [], copyRequests = [], copyTimeouts = new Map(), preferences = [], updates = [], links = [];
+  const connection = new Element(), sent = [], copies = [], copyRequests = [], copyTimeouts = new Map(), preferences = [], updates = [], links = [], background = [];
   let copyTimerSequence = 0;
   let socket, redacted;
   class Socket {
@@ -63,7 +63,7 @@ function browser({ storage = new Map(), nativeLanguage, nativeCopy = 'success', 
     addEventListener() {},
   };
   for (const node of Object.values(elements).flatMap(descendants)) node.document = document;
-  const window = { Co2Messages: messages, co2Language: nativeLanguage, co2AppInfo: appInfo, co2UpdateState: updateState,
+  const window = { Co2Messages: messages, co2Language: nativeLanguage, co2AppInfo: appInfo, co2UpdateState: updateState, co2BackgroundState: backgroundState,
     innerWidth: 1024, innerHeight: 768, addEventListener() {}, open: (...args) => links.push(args), webkit: { messageHandlers: {
     copyInvite: { postMessage: value => {
       copyRequests.push(JSON.parse(JSON.stringify(value)));
@@ -74,6 +74,7 @@ function browser({ storage = new Map(), nativeLanguage, nativeCopy = 'success', 
   } } };
   if (nativeCopy === false) delete window.webkit.messageHandlers.copyInvite;
   if (nativeUpdater) window.webkit.messageHandlers.appUpdates = { postMessage: value => updates.push(JSON.parse(JSON.stringify(value))) };
+  if (nativeBackground) window.webkit.messageHandlers.backgroundService = { postMessage: value => background.push(JSON.parse(JSON.stringify(value))) };
   vm.runInNewContext(languageScript + '\n' + script, {
     document,
     WebSocket: Socket, URLSearchParams, location: { hash: '#owner=synthetic-only', pathname: '/' },
@@ -92,7 +93,7 @@ function browser({ storage = new Map(), nativeLanguage, nativeCopy = 'success', 
   const nodes = () => [...descendants(elements.rooms), ...descendants(elements['room-policies'])];
   const click = text => { const b = nodes().find(e => e.tag === 'button' && e.textContent === text); assert.ok(b, `Missing ${text}`); b.onclick(); };
   const threadRows = () => descendants(elements.threads).filter(e => e.className === 'thread-row');
-  return { elements, socket, sent, copies, copyRequests, copyTimeouts, preferences, updates, links, receive, nodes, click, threadRows, window,
+  return { elements, socket, sent, copies, copyRequests, copyTimeouts, preferences, updates, links, background, receive, nodes, click, threadRows, window,
     expireCopies() { for (const [id, fn] of [...copyTimeouts]) { copyTimeouts.delete(id); fn(); } },
     acknowledgeCopy(ok, request = copyRequests.at(-1)) { window.co2InviteCopyResult({ requestId: request.requestId, ok }); } };
 }
@@ -100,6 +101,9 @@ const room = () => ({ roomId: 'room-1', title: '<script>synthetic title</script>
   expiresAt: Date.now() + 3600000, inviteUrl: 'https://example.invalid/#invite=synthetic',
   guests: [{ id: 'guest-1', name: '<img onerror=synthetic>', status: 'pending' }],
   proposals: [{ id: 'proposal-1', name: 'B', status: 'pending', text: '<script>synthetic proposal</script>' }], approvalPending: false });
+const recoveryRequest = (overrides = {}) => ({ requestId: 'request-1', roomId: 'ended-room', threadId: 'synthetic-thread',
+  title: '<script>synthetic old conversation</script>', name: '<img onerror=synthetic requester>',
+  createdAt: Date.now() - 60000, expiresAt: Date.now() + 3600000, status: 'pending', ...overrides });
 const network = (overrides = {}) => ({ intranetOnly: false, lanAddress: null, configurable: true,
   interfaces: [{ name: 'synthetic-en0', address: '192.168.40.20' }], ...overrides });
 const lanState = (overrides = {}) => ({ type: 'state', rooms: [], connection: { state: 'local' },
@@ -131,7 +135,7 @@ test('each intranet invitation lifetime requires confirmation and sends its exac
     assert.equal(page.sent.some(m => m.type === 'share'), false);
     e.share.onclick();
     chooseLifetime(page, lifetime);
-    assert.ok(e['invite-lifetime-hint'].textContent.includes(lifetime === 'permanent' ? '需保持应用和共享运行' : '访客也会断开'));
+    assert.ok(e['invite-lifetime-hint'].textContent.includes(lifetime === 'permanent' ? '重启恢复取决于后台运行设置及原地址是否可用' : '访客也会断开'));
     e['invite-lifetime-confirm'].onclick(); e['invite-lifetime-confirm'].onclick(); e.share.onclick();
     assert.equal(e['invite-lifetime-dialog'].open, false);
     assert.deepEqual(page.sent.filter(m => m.type === 'share'), [{ type: 'share', threadId: 'synthetic-thread',
@@ -207,7 +211,7 @@ test('intranet validity displays the fixed deadline or permanent state independe
       : `有效至 ${new Date(r.inviteExpiresAt).toLocaleString('zh-CN')} · 到期后自动结束共享`;
     assert.ok(page.nodes().some(n => n.textContent === expected), lifetime);
     assert.ok(!page.nodes().some(n => /自动续期/.test(n.textContent)));
-    if (duration === null) assert.ok(page.nodes().some(n => n.textContent.includes('停止共享、退出应用或更换入口后失效')));
+    if (duration === null) assert.ok(page.nodes().some(n => String(n.textContent).includes('重启恢复取决于后台运行设置及原地址是否可用')));
     r.expiresAt += 3600000; page.receive(lanState({ rooms: [r] }));
     assert.ok(page.nodes().some(n => n.textContent === expected), 'lease renewal must not move the invitation deadline');
   }
@@ -225,8 +229,8 @@ test('intranet lifetime dialog and fixed or permanent validity translate without
     assert.equal(e['invite-lifetime-permanent'].getAttribute('type'), 'radio');
     assert.equal(e['invite-lifetime-permanent'].getAttribute('aria-describedby'), 'invite-permanent-tooltip');
     assert.equal(e['invite-permanent-tooltip'].getAttribute('role'), 'tooltip');
-    assert.equal(e['invite-permanent-tooltip'].textContent, messages[language]['永久表示不设固定到期时间，但停止共享、退出应用或更换入口后，仍需生成新链接。']);
-    assert.equal(e['invite-lifetime-hint'].textContent, messages[language]['不设固定到期时间，需保持应用和共享运行；停止共享、退出应用或更换入口后失效。']);
+    assert.equal(e['invite-permanent-tooltip'].textContent, messages[language]['永久表示不设固定到期时间。停止共享会撤销邀请；内网地址不变且开启后台运行时，重启后可通过旧链接申请恢复。']);
+    assert.equal(e['invite-lifetime-hint'].textContent, messages[language]['不设固定到期时间；停止共享会撤销邀请。重启恢复取决于后台运行设置及原地址是否可用。']);
     e['invite-lifetime-cancel'].onclick();
     const r = { ...room(), intranetOnly: true, inviteExpiresAt: Date.UTC(2030, 0, 2), inviteLifetime: '1d' };
     page.receive(lanState({ rooms: [r] }));
@@ -840,6 +844,83 @@ test('in-app and native notification clicks locate the exact request without sen
   assert.equal(page.sent.length, 2);
 });
 
+test('invitation recovery remains actionable without its ended room and notification clicks never approve', () => {
+  const page = browser(), request = recoveryRequest();
+  const item = { id: 'ended-room:invite-recovery', kind: 'invite-recovery', roomId: request.roomId,
+    itemId: request.requestId, members: [request.requestId], count: 1 };
+  page.receive({ type: 'state', rooms: [], recoveryRequests: [request], attention: [item] });
+  assert.equal(page.elements['nav-pending'].textContent, 1);
+  assert.equal(page.elements['nav-pending'].hidden, false);
+  assert.ok(page.nodes().some(n => n.textContent === request.title));
+  assert.ok(page.nodes().some(n => n.textContent === request.name));
+  assert.ok(page.nodes().some(n => n.textContent === '申请者填写的昵称，身份未经核验。'));
+  assert.equal(page.elements['attention-list'].children[0].children[1].textContent, request.title);
+  page.window.openCo2Attention(item.id);
+  const card = page.nodes().find(n => n.className === 'card invite-recovery');
+  assert.equal(card.focused, true); assert.equal(card.scrolledIntoView, true);
+  assert.deepEqual(page.sent.map(m => m.type), ['auth', 'threads']);
+  page.click('同意并允许加入'); page.click('同意并允许加入');
+  assert.deepEqual(page.sent.slice(2), [{ type: 'approve-recovery', requestId: request.requestId }]);
+  assert.equal(page.nodes().find(n => n.tag === 'button' && n.textContent === '同意并允许加入').disabled, true);
+  page.receive({ type: 'state', rooms: [], recoveryRequests: [request], attention: [item] });
+  page.click('同意并允许加入');
+  assert.equal(page.sent.length, 3, 'an unrelated state update does not duplicate the pending decision');
+  page.receive({ type: 'state', rooms: [], recoveryRequests: [{ ...request, status: 'processing' }], attention: [] });
+  assert.equal(page.elements['nav-pending'].hidden, true);
+  assert.ok(!page.nodes().some(n => n.tag === 'button' && n.textContent === '同意并允许加入'));
+  page.receive({ type: 'state', rooms: [], recoveryRequests: [{ ...request, status: 'approved' }], attention: [] });
+  page.receive({ type: 'recovery-result', requestId: request.requestId });
+  assert.equal(page.elements.notice.textContent, '邀请恢复申请已处理');
+  assert.equal(page.sent.length, 3); assert.equal(page.copyRequests.length, 0);
+});
+
+test('failed invitation recovery requires another explicit decision and can be declined', () => {
+  const page = browser(), request = recoveryRequest({ status: 'failed' });
+  const state = { type: 'state', rooms: [], recoveryRequests: [request] };
+  page.receive(state); page.receive(state);
+  assert.deepEqual(page.sent.map(m => m.type), ['auth', 'threads']);
+  assert.ok(page.nodes().some(n => String(n.textContent).includes('不会自动重新分享')));
+  page.click('重试并同意'); page.click('重试并同意');
+  assert.deepEqual(page.sent.slice(2), [{ type: 'approve-recovery', requestId: request.requestId }]);
+  page.receive({ type: 'error', operation: 'approve-recovery', message: 'Synthetic recovery failure' });
+  assert.equal(page.elements.notice.textContent, 'Synthetic recovery failure');
+  assert.equal(page.nodes().find(n => n.tag === 'button' && n.textContent === '重试并同意').disabled, false);
+  assert.equal(page.sent.length, 3);
+  page.click('拒绝'); page.click('拒绝');
+  assert.deepEqual(page.sent.at(-1), { type: 'reject-recovery', requestId: request.requestId });
+  assert.equal(page.sent.length, 4);
+});
+
+test('recovery decisions respect expiry, network work and local disconnection', () => {
+  const page = browser(), request = recoveryRequest();
+  const state = { type: 'state', rooms: [], recoveryRequests: [request], networkBusy: true };
+  page.receive(state); page.click('同意并允许加入');
+  assert.equal(page.sent.length, 2);
+  assert.equal(page.nodes().find(n => n.tag === 'button' && n.textContent === '拒绝').disabled, false);
+  page.receive({ ...state, networkBusy: false, recoveryRequests: [{ ...request, expiresAt: Date.now() - 1 }] });
+  page.click('同意并允许加入'); page.click('拒绝');
+  assert.equal(page.sent.length, 2);
+  page.receive({ ...state, networkBusy: false });
+  page.socket.close(); page.click('同意并允许加入'); page.click('拒绝');
+  assert.equal(page.sent.length, 2);
+});
+
+test('terminal recovery results never expose approval controls and translate on language change', () => {
+  const page = browser();
+  for (const status of ['processing', 'approved', 'rejected', 'expired', 'unavailable']) {
+    page.receive({ type: 'state', rooms: [], recoveryRequests: [recoveryRequest({ status })] });
+    assert.equal(page.elements['nav-pending'].hidden, true);
+    assert.ok(!page.nodes().some(n => n.tag === 'button' && ['同意并允许加入', '重试并同意', '拒绝'].includes(n.textContent)));
+  }
+  page.receive({ type: 'state', rooms: [], recoveryRequests: [recoveryRequest()] });
+  page.elements.language.value = 'en'; page.elements.language.onchange();
+  assert.ok(page.nodes().some(n => n.textContent === 'Approve and allow joining'));
+  assert.ok(page.nodes().some(n => String(n.textContent).includes('identity is unverified')));
+  page.elements.language.value = 'zh-TW'; page.elements.language.onchange();
+  assert.ok(page.nodes().some(n => n.textContent === '同意並允許加入'));
+  assert.equal(page.sent.length, 2);
+});
+
 test('unexpected stopped share remains reachable from a notification; connection alerts focus repair controls', () => {
   const page = browser(), r = room(); r.state = 'revoked'; r.lastError = '本地 Codex 已断开';
   const item = { id: 'room-1:share-stopped', kind: 'share-stopped', roomId: r.roomId, itemId: 'stopped', count: 1 };
@@ -1032,7 +1113,7 @@ test('About updates and intranet lifetime UI both redraw, while disconnect cance
   e.language.value = 'en'; e.language.onchange();
   assert.equal(e['invite-lifetime-dialog'].open, true);
   assert.equal(selectedLifetime(page), 'permanent');
-  assert.equal(e['invite-lifetime-hint'].textContent, messages.en['不设固定到期时间，需保持应用和共享运行；停止共享、退出应用或更换入口后失效。']);
+  assert.equal(e['invite-lifetime-hint'].textContent, messages.en['不设固定到期时间；停止共享会撤销邀请。重启恢复取决于后台运行设置及原地址是否可用。']);
   assert.equal(e['check-update-label'].textContent, 'Update to v0.3.3 · Build 18');
   assert.equal(e['about-version'].textContent, 'Version v0.3.3 · Build 17');
   page.socket.close();
@@ -1044,4 +1125,41 @@ test('About updates and intranet lifetime UI both redraw, while disconnect cance
   e['check-update'].onclick();
   assert.deepEqual(page.updates.at(-1), { action: 'install' });
   assert.equal(page.sent.some(m => ['share', 'reshare'].includes(m.type)), false);
+});
+
+test('background setting uses native confirmation and never sends a sharing websocket command', () => {
+  const page = browser({ nativeBackground: true, backgroundState: { supported: true, enabled: true, status: 'running' } });
+  const e = page.elements, before = page.sent.length;
+  assert.equal(e['background-setting'].hidden, false);
+  assert.equal(e['background-enabled'].checked, true);
+  assert.deepEqual(page.background, [{ action: 'status' }]);
+  e['background-enabled'].checked = false; e['background-enabled'].onchange();
+  assert.deepEqual(page.background.at(-1), { action: 'set', enabled: false });
+  assert.equal(page.sent.length, before);
+  assert.equal(e['background-enabled'].disabled, true);
+  assert.equal(e['background-enabled'].checked, true, 'do not claim a preference was saved before native acknowledgment');
+  page.window.receiveCo2BackgroundState({ supported: true, enabled: true, status: 'running', saving: true });
+  assert.equal(e['background-enabled'].disabled, true, 'native in-progress updates must not allow another save');
+  page.window.receiveCo2BackgroundState({ supported: true, enabled: false, status: 'disabled' });
+  assert.equal(e['background-enabled'].checked, false);
+  assert.equal(e['background-enabled'].disabled, false);
+});
+
+test('background setting distinguishes system approval from running and stays hidden in browser-only management', () => {
+  assert.equal(browser().elements['background-setting'].hidden, true);
+  const page = browser({ nativeBackground: true, nativeLanguage: 'en',
+    backgroundState: { supported: true, enabled: true, status: 'requires-approval' } });
+  assert.equal(page.elements['background-status'].textContent, messages.en['请在系统设置中允许 Co² 后台运行']);
+  assert.equal(page.elements['background-system-settings'].hidden, false);
+  page.socket.close();
+  assert.equal(page.elements['background-system-settings'].disabled, false);
+  page.elements['background-system-settings'].onclick();
+  assert.deepEqual(page.background.at(-1), { action: 'settings' });
+  page.window.receiveCo2BackgroundState({ supported: true, enabled: false, status: 'invalid' });
+  assert.equal(page.elements['background-enabled'].checked, true);
+  page.window.receiveCo2BackgroundState({ supported: true, enabled: true, status: 'starting', message: '下次打开应用后启用后台运行' });
+  assert.equal(page.elements['background-status'].textContent, messages.en['下次打开应用后启用后台运行']);
+  page.window.receiveCo2BackgroundState({ supported: true, enabled: true, status: 'unavailable',
+    registrationError: { domain: 'SyntheticRegistrationError', code: 7 } });
+  assert.equal(page.elements['background-status'].textContent, `${messages.en['后台服务暂不可用']} (SyntheticRegistrationError: 7)`);
 });

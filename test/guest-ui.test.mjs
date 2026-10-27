@@ -12,6 +12,7 @@ const script = fs.readFileSync(new URL('../public/guest.js', import.meta.url), '
 const notificationScript = fs.readFileSync(new URL('../public/notifications.js', import.meta.url), 'utf8');
 const imageScript = fs.readFileSync(new URL('../public/images.js', import.meta.url), 'utf8');
 const markdownScript = fs.readFileSync(new URL('../public/markdown.js', import.meta.url), 'utf8');
+const inviteRecoveryScript = fs.readFileSync(new URL('../public/invite-recovery.js', import.meta.url), 'utf8');
 
 class Element {
   constructor(tag = 'div') {
@@ -43,7 +44,7 @@ class Element {
   remove() { this.removed = true; }
 }
 
-function browser({ storage = new Map(), persistentStorage = new Map(), storageBlocked = false, viewport = null, notification = null, focused = true, markdown = false,
+function browser({ storage = new Map(), persistentStorage = new Map(), storageBlocked = false, sessionStorageBlocked = false, viewport = null, notification = null, focused = true, markdown = false, inviteRecovery = false,
   invitation = `#room=synthetic-room&invite=${'x'.repeat(43)}` } = {}) {
   const urls = { created: [], revoked: [] };
   class PreviewURL extends URL {
@@ -110,7 +111,9 @@ function browser({ storage = new Map(), persistentStorage = new Map(), storageBl
       addEventListener(name, listener) { windowListeners.set(name, listener); },
       setTimeout: (fn, ms) => schedule(fn, ms), clearTimeout: id => timers.delete(id),
       setInterval: (fn, ms) => schedule(fn, ms, true), clearInterval: id => timers.delete(id),
-      sessionStorage: { getItem: key => storage.get(key), setItem: (key, value) => storage.set(key, value), removeItem: key => storage.delete(key) },
+      sessionStorage: { getItem: key => { if (sessionStorageBlocked) throw new Error('Storage blocked'); return storage.get(key); },
+        setItem: (key, value) => { if (sessionStorageBlocked) throw new Error('Storage blocked'); storage.set(key, value); },
+        removeItem: key => { if (sessionStorageBlocked) throw new Error('Storage blocked'); storage.delete(key); } },
       localStorage: { getItem: key => { if (storageBlocked) throw new Error('Storage blocked'); return persistentStorage.get(key); },
         setItem: (key, value) => { if (storageBlocked) throw new Error('Storage blocked'); persistentStorage.set(key, value); } },
     },
@@ -118,6 +121,7 @@ function browser({ storage = new Map(), persistentStorage = new Map(), storageBl
   vm.runInNewContext(imageScript, context);
   if (markdown) { context.window.markdownit = MarkdownIt; vm.runInNewContext(markdownScript, context); }
   vm.runInNewContext(notificationScript, context);
+  if (inviteRecovery) vm.runInNewContext(inviteRecoveryScript, context);
   vm.runInNewContext(script, context);
   assert.equal(redactedUrl, '/');
   return {
@@ -163,6 +167,203 @@ function snapshot(socket, revision, items, status = 'running') {
 
 const prompt = { id: 'u-1', role: 'user', text: '只回复 desktop-to-phone-ok，不使用工具' };
 const reply = text => ({ id: 'a-1', role: 'assistant', text });
+
+function offerInviteRecovery(page, reason = 'expired') {
+  const socket = page.sockets.at(-1);
+  assert.match(socket.url, /\/recovery$/); socket.open();
+  assert.equal(socket.sent[0].type, 'status');
+  socket.receive({ type: 'recovery-status', status: 'recoverable', reason, recoveryExpiresAt: Date.now() + 7 * 86400000 });
+  return socket;
+}
+function requestInviteRecovery(page) {
+  page.elements['invite-recovery-name'].value = '恢复申请者';
+  page.elements['invite-recovery-form'].trigger('submit');
+  const socket = page.sockets.at(-1); socket.open();
+  const request = socket.sent[0]; assert.equal(request.type, 'request');
+  return { socket, request };
+}
+const updatedInvitation = `https://synthetic.invalid/#room=updated-room&invite=${'y'.repeat(43)}&scope=updated-scope`;
+
+test('recoverable expired invitation offers a request only after server verification and never grants local access', () => {
+  const page = browser({ inviteRecovery: true });
+  assert.equal(page.elements['invite-recovery-panel'].hidden, true);
+  offerInviteRecovery(page);
+  assert.equal(page.elements['join-panel'].hidden, true);
+  assert.equal(page.elements['invite-recovery-form'].hidden, false);
+  assert.equal(page.elements['invite-recovery-title'].textContent, '邀请已到期');
+  assert.equal(page.elements['send-button'].disabled, true);
+  const { socket, request } = requestInviteRecovery(page);
+  assert.match(page.elements['invite-recovery-description'].textContent, /尚未确认送达/);
+  assert.notEqual(request.receiptToken, request.visitorToken);
+  const saved = JSON.parse(page.persistentStorage.get('co2.invitation-requests'))[0];
+  assert.equal(saved.requestId, request.requestId); assert.equal(saved.confirmed, false);
+  assert.ok(!JSON.stringify(saved).includes('inviteToken')); assert.ok(!JSON.stringify(saved).includes('https:'));
+  socket.receive({ type: 'recovery-request', requestId: request.requestId, status: 'pending', expiresAt: saved.expiresAt });
+  assert.match(page.elements['invite-recovery-feedback'].textContent, /申请已送达/);
+  assert.equal(page.elements['invite-recovery-form'].hidden, true);
+  assert.equal(page.elements['send-button'].disabled, true);
+});
+
+test('same browser reopens or refreshes a recovery request using its receipt without creating another request', () => {
+  const persistentStorage = new Map(), storage = new Map();
+  const first = browser({ inviteRecovery: true, persistentStorage, storage }); offerInviteRecovery(first);
+  const { request } = requestInviteRecovery(first); // Intentionally lose the creation ACK.
+  first.pagehide();
+  for (const invitation of [`#room=synthetic-room&invite=${'x'.repeat(43)}`, '']) {
+    const next = browser({ inviteRecovery: true, persistentStorage, storage, invitation });
+    assert.equal(next.elements['join-panel'].hidden, true);
+    const socket = next.sockets[0]; socket.open();
+    assert.deepEqual(socket.sent[0], { type: 'watch', requestId: request.requestId, receiptToken: request.receiptToken });
+    socket.receive({ type: 'recovery-request', requestId: request.requestId, status: 'pending', expiresAt: Date.now() + 60000 });
+    assert.equal(socket.sent.filter(message => message.type === 'request').length, 0);
+    assert.match(next.elements['invite-recovery-feedback'].textContent, /申请已送达/);
+  }
+  const other = browser({ inviteRecovery: true, persistentStorage, storage, invitation: `#room=different-room&invite=${'z'.repeat(43)}` });
+  other.sockets[0].open(); assert.equal(other.sockets[0].sent[0].type, 'status');
+  assert.equal(other.sockets[0].sent[0].roomId, 'different-room', 'another invitation cannot inherit this tab request');
+});
+
+test('approval changes only the invitation and applicant credential; admission and snapshot remain mandatory', () => {
+  const page = browser({ inviteRecovery: true }); offerInviteRecovery(page);
+  page.elements['proposal-text'].value = 'Do not replay this old draft'; page.elements['proposal-text'].trigger('input');
+  const { socket, request } = requestInviteRecovery(page);
+  socket.receive({ type: 'recovery-request', requestId: request.requestId, status: 'approved', expiresAt: Date.now() + 60000, inviteUrl: updatedInvitation });
+  const joined = page.sockets.at(-1); assert.match(joined.url, /\/guest$/); joined.open();
+  assert.equal(joined.sent[0].roomId, 'updated-room'); assert.equal(joined.sent[0].sessionId, request.visitorToken);
+  assert.equal(joined.sent[0].inviteToken, 'y'.repeat(43)); assert.equal(page.elements['proposal-text'].value, '');
+  assert.equal(page.elements['send-button'].disabled, true); assert.deepEqual(page.messages(), []);
+  joined.receive({ type: 'admitted' }); page.elements['proposal-text'].value = 'new input';
+  page.elements['proposal-text'].trigger('input'); assert.equal(page.elements['send-button'].disabled, true);
+  snapshot(joined, 1, [], 'idle'); assert.equal(page.elements['send-button'].disabled, false);
+  assert.equal(joined.sent.filter(message => message.type === 'proposal').length, 0);
+  assert.equal(page.hash, '');
+});
+
+test('approved recovery remains claimable on reopen and waits for a background page to become visible', () => {
+  const persistentStorage = new Map();
+  const first = browser({ inviteRecovery: true, persistentStorage }); offerInviteRecovery(first);
+  const { socket, request } = requestInviteRecovery(first);
+  first.visibility('hidden');
+  socket.receive({ type: 'recovery-request', requestId: request.requestId, status: 'approved', expiresAt: Date.now() + 60000, inviteUrl: updatedInvitation });
+  assert.match(first.elements['invite-recovery-title'].textContent, /已更新/);
+  assert.equal(first.sockets.filter(socket => /\/guest$/.test(socket.url)).length, 0);
+  first.visibility('visible'); assert.match(first.sockets.at(-1).url, /\/guest$/);
+  const next = browser({ inviteRecovery: true, persistentStorage }); next.sockets[0].open();
+  assert.equal(next.sockets[0].sent[0].type, 'watch');
+  next.sockets[0].receive({ type: 'recovery-request', requestId: request.requestId, status: 'approved', expiresAt: Date.now() + 50000, inviteUrl: updatedInvitation });
+  const guest = next.sockets.at(-1); guest.open(); assert.equal(guest.sent[0].sessionId, request.visitorToken);
+});
+
+test('blocked browser storage keeps the recovery and approved connection usable entirely in memory', () => {
+  const page = browser({ inviteRecovery: true, storageBlocked: true, sessionStorageBlocked: true }); offerInviteRecovery(page, 'interrupted');
+  const { socket, request } = requestInviteRecovery(page);
+  assert.equal(page.elements['invite-recovery-storage'].hidden, false);
+  assert.match(page.elements['invite-recovery-storage'].textContent, /保持本页打开/);
+  socket.receive({ type: 'recovery-request', requestId: request.requestId, status: 'approved', expiresAt: Date.now() + 60000, inviteUrl: updatedInvitation });
+  const guest = page.sockets.at(-1); guest.open(); assert.equal(guest.sent[0].sessionId, request.visitorToken);
+  assert.equal(page.reloadCount, 0); assert.equal(page.persistentStorage.size, 0);
+});
+
+test('an unavailable recovery endpoint or unknown invitation cannot expose the request action', () => {
+  const unsupported = browser({ inviteRecovery: true }); unsupported.sockets[0].close();
+  assert.equal(unsupported.elements['invite-recovery-panel'].hidden, true);
+  unsupported.online(); unsupported.tick(300000); assert.equal(unsupported.sockets.length, 1);
+  const unknown = browser({ inviteRecovery: true }); unknown.sockets[0].open();
+  unknown.sockets[0].receive({ type: 'recovery-status', status: 'unavailable' });
+  assert.equal(unknown.elements['invite-recovery-form'].hidden, true);
+  assert.equal(unknown.elements['join-panel'].hidden, true);
+  assert.equal(unknown.elements['invite-recovery-title'].textContent, '邀请不可恢复');
+});
+
+test('rejected, unavailable and expired receipts stop watching and never submit or restore grants automatically', () => {
+  for (const status of ['rejected', 'unavailable', 'expired']) {
+    const page = browser({ inviteRecovery: true }); offerInviteRecovery(page);
+    const { socket, request } = requestInviteRecovery(page);
+    socket.receive({ type: 'recovery-request', requestId: request.requestId, status: 'pending', expiresAt: Date.now() + 60000 });
+    socket.receive({ type: 'recovery-request', requestId: request.requestId, status });
+    const count = page.sockets.length; page.tick(300000); page.online(); page.visibility('visible');
+    assert.equal(page.sockets.length, count); assert.equal(page.elements['invite-recovery-form'].hidden, true);
+    assert.equal(page.elements['send-button'].disabled, true);
+  }
+});
+
+test('recovery rejects another requester result and cross-origin, malformed or expired replacement invitations', () => {
+  for (const inviteUrl of [updatedInvitation.replace('synthetic.invalid', 'elsewhere.invalid'), 'javascript:alert(1)',
+    updatedInvitation.replace('/#', '/unexpected#'), `${updatedInvitation}&invite=${'z'.repeat(43)}`]) {
+    const page = browser({ inviteRecovery: true }); offerInviteRecovery(page);
+    const { socket, request } = requestInviteRecovery(page);
+    socket.receive({ type: 'recovery-request', requestId: 'another-request', status: 'approved', expiresAt: Date.now() + 60000, inviteUrl: updatedInvitation });
+    assert.equal(page.sockets.filter(socket => /\/guest$/.test(socket.url)).length, 0);
+    socket.receive({ type: 'recovery-request', requestId: request.requestId, status: 'approved', expiresAt: Date.now() + 60000, inviteUrl });
+    assert.equal(page.sockets.filter(socket => /\/guest$/.test(socket.url)).length, 0);
+    assert.match(page.elements['invite-recovery-title'].textContent, /无法更新/);
+  }
+});
+
+test('lost recovery connection only watches, while explicit creation retry reuses its original ID and secrets', () => {
+  const page = browser({ inviteRecovery: true }); offerInviteRecovery(page);
+  const { socket, request } = requestInviteRecovery(page); socket.close();
+  page.tick(1000); const watch = page.sockets.at(-1); watch.open();
+  assert.deepEqual(watch.sent[0], { type: 'watch', requestId: request.requestId, receiptToken: request.receiptToken });
+  watch.receive({ type: 'recovery-request', requestId: request.requestId, status: 'unavailable' });
+  assert.equal(page.elements['invite-recovery-button'].textContent, '重试提交');
+  page.elements['invite-recovery-form'].trigger('submit');
+  const retry = page.sockets.at(-1); retry.open(); assert.deepEqual(retry.sent[0], request);
+});
+
+test('revocation after recovered admission invalidates the local request and cannot restart it through old results', () => {
+  const page = browser({ inviteRecovery: true }); offerInviteRecovery(page);
+  const { socket, request } = requestInviteRecovery(page);
+  socket.receive({ type: 'recovery-request', requestId: request.requestId, status: 'approved', expiresAt: Date.now() + 60000, inviteUrl: updatedInvitation });
+  const guest = page.sockets.at(-1); guest.open(); guest.receive({ type: 'admitted' });
+  guest.receive({ type: 'revoked' });
+  assert.deepEqual(JSON.parse(page.persistentStorage.get('co2.invitation-requests')), []);
+  socket.receive({ type: 'recovery-request', requestId: request.requestId, status: 'approved', expiresAt: Date.now() + 60000, inviteUrl: updatedInvitation });
+  const count = page.sockets.length; page.online(); page.tick(300000); assert.equal(page.sockets.length, count);
+  assert.equal(page.elements['invite-recovery-panel'].hidden, true);
+});
+
+test('live expiration and system interruption clear old content before verifying recovery, while denial suppresses it', () => {
+  for (const type of ['expired', 'interrupted', 'paused', 'denied']) {
+    const page = browser({ inviteRecovery: true });
+    page.sockets[0].open(); page.sockets[0].receive({ type: 'recovery-status', status: 'active' });
+    const guest = page.join(); snapshot(guest, 1, [prompt], 'idle');
+    guest.receive({ type }); assert.deepEqual(page.messages(), []);
+    assert.equal(page.elements['send-button'].disabled, true);
+    if (type === 'denied') {
+      const count = page.sockets.length; page.tick(300000); page.online(); assert.equal(page.sockets.length, count);
+      assert.equal(page.elements['invite-recovery-panel'].hidden, true);
+    } else {
+      offerInviteRecovery(page, type === 'expired' ? 'expired' : type);
+      assert.equal(page.elements['invite-recovery-form'].hidden, false);
+    }
+  }
+});
+
+test('failed join probes the original invite and confirmed recovery cancels the normal reconnect loop', () => {
+  const page = browser({ inviteRecovery: true });
+  page.sockets[0].open(); page.sockets[0].receive({ type: 'recovery-status', status: 'temporarily-offline' });
+  const guest = page.join({ admitted: false }); guest.receive({ type: 'join-rejected' });
+  offerInviteRecovery(page, 'interrupted');
+  const count = page.sockets.filter(socket => /\/guest$/.test(socket.url)).length;
+  page.tick(300000);
+  assert.equal(page.sockets.filter(socket => /\/guest$/.test(socket.url)).length, count);
+  assert.equal(page.elements['invite-recovery-form'].hidden, true, 'unreachable recovery service must not leave an enabled action');
+});
+
+test('a recovered room later expiring starts a new explicit request instead of reusing the earlier approval', () => {
+  const page = browser({ inviteRecovery: true }); offerInviteRecovery(page);
+  const first = requestInviteRecovery(page);
+  first.socket.receive({ type: 'recovery-request', requestId: first.request.requestId, status: 'approved', expiresAt: Date.now() + 60000, inviteUrl: updatedInvitation });
+  const guest = page.sockets.at(-1); guest.open(); guest.receive({ type: 'admitted' }); guest.receive({ type: 'expired' });
+  const probe = page.sockets.at(-1); probe.open();
+  assert.equal(probe.sent[0].roomId, 'updated-room');
+  probe.receive({ type: 'recovery-status', status: 'recoverable', reason: 'expired', recoveryExpiresAt: Date.now() + 7 * 86400000 });
+  const next = requestInviteRecovery(page);
+  assert.notEqual(next.request.requestId, first.request.requestId);
+  assert.notEqual(next.request.visitorToken, first.request.visitorToken);
+  assert.equal(next.request.roomId, 'updated-room');
+});
 
 test('Desktop-originated reply renders live without a guest proposal or reconnect', () => {
   const page = browser();

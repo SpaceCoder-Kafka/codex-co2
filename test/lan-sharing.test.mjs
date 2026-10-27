@@ -30,8 +30,9 @@ async function fixture(t, { saved, interfaces = { en0: [privateInterface('192.16
     startTunnel: async () => { counts.tunnel++; calls.push('tunnel'); return { url: 'https://synthetic.example', close: async () => calls.push('tunnel-close') }; },
     checkHealth: async () => { counts.health++; return { ok: true }; }, ...dependencies,
   });
-  t.after(async () => { await service.close(); await fs.rm(root, { recursive: true, force: true }); });
-  return { root, runtimeDir, service, calls, counts, relays, interfaces, get ownerOptions() { return ownerOptions; } };
+  const services = [service];
+  t.after(async () => { for (const instance of services) await instance.close(); await fs.rm(root, { recursive: true, force: true }); });
+  return { root, runtimeDir, service, services, calls, counts, relays, interfaces, get ownerOptions() { return ownerOptions; } };
 }
 
 test('persisted LAN mode survives restart without public access, and host transport stays loopback', async t => {
@@ -72,7 +73,7 @@ test('enabling LAN closes the old public transport, selects a current address an
   await f.ownerOptions.ensureRelay();
   assert.equal(f.counts.tunnel, 1); assert.equal(f.relays[1].options.lanAddress, '192.168.40.2');
   await f.service.close();
-  const restarted = new SharingService(f.service.options, f.service.dependencies); t.after(() => restarted.close());
+  const restarted = new SharingService(f.service.options, f.service.dependencies); f.services.push(restarted);
   await restarted.start(); await restarted.ensureRelay();
   assert.equal(restarted.getNetwork().intranetOnly, true); assert.equal(f.counts.tunnel, 1);
 });

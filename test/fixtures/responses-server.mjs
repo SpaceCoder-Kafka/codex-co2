@@ -42,6 +42,10 @@ export async function startResponsesFixture() {
     await new Promise(resolve => setTimeout(resolve, 60));
     send({ type: 'response.output_text.delta', item_id: itemId, output_index: 0, content_index: 0, delta: answer });
     await new Promise(resolve => setTimeout(resolve, 60));
+    // Streaming assertions can explicitly keep the response open until the
+    // consumer has observed a delta. Fixed delays cannot guarantee this when
+    // the host batches snapshots or a concurrent test stalls the event loop.
+    if (hold) { await hold.completed; releaseAll.delete(hold.complete); }
     send({ type: 'response.output_item.done', output_index: 0, item });
     send({ type: 'response.completed', response: { id, usage: { input_tokens: 1, output_tokens: 1, total_tokens: 2 } } });
     res.end();
@@ -61,13 +65,15 @@ export async function startResponsesFixture() {
   const origin = `http://127.0.0.1:${server.address().port}`;
   return {
     origin, requests, blockedDestinations,
-    holdNextResponse() {
-      let arrive, release;
+    holdNextResponse({ holdCompletion = false } = {}) {
+      let arrive, release, complete = () => {};
       const arrived = new Promise(resolve => { arrive = resolve; });
       const released = new Promise(resolve => { release = resolve; });
-      holds.push({ arrive, release, released });
+      const completed = holdCompletion ? new Promise(resolve => { complete = resolve; }) : Promise.resolve();
+      holds.push({ arrive, release, released, complete, completed });
       releaseAll.add(release);
-      return { arrived, release };
+      if (holdCompletion) releaseAll.add(complete);
+      return { arrived, release, complete };
     },
     async close() {
       for (const release of releaseAll) release();

@@ -9,11 +9,15 @@ import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { setTimeout as delay } from 'node:timers/promises';
 
-async function fixture(t, { ipc = false, attach = true, parentReady = false } = {}) {
+async function fixture(t, { ipc = false, attach = true, parentReady = false, daemon = false, foreground = false, backgroundEnabled } = {}) {
   const root = await fs.mkdtemp('/tmp/co2-helper-');
   const runtimeDir = path.join(root, '.coop');
   const resourceRoot = process.env.CO2_TEST_RESOURCE_ROOT ?? fileURLToPath(new URL('../', import.meta.url));
   const cloudflared = path.join(root, 'cloudflared');
+  if (backgroundEnabled !== undefined) {
+    await fs.mkdir(runtimeDir, { mode: 0o700 });
+    await fs.writeFile(path.join(runtimeDir, 'background-settings.json'), JSON.stringify({ version: 1, enabled: backgroundEnabled }), { mode: 0o600 });
+  }
   await fs.writeFile(cloudflared, '#!/bin/sh\nif [ "$1" = --version ]; then touch "$0.version"; echo "cloudflared version 2026.10.1 (synthetic)"; exit 0; fi\nexit 99\n', { mode: 0o700 });
   const requests = [], sockets = new Set();
   let server;
@@ -41,7 +45,8 @@ async function fixture(t, { ipc = false, attach = true, parentReady = false } = 
     await fs.chmod(path.join(directory, 'ipc.sock'), 0o600);
   }
   const child = spawn(process.execPath, [path.join(resourceRoot, 'bin/desktop-service.mjs'), '--runtime-dir', runtimeDir,
-    '--resource-root', resourceRoot, '--cloudflared', cloudflared, ...(attach ? ['--attach'] : []), ...(parentReady ? ['--parent-ready'] : [])], {
+    '--resource-root', resourceRoot, '--cloudflared', cloudflared, ...(attach ? ['--attach'] : []), ...(parentReady ? ['--parent-ready'] : []),
+    ...(daemon ? ['--daemon'] : []), ...(foreground ? ['--foreground'] : [])], {
     env: { HOME: root, PATH: '/usr/bin:/bin', LANG: 'en_US.UTF-8', CODEX_COOP_CLI: '/missing/codex' },
     stdio: ['pipe', 'pipe', 'pipe'],
   });
@@ -71,7 +76,35 @@ async function fixture(t, { ipc = false, attach = true, parentReady = false } = 
     }
     throw new Error('Helper response timeout');
   };
-  return { root, runtimeDir, cloudflared, child, exited, requests, messages, waitFor, get stderr() { return stderr; } };
+  return { root, runtimeDir, resourceRoot, cloudflared, child, exited, requests, messages, waitFor, get stderr() { return stderr; } };
+}
+
+async function connectManager(t, f) {
+  for (let i = 0; i < 300; i++) {
+    if (await fs.stat(path.join(f.runtimeDir, 'bg.sock')).then(() => true, () => false)) break;
+    if (f.child.exitCode !== null) throw new Error(`Daemon stopped: ${f.stderr}`);
+    await delay(10);
+  }
+  const child = spawn(process.execPath, [path.join(f.resourceRoot, 'bin/desktop-service.mjs'), '--runtime-dir', f.runtimeDir,
+    '--resource-root', f.resourceRoot, '--cloudflared', f.cloudflared, '--attach', '--connect'], {
+    env: { HOME: f.root, PATH: '/usr/bin:/bin', LANG: 'en_US.UTF-8' }, stdio: ['pipe', 'pipe', 'pipe'],
+  });
+  const exited = once(child, 'exit'); const messages = []; let buffer = '', errors = '';
+  child.stdout.on('data', bytes => {
+    buffer += bytes; let i;
+    while ((i = buffer.indexOf('\n')) >= 0) { messages.push(JSON.parse(buffer.slice(0, i))); buffer = buffer.slice(i + 1); }
+  });
+  child.stderr.on('data', bytes => { errors += bytes; });
+  t.after(async () => { if (child.exitCode === null && child.signalCode === null) { child.kill('SIGKILL'); await exited; } });
+  const waitFor = async predicate => {
+    for (let i = 0; i < 500; i++) {
+      const found = messages.find(predicate); if (found) return found;
+      if (child.exitCode !== null) throw new Error(`Manager bridge stopped: ${errors}`);
+      await delay(10);
+    }
+    throw new Error('Manager bridge timed out');
+  };
+  return { child, messages, exited, waitFor };
 }
 
 test('packaged helper attaches without a CLI and never creates an isolated backend or home', { timeout: 10000 }, async t => {
@@ -130,4 +163,39 @@ test('manager lifecycle gate rejects malformed input and parent EOF without star
     await assert.rejects(fs.stat(f.runtimeDir), { code: 'ENOENT' });
     await assert.rejects(fs.stat(f.cloudflared + '.version'), { code: 'ENOENT' });
   }
+});
+
+test('packaged daemon survives native Quit and a new manager reconnects to the original service', { timeout: 10000 }, async t => {
+  const f = await fixture(t, { ipc: true, daemon: true });
+  const first = await connectManager(t, f);
+  const ready = await first.waitFor(m => m.type === 'ready');
+  first.child.stdin.end(); assert.equal((await first.exited)[0], 0);
+  assert.equal(f.child.exitCode, null); assert.deepEqual(f.messages, []);
+  const second = await connectManager(t, f);
+  assert.equal((await second.waitFor(m => m.type === 'ready')).ownerUrl, ready.ownerUrl);
+  second.child.stdin.write('{"type":"set-background","enabled":false,"id":77}\n');
+  assert.equal((await second.waitFor(m => m.id === 77)).ok, true);
+  assert.equal(JSON.parse(await fs.readFile(path.join(f.runtimeDir, 'background-settings.json'), 'utf8')).enabled, false);
+  second.child.stdin.end(); assert.equal((await second.exited)[0], 0);
+  assert.equal((await f.exited)[0], 0);
+  for (const file of ['bg.sock', 'background.lock', 'sharing.lock', 'background-control.json']) {
+    await assert.rejects(fs.stat(path.join(f.runtimeDir, file)), { code: 'ENOENT' });
+  }
+});
+
+test('disabled automatic daemon does not attach Desktop or expose a management endpoint', { timeout: 10000 }, async t => {
+  const f = await fixture(t, { ipc: true, daemon: true, backgroundEnabled: false });
+  assert.equal((await f.exited)[0], 0); assert.deepEqual(f.requests, []); assert.deepEqual(f.messages, []);
+  await assert.rejects(fs.stat(path.join(f.runtimeDir, 'bg.sock')), { code: 'ENOENT' });
+});
+
+test('background manager can start before Desktop without creating a substitute runtime', { timeout: 10000 }, async t => {
+  const f = await fixture(t, { daemon: true });
+  const manager = await connectManager(t, f);
+  const ready = await manager.waitFor(m => m.type === 'ready');
+  assert.ok(ready.ownerUrl.startsWith('http://127.0.0.1:'));
+  for (const name of ['home', 'server.json', 'Open-Test-Desktop.command']) await assert.rejects(fs.stat(path.join(f.runtimeDir, name)), { code: 'ENOENT' });
+  manager.child.stdin.write('{"type":"shutdown"}\n');
+  await manager.waitFor(m => m.type === 'stopped');
+  assert.equal((await f.exited)[0], 0);
 });

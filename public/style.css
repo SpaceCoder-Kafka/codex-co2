@@ -35,6 +35,8 @@ h2 { font-size: 18px; font-weight: 600; margin: 0 0 8px; }
 .notice { padding: 10px 12px; margin-top: 12px; background: #f7f7f7; border-radius: 10px; font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; }
 .notice[data-kind='warning'] { color: #855c25; background: #fbf5e9; }
 .join-card { padding: 24px 0 12px; }
+.invite-recovery-card { border-top: 1px solid var(--border, #e7e5e0); }
+.invite-recovery-card .button { flex-shrink: 0; }
 .card-description { font-size: 13px; line-height: 1.7; color: var(--secondary); margin: 8px 0 14px; }
 .join-row { display: flex; gap: 10px; }
 input { flex: 1; min-width: 0; border: 1px solid #ddd; border-radius: 10px; padding: 11px 14px; background: #fff; color: var(--ink); font-size: 14px; }

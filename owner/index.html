@@ -83,6 +83,13 @@
 
       <div id="panel-settings" class="tab-panel" role="tabpanel" aria-labelledby="tab-settings" hidden>
         <div class="panel-scroll settings-scroll">
+          <section id="background-setting" class="settings-card" hidden>
+            <div class="settings-heading"><h2 data-i18n="后台运行">后台运行</h2><p data-i18n="退出管理界面后继续共享；电脑登录后自动启动本机服务。">退出管理界面后继续共享；电脑登录后自动启动本机服务。</p></div>
+            <div class="settings-row"><div><label for="background-enabled" data-i18n="后台运行并自动恢复共享服务">后台运行并自动恢复共享服务</label><p id="background-hint" class="muted" data-i18n="默认开启。关闭后，退出应用会停止服务，且不再后台自启动。停止共享始终立即撤销访问。">默认开启。关闭后，退出应用会停止服务，且不再后台自启动。停止共享始终立即撤销访问。</p></div><input id="background-enabled" class="switch" type="checkbox" role="switch" checked disabled aria-describedby="background-hint background-status background-note"></div>
+            <p id="background-status" class="muted" role="status" aria-live="polite"></p>
+            <button id="background-system-settings" data-i18n="打开系统后台设置" hidden>打开系统后台设置</button>
+            <p id="background-note" class="settings-note" data-i18n="内网地址不变时，重启后旧链接可重新申请恢复；公网临时地址无法跨隧道重启保留。">内网地址不变时，重启后旧链接可重新申请恢复；公网临时地址无法跨隧道重启保留。</p>
+          </section>
           <section id="network-setting" class="settings-card">
             <div class="settings-heading"><h2 data-i18n="访问范围">访问范围</h2><p id="network-current" role="status" aria-live="polite"></p></div>
             <div class="settings-row"><div><label for="intranet-only" data-i18n="仅内网可访问">仅内网可访问</label><p id="network-hint" class="muted"></p></div><input id="intranet-only" class="switch" type="checkbox" role="switch" aria-describedby="network-hint network-note" disabled></div>
@@ -127,7 +134,7 @@
       <label class="invite-lifetime-choice" for="invite-lifetime-7d"><input id="invite-lifetime-7d" type="radio" name="invite-lifetime" value="7d"><span id="invite-lifetime-label-7d" data-i18n="7 天">7 天</span></label>
       <div id="invite-lifetime-permanent-option" class="invite-lifetime-permanent-option">
         <label class="invite-lifetime-choice" for="invite-lifetime-permanent"><input id="invite-lifetime-permanent" type="radio" name="invite-lifetime" value="permanent" aria-describedby="invite-permanent-tooltip"><span id="invite-lifetime-label-permanent" data-i18n="永久">永久</span></label>
-        <p id="invite-permanent-tooltip" class="invite-permanent-tooltip" role="tooltip" data-i18n="永久表示不设固定到期时间，但停止共享、退出应用或更换入口后，仍需生成新链接。">永久表示不设固定到期时间，但停止共享、退出应用或更换入口后，仍需生成新链接。</p>
+        <p id="invite-permanent-tooltip" class="invite-permanent-tooltip" role="tooltip" data-i18n="永久表示不设固定到期时间。停止共享会撤销邀请；内网地址不变且开启后台运行时，重启后可通过旧链接申请恢复。">永久表示不设固定到期时间。停止共享会撤销邀请；内网地址不变且开启后台运行时，重启后可通过旧链接申请恢复。</p>
       </div>
     </fieldset>
     <p id="invite-lifetime-hint" class="muted" aria-live="polite"></p>

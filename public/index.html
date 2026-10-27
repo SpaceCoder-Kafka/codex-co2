@@ -12,6 +12,7 @@
     <script defer src="/markdown.js"></script>
     <script defer src="/images.js"></script>
     <script defer src="/notifications.js"></script>
+    <script defer src="/invite-recovery.js"></script>
     <script type="module" src="/guest.js"></script>
   </head>
   <body>
@@ -51,7 +52,7 @@
                 <section class="help-section"><h3>输入与发送</h3><p id="keyboard-help">Enter 发送，Shift+Enter 换行。</p><p id="proposal-help">正在同步消息接收设置…</p></section>
                 <section class="help-section"><h3>草稿与连接</h3><p id="draft-help">未发送的草稿保存在当前标签页；断线后自动尝试重连，已发送消息不会自动重发。</p><div id="connection-status" class="status-pill" data-state="neutral" role="status"><span class="status-dot" aria-hidden="true"></span><span id="connection-label">尚未连接</span></div><p id="sync-label">等待同步</p></section>
                 <section id="member-panel" class="help-section" hidden><h3>参与信息</h3><p class="member-identity"><span id="member-avatar" class="avatar" aria-hidden="true">访</span><span id="member-name"></span><span id="member-title">你已加入</span></p><p id="member-description"></p></section>
-                <section class="help-section"><h3>共享边界</h3><p>仅共享这一条会话，任务在分享者的电脑上执行。</p><p>邀请仅在当前页面保留，刷新后请重新打开完整邀请链接。</p><div id="history-note" class="history-note" hidden></div></section>
+                <section class="help-section"><h3>共享边界</h3><p>仅共享这一条会话，任务在分享者的电脑上执行。</p><p>邀请仅在当前页面保留，刷新后请重新打开完整邀请链接。已提交的邀请恢复申请可在同一浏览器中继续查询。</p><div id="history-note" class="history-note" hidden></div></section>
                 <p class="panel-brand">Codex Co²</p>
               </section>
             </div>
@@ -65,6 +66,11 @@
             <h2 id="join-title">加入这条会话</h2><p class="card-description">共享一条 Codex 会话，一起推进工作。</p>
             <form id="join-form"><label class="sr-only" for="display-name">显示名称</label><div class="join-row"><input id="display-name" name="display-name" type="text" maxlength="80" placeholder="你的显示名称" autocomplete="nickname" required aria-describedby="name-help"><button id="join-button" class="button button-primary" type="submit">申请加入</button></div><p id="name-help" class="field-help">最多 40 个字符，分享者确认后即可加入。</p><details class="recovery-entry"><summary>换浏览器或换域名？恢复已加入的身份</summary><p class="field-help">同一网站会自动记住你的身份。只有换浏览器、清理存储或更换域名时，才需要恢复。</p><label for="import-recovery">选择此前保存的恢复文件</label><input id="import-recovery" type="file" accept=".json,application/json"><label for="recovery-input">或粘贴备用恢复凭据</label><input id="recovery-input" type="password" maxlength="43" autocomplete="off" placeholder="首次加入无需填写"><p class="field-help">首次加入不用填写。没有恢复文件或凭据也可以填写显示名称，由分享者重新确认加入。</p></details></form>
             <p id="join-feedback" class="inline-feedback" aria-live="polite"></p>
+          </section>
+          <section id="invite-recovery-panel" class="join-card invite-recovery-card" aria-labelledby="invite-recovery-title" hidden>
+            <h2 id="invite-recovery-title">恢复邀请</h2><p id="invite-recovery-description" class="card-description"></p>
+            <form id="invite-recovery-form" hidden><label class="sr-only" for="invite-recovery-name">申请昵称</label><div class="join-row"><input id="invite-recovery-name" type="text" maxlength="80" placeholder="你的显示名称" autocomplete="nickname" required><button id="invite-recovery-button" class="button button-primary" type="submit">请求恢复邀请</button></div><p class="field-help">昵称由你填写，供分享者确认本次申请。</p></form>
+            <p id="invite-recovery-feedback" class="inline-feedback" role="status"></p><p id="invite-recovery-storage" class="field-help" hidden></p>
           </section>
           <button id="reconnect-button" class="button context-action" type="button" hidden>重新申请连接</button>
           <div id="identity-warning" class="notice" data-kind="warning" role="status" hidden>浏览器未能长期保存身份，请保存一份备份。<button id="open-backup-warning" class="text-button" type="button">备份身份</button></div>

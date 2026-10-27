@@ -5,9 +5,11 @@ import path from 'node:path';
 import { EventEmitter } from 'node:events';
 import { SharingService, runtimePaths } from '../lib/sharing-service.mjs';
 import { paths, prepare, writeJson } from '../lib/runtime.mjs';
+import { randomUUID } from 'node:crypto';
+import { secret } from '../lib/host.mjs';
 
 async function fixture(t, failures = 0) {
-  const root = await fs.mkdtemp('/tmp/co2-service-'); t.after(() => fs.rm(root, { recursive: true, force: true }));
+  const root = await fs.mkdtemp('/tmp/co2-service-');
   const binary = path.join(root, 'fake-codex');
   await fs.writeFile(binary, '#!/bin/sh\necho "codex-cli 0.163.0"\n', { mode: 0o700 });
   const calls = [], counts = { tunnel: 0 }, owner = { url: 'http://127.0.0.1:1/#owner=synthetic',
@@ -21,8 +23,9 @@ async function fixture(t, failures = 0) {
     startTunnel: async () => { counts.tunnel++; if (counts.tunnel <= failures) throw new Error('offline'); return { url: 'https://synthetic.example', close: async () => calls.push('tunnel-close') }; },
     checkHealth: async () => ({ ok: true }),
   });
-  t.after(() => service.close());
-  return { root, service, calls, counts, get ownerOptions() { return ownerOptions; } };
+  const services = [service];
+  t.after(async () => { for (const instance of services) await instance.close(); await fs.rm(root, { recursive: true, force: true }); });
+  return { root, service, services, calls, counts, get ownerOptions() { return ownerOptions; } };
 }
 
 test('desktop starts locally, creates one lazy public connection, and exit preserves the backend', async t => {
@@ -38,6 +41,18 @@ test('desktop starts locally, creates one lazy public connection, and exit prese
   await assert.rejects(fs.stat(path.join(f.root, '.coop/host-service.json')), { code: 'ENOENT' });
 });
 
+test('shutdown attempts all cleanup but never reports stopped when a resource cannot close', async () => {
+  const service = new SharingService({ mode: 'host' });
+  const calls = [], phases = [];
+  service.on('status', status => phases.push(status.phase));
+  service.cleanup.push(() => calls.push('lease-released'));
+  service.cleanup.push(() => { calls.push('tunnel-close-failed'); throw new Error('Synthetic tunnel close failure'); });
+  service.cleanup.push(() => calls.push('manager-closed'));
+  await assert.rejects(service.close(), /Synthetic tunnel close failure/);
+  assert.deepEqual(calls, ['manager-closed', 'tunnel-close-failed', 'lease-released']);
+  assert.equal(phases.includes('stopped'), false);
+});
+
 test('host reloads its persisted sharing limit after service restart without starting public access', async t => {
   const f = await fixture(t); await f.service.start();
   assert.deepEqual(f.ownerOptions.managerSettings.get(), { shareLimit: 10 });
@@ -45,7 +60,7 @@ test('host reloads its persisted sharing limit after service restart without sta
   let settings;
   const restarted = new SharingService(f.service.options, { ...f.service.dependencies,
     startOwner: async options => { settings = options.managerSettings.get(); return { url: 'http://127.0.0.1:1', revokeAll() {}, close: async () => {} }; } });
-  t.after(() => restarted.close()); await restarted.start();
+  f.services.push(restarted); await restarted.start();
   assert.deepEqual(settings, { shareLimit: null }); assert.equal(f.counts.tunnel, 0);
 });
 
@@ -56,7 +71,7 @@ test('host wires private author evidence through service restart without opening
   let recovered;
   const restarted = new SharingService(f.service.options, { ...f.service.dependencies,
     startOwner: async options => { recovered = options.authorHistory.get('selected-synthetic-thread'); return { url: 'http://127.0.0.1:1', revokeAll() {}, close: async () => {} }; } });
-  t.after(() => restarted.close()); await restarted.start();
+  f.services.push(restarted); await restarted.start();
   assert.deepEqual(recovered, evidence); assert.equal(f.counts.tunnel, 0);
 });
 
@@ -175,4 +190,32 @@ test('shutdown during a rebuild cannot create a replacement tunnel after cleanup
   const rebuild = f.ownerOptions.rebuildRelay(); const rejected = assert.rejects(rebuild, /closed/i);
   await f.service.close(); await check; await rejected;
   assert.equal(f.counts.tunnel, 1); assert.equal(f.service.status.phase, 'stopped');
+});
+
+test('recovery exists only with the running built-in relay and entry rebuild or exit cancels its requests', async t => {
+  const f = await fixture(t);
+  let relayRecovery;
+  const startRelay = f.service.dependencies.startRelay;
+  f.service.dependencies.startRelay = async options => { relayRecovery = options.recovery; return startRelay(options); };
+  await f.service.start(); await f.ownerOptions.ensureRelay();
+  const recovery = f.ownerOptions.recovery;
+  assert.equal(relayRecovery, recovery);
+  const create = () => {
+    const origin = 'https://synthetic.example', roomId = randomUUID(), inviteToken = secret();
+    recovery.registerRoom({ roomId, inviteToken, threadId: 'synthetic', origin, expiresAt: Date.now() + 3600000 });
+    recovery.updateRoom(roomId, { state: 'revoked', endReason: 'expired' });
+    const input = { roomId, inviteToken, requestId: randomUUID(), receiptToken: secret(), visitorToken: secret(), name: 'Synthetic' };
+    assert.equal(recovery.request(input, origin).status, 'pending');
+    return () => recovery.watch(input, origin).status;
+  };
+  const beforeRebuild = create();
+  await f.ownerOptions.rebuildRelay();
+  assert.equal(beforeRebuild(), 'unavailable');
+  const beforeExit = create();
+  await f.service.close();
+  assert.equal(beforeExit(), 'unavailable');
+  const external = new SharingService({ mode: 'host', relayUrl: 'https://synthetic.example' });
+  const standalone = new SharingService({ mode: 'relay' });
+  assert.equal(external.recovery, undefined); assert.equal(standalone.recovery, undefined);
+  await external.close(); await standalone.close();
 });

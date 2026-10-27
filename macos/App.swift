@@ -1,6 +1,5 @@
 import AppKit
 import WebKit
-import CryptoKit
 import UserNotifications
 
 struct InvitationClipboard {
@@ -79,17 +78,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
     var helperStopWaiters: [(Bool) -> Void] = []
     var helperStopToken: UUID?
     var helperStopForce = false
+    let backgroundRegistration = BackgroundRegistration()
+    var activeRuntime: URL?
+    var backgroundEnabled = true
+    var usingManagedService = false
+    var backgroundActive = false
+    var backgroundMessage: String?
+    var backgroundRegistrationError: [String: Any]?
+    var backgroundEnablePendingRestart = false
+    var backgroundSaveID: Int?
+    var bridgeConnected = false
+    var bridgeLaunchAttempts = 0
+    var serviceStoppedConfirmed = false
+    var serviceStopRequested = false
+    var foregroundDaemon: Process?
+    var changingRuntime = false
     let updates = AppUpdates()
     var sequence = 0
     var helperGeneration = 0
-    var tunnelProcesses: [Int32: String] = [:]
     var attention: [String: [String: Any]] = [:]
     var notificationLedger = AttentionLedger()
     var notificationsAllowed = false
     var requestingNotifications = false
     var requestedNotifications = false
     var pendingAttentionID: String?
-    let attentionTitles = ["guest": "访客申请加入", "proposal": "协作消息待审批", "tool": "Codex 工具等待审批",
+    let attentionTitles = ["guest": "访客申请加入", "invite-recovery": "邀请恢复申请", "proposal": "协作消息待审批", "tool": "Codex 工具等待审批",
                            "unknown": "消息提交结果待核实", "offline": "共享连接中断", "connection": "公网入口不可用", "share-stopped": "共享已异常结束或到期"]
     var language = UserDefaults.standard.string(forKey: "interfaceLanguage").flatMap { ["zh-CN", "zh-TW", "en"].contains($0) ? $0 : nil } ?? "zh-CN"
     var statusSource = "正在启动本地管理…"
@@ -116,10 +129,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
     func setStatus(_ source: String) { statusSource = source; statusLabel?.stringValue = localized(source) }
     func setStatusTitle(_ source: String) { statusTitleSource = source; statusItem?.button?.title = localized(source) }
     func installLanguageScript(_ controller: WKUserContentController) {
-        guard let bytes = try? JSONSerialization.data(withJSONObject: ["language": language, "info": updates.appInfo, "state": updates.state]),
+        guard let bytes = try? JSONSerialization.data(withJSONObject: ["language": language, "info": updates.appInfo, "state": updates.state, "background": backgroundState]),
               let json = String(data: bytes, encoding: .utf8) else { return }
         controller.removeAllUserScripts()
-        controller.addUserScript(WKUserScript(source: "{ const data = \(json); window.co2Language = data.language; window.co2AppInfo = data.info; window.co2UpdateState = data.state; }", injectionTime: .atDocumentStart, forMainFrameOnly: true))
+        controller.addUserScript(WKUserScript(source: "{ const data = \(json); window.co2Language = data.language; window.co2AppInfo = data.info; window.co2UpdateState = data.state; window.co2BackgroundState = data.background; }", injectionTime: .atDocumentStart, forMainFrameOnly: true))
     }
     func configureUpdates() {
         updates.localize = { [weak self] source in self?.localized(source) ?? source }
@@ -140,16 +153,64 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
               let json = String(data: bytes, encoding: .utf8) else { return }
         view.evaluateJavaScript("{ const data = \(json); window.co2AppInfo = data.info; window.co2UpdateState = data.state; window.receiveCo2AppInfo?.(data.info); window.receiveCo2UpdateState?.(data.state); }", completionHandler: nil)
     }
+    var backgroundSupported: Bool {
+        backgroundRegistration.available && !CommandLine.arguments.contains("--runtime-dir")
+    }
+    var backgroundState: [String: Any] {
+        let registration = backgroundRegistration.status
+        let status: String
+        if !backgroundEnabled { status = "disabled" }
+        else if registration == "requires-approval" { status = "requires-approval" }
+        else if !backgroundSupported { status = "unavailable" }
+        else if !usingManagedService {
+            status = BackgroundRegistrationPolicy.foregroundStatus(registration: registration, connected: bridgeConnected,
+                                                                    pendingEnable: backgroundEnablePendingRestart)
+        }
+        else if backgroundActive && bridgeConnected { status = "running" }
+        else { status = helper?.isRunning == true ? "starting" : "stopped" }
+        var state: [String: Any] = ["supported": backgroundSupported, "enabled": backgroundEnabled,
+                                    "status": status, "saving": backgroundSaveID != nil, "registration": registration]
+        if let message = backgroundMessage { state["message"] = message }
+        if let error = backgroundRegistrationError { state["registrationError"] = error }
+        return state
+    }
+    func publishBackground() {
+        guard let view = webView else { return }
+        installLanguageScript(view.configuration.userContentController)
+        guard let owner = managerOrigin, let current = view.url,
+              current.scheme == owner.scheme, current.host == owner.host, current.port == owner.port,
+              let bytes = try? JSONSerialization.data(withJSONObject: backgroundState),
+              let json = String(data: bytes, encoding: .utf8) else { return }
+        view.evaluateJavaScript("{ const state = \(json); window.co2BackgroundState = state; window.receiveCo2BackgroundState?.(state); }", completionHandler: nil)
+    }
+    func changeBackground(_ enabled: Bool) {
+        guard backgroundSaveID == nil, helper?.isRunning == true, bridgeConnected else {
+            backgroundMessage = "助手未连接，无法修改后台设置。"; publishBackground(); return
+        }
+        backgroundMessage = nil
+        send("set-background", fields: ["enabled": enabled]); backgroundSaveID = sequence
+        let requestID = sequence; publishBackground()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 10) { [weak self] in
+            guard let self = self, self.backgroundSaveID == requestID else { return }
+            self.backgroundSaveID = nil
+            self.backgroundMessage = "后台设置保存结果未确认，请重新打开设置核对。"
+            if let directory = self.activeRuntime, let enabled = try? BackgroundConfiguration.enabled(runtime: directory) {
+                self.backgroundEnabled = enabled
+            }
+            self.publishBackground()
+        }
+    }
+    func unregisterBackground(_ completion: @escaping (Bool) -> Void) {
+        // An explicit temporary runtime must never change the installed app's
+        // login service. This also keeps isolated native acceptance harmless.
+        guard backgroundSupported else { completion(true); return }
+        backgroundRegistration.unregister(completion)
+    }
     var defaultRuntimeDir: String {
-        FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support/Codex Co²/.coop").path
+        BackgroundConfiguration.defaultRuntime().path
     }
     var runtimeDir: String {
-        let args = CommandLine.arguments
-        if let i = args.firstIndex(of: "--runtime-dir"), i + 1 < args.count { return args[i + 1] }
-        if let bytes = try? Data(contentsOf: URL(fileURLWithPath: defaultRuntimeDir).appendingPathComponent("app-settings.json")),
-           let settings = try? JSONSerialization.jsonObject(with: bytes) as? [String: String],
-           let selected = settings["runtimeDirectory"] { return selected }
-        return defaultRuntimeDir
+        activeRuntime?.path ?? defaultRuntimeDir
     }
     func applicationDidFinishLaunching(_ notification: Notification) {
         if let bundleID = Bundle.main.bundleIdentifier,
@@ -172,6 +233,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
     }
     @objc func checkAfterWake(_ notification: Notification) { send("check-network") }
     func applicationDidBecomeActive(_ notification: Notification) {
+        publishBackground()
         UNUserNotificationCenter.current().getNotificationSettings { settings in DispatchQueue.main.async {
             self.notificationsAllowed = settings.authorizationStatus == .authorized
             self.syncAttentionNotifications()
@@ -220,6 +282,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         config.userContentController.add(self, name: "languagePreference")
         config.userContentController.add(self, name: "notificationSettings")
         config.userContentController.add(self, name: "appUpdates")
+        config.userContentController.add(self, name: "backgroundService")
         installLanguageScript(config.userContentController)
         webView = WKWebView(frame: .zero, configuration: config); webView.navigationDelegate = self; webView.uiDelegate = self
         for view in [statusLabel!, webView!] {
@@ -275,23 +338,51 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
             let explanation = "此安装包仅支持连接日常 Codex。隔离实验请从源码运行。"
             setStatus(explanation); message(explanation); return
         }
+        do {
+            activeRuntime = try BackgroundConfiguration.runtime()
+            backgroundEnabled = try BackgroundConfiguration.enabled(runtime: activeRuntime!)
+        } catch {
+            backgroundMessage = "后台设置无法读取，请检查运行目录权限。"
+            publishBackground(); message(backgroundMessage!); return
+        }
+        backgroundMessage = nil; backgroundRegistrationError = nil; backgroundEnablePendingRestart = false
+        bridgeLaunchAttempts = 0; serviceStopRequested = false
+        if backgroundEnabled && backgroundSupported {
+            do { try backgroundRegistration.register() }
+            catch {
+                let failure = error as NSError
+                let domain = failure.domain.range(of: "^[A-Za-z0-9._-]{1,96}$", options: .regularExpression) == nil ? "unknown" : failure.domain
+                backgroundRegistrationError = ["domain": domain, "code": failure.code]
+                if backgroundRegistration.status != "requires-approval" { backgroundMessage = "无法启用后台服务，请检查系统登录项设置。" }
+            }
+        }
+        usingManagedService = backgroundEnabled && backgroundSupported && backgroundRegistration.status == "enabled"
+        if usingManagedService { backgroundRegistration.kickstart() }
+        else {
+            let daemon = Process(); daemon.executableURL = resources.appendingPathComponent("runtime/node")
+            daemon.arguments = BackgroundConfiguration.arguments(resources: resources, runtime: activeRuntime!, mode: "--daemon") + ["--foreground"]
+            if let official = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.openai.codex") {
+                daemon.arguments?.append(contentsOf: ["--desktop-app", official.path])
+            }
+            daemon.environment = BackgroundConfiguration.environment(resources: resources)
+            daemon.currentDirectoryURL = resources
+            daemon.standardInput = FileHandle.nullDevice; daemon.standardOutput = FileHandle.nullDevice; daemon.standardError = FileHandle.nullDevice
+            do { try daemon.run(); foregroundDaemon = daemon }
+            catch { backgroundMessage = "无法启动内置助手。请重新安装完整的应用包。"; publishBackground(); message(backgroundMessage!); return }
+        }
+        launchBridge()
+    }
+    func launchBridge() {
+        guard helper == nil, !exiting, !changingRuntime, !updates.installationAuthorized,
+              let resources = Bundle.main.resourceURL, let activeRuntime = activeRuntime else { return }
         ownerURL = nil; activeRooms = nil; helperGeneration += 1; let generation = helperGeneration
+        bridgeConnected = false; serviceStoppedConfirmed = false; bridgeLaunchAttempts += 1
         setStatus("正在启动本地管理…"); setStatusTitle("Co² · 启动中")
-        let service = resources.appendingPathComponent("service")
         let binaries = resources.appendingPathComponent("runtime")
         let process = Process(); process.executableURL = binaries.appendingPathComponent("node")
-        process.arguments = [service.appendingPathComponent("bin/desktop-service.mjs").path, "--resource-root", service.path,
-                             "--runtime-dir", runtimeDir, "--attach",
-                             "--cloudflared", binaries.appendingPathComponent("cloudflared").path]
-        if let official = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.openai.codex") {
-            process.arguments?.append(contentsOf: ["--desktop-app", official.path])
-        }
+        process.arguments = BackgroundConfiguration.arguments(resources: resources, runtime: activeRuntime, mode: "--connect")
         process.currentDirectoryURL = resources
-        let env = ProcessInfo.processInfo.environment
-        var clean = ["PATH": binaries.path + ":/usr/bin:/bin:/usr/sbin:/sbin", "HOME": FileManager.default.homeDirectoryForCurrentUser.path,
-                     "LANG": env["LANG"] ?? "en_US.UTF-8"]
-        for key in ["USER", "LOGNAME", "TMPDIR"] { if let value = env[key] { clean[key] = value } }
-        process.environment = clean
+        process.environment = BackgroundConfiguration.environment(resources: resources)
         let stdinPipe = Pipe(), stdoutPipe = Pipe(); process.standardInput = stdinPipe; process.standardOutput = stdoutPipe
         process.standardError = FileHandle.nullDevice // Never log capabilities, authentication URLs or backend diagnostics.
         input = stdinPipe; output = stdoutPipe; outputBuffer = Data()
@@ -300,33 +391,55 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
             DispatchQueue.main.async {
                 guard let self = self, self.helperGeneration == generation else { return }
                 if data.isEmpty { handle.readabilityHandler = nil; return }
-                self.outputBuffer.append(data)
-                if self.outputBuffer.count > 131072 { self.stopHelper(); self.message("助手返回了无效数据，请重新连接。"); return }
-                while let newline = self.outputBuffer.firstIndex(of: 10) {
-                    let line = self.outputBuffer[..<newline]; self.outputBuffer.removeSubrange(...newline)
-                    if let object = try? JSONSerialization.jsonObject(with: line) as? [String: Any] { self.receive(object) }
-                }
+                self.consumeOutput(data)
             }
         }
-        process.terminationHandler = { [weak self] _ in DispatchQueue.main.async {
+        process.terminationHandler = { [weak self] _ in DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
             self?.didStopHelper(process, generation: generation)
         } }
-        do { helper = process; try process.run() }
+        do {
+            helper = process; try process.run()
+            try? stdoutPipe.fileHandleForWriting.close()
+            try? stdinPipe.fileHandleForReading.close()
+        }
         catch { helper = nil; setStatus("启动失败"); message("无法启动内置助手。请重新安装完整的应用包。"); }
     }
-    func send(_ command: String) {
+    func consumeOutput(_ data: Data) {
+        outputBuffer.append(data)
+        if outputBuffer.count > 131072 { stopHelper(); message("助手返回了无效数据，请重新连接。"); return }
+        while let newline = outputBuffer.firstIndex(of: 10) {
+            let line = outputBuffer[..<newline]; outputBuffer.removeSubrange(...newline)
+            if let object = try? JSONSerialization.jsonObject(with: line) as? [String: Any] { receive(object) }
+        }
+    }
+    func send(_ command: String, fields: [String: Any] = [:]) {
         guard helper?.isRunning == true, let input = input else { message("助手未连接，请从菜单栏重新连接。"); return }
         sequence += 1
-        if let data = try? JSONSerialization.data(withJSONObject: ["type": command, "id": sequence]) {
+        var request = fields; request["type"] = command; request["id"] = sequence
+        if let data = try? JSONSerialization.data(withJSONObject: request) {
             do { try input.fileHandleForWriting.write(contentsOf: data + Data([10])) } catch { setStatus("助手已断开") }
         }
     }
     func receive(_ object: [String: Any]) {
         let type = object["type"] as? String ?? ""
-        if type == "resource", object["kind"] as? String == "tunnel", let pid = object["pid"] as? Int32,
-           pid > 1, let fingerprint = object["fingerprint"] as? String, fingerprint.count == 64 {
-            tunnelProcesses[pid] = fingerprint
-            if helper?.isRunning != true { retireOrphanTunnels() }
+        // The service owns its tunnel. A management bridge disconnect is never
+        // evidence that the tunnel is orphaned.
+        if type == "background-state", let enabled = object["enabled"] as? Bool {
+            bridgeConnected = true; bridgeLaunchAttempts = 0; backgroundEnabled = enabled
+            backgroundActive = object["background"] as? Bool == true
+            publishBackground()
+        }
+        if type == "stopped" { serviceStoppedConfirmed = true; backgroundActive = false; publishBackground() }
+        if type == "result", object["command"] as? String == "set-background", let enabled = object["enabled"] as? Bool {
+            backgroundSaveID = nil; backgroundEnabled = enabled; backgroundMessage = nil
+            backgroundEnablePendingRestart = enabled && !usingManagedService
+            if enabled && backgroundRegistrationError != nil && backgroundRegistration.status != "requires-approval" {
+                backgroundMessage = "无法启用后台服务，请检查系统登录项设置。"
+            }
+            publishBackground()
+        }
+        if type == "error", backgroundSaveID != nil, object["id"] as? Int == backgroundSaveID {
+            backgroundSaveID = nil; backgroundMessage = "后台设置未能保存，请重试。"; publishBackground()
         }
         if type == "ready", let raw = object["ownerUrl"] as? String, let url = URL(string: raw), url.scheme == "http", url.host == "127.0.0.1", url.port != nil {
             ownerURL = url; managerOrigin = url; webView.load(URLRequest(url: url)); send("account"); return
@@ -338,6 +451,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
             let network = (object["connection"] as? [String: Any])?["state"] as? String ?? ""
             setStatusTitle(pending > 0 ? "Co² · 待确认 \(pending)" : rooms > 0 ? "Co² · 共享 \(rooms)" : "Co²")
             if phase == "stopped" { updateAttention([]); setStatus("共享已停止") }
+            else if phase == "waiting-desktop" { setStatus("等待日常 Codex 就绪后恢复共享服务。") }
             else if phase == "connecting" { setStatus("正在建立公网入口…") }
             else if network == "unavailable" { setStatus("公网入口无法访问，请检查连接") }
             else if network == "recovering" { setStatus("公网连接波动，正在恢复原链接") }
@@ -428,21 +542,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
     @objc func connectCurrent() {
         if helper == nil { launchHelper() } else { send("connect-current") }
     }
-    func retireOrphanTunnels() {
-        for (pid, fingerprint) in tunnelProcesses {
-            let check = Process(), pipe = Pipe(); check.executableURL = URL(fileURLWithPath: "/bin/ps")
-            check.arguments = ["-p", String(pid), "-o", "lstart=", "-o", "command="]; check.standardOutput = pipe; check.standardError = FileHandle.nullDevice
-            guard (try? check.run()) != nil else { continue }
-            let bytes = pipe.fileHandleForReading.readDataToEndOfFile(); check.waitUntilExit()
-            let identity = String(data: bytes, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            let current = SHA256.hash(data: Data(identity.utf8)).map { String(format: "%02x", $0) }.joined()
-            if current == fingerprint, identity.contains("/runtime/cloudflared tunnel ") { Darwin.kill(pid, SIGTERM) }
-        }
-        tunnelProcesses.removeAll()
-    }
     @objc func login() { send("login") }
     @objc func revokeAll() { send("revoke-all") }
-    func stopHelper() { send("shutdown") }
+    func stopHelper() { serviceStopRequested = true; send("shutdown") }
     @objc func retry() {
         if helper != nil { message("助手仍在运行。请先退出应用，再重新打开。"); return }
         launchHelper()
@@ -452,45 +554,74 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         panel.message = localized("选择已有的独立 .coop 目录。此操作不搬迁或合并数据；请先停止使用它的其他助手。")
         guard panel.runModal() == .OK, let url = panel.url else { return }
         guard url.lastPathComponent == ".coop" else { message("请选择名为 .coop 的独立运行目录。"); return }
-        do {
-            try FileManager.default.createDirectory(atPath: defaultRuntimeDir, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
-            let target = URL(fileURLWithPath: defaultRuntimeDir).appendingPathComponent("app-settings.json")
-            let bytes = try JSONSerialization.data(withJSONObject: ["runtimeDirectory": url.resolvingSymlinksInPath().path])
-            try bytes.write(to: target, options: .atomic)
-            try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: target.path)
-            message("运行目录已保存。退出并重新打开应用后生效。")
-        } catch { message("无法保存运行目录，请检查目录权限。") }
+        changingRuntime = true
+        // Changing the runtime is an explicit ownership boundary. Revoke old
+        // sharing before a second runtime can become active.
+        if helper?.isRunning == true { send("revoke-all") }
+        beginHelperShutdown(forceOnTimeout: false) { [weak self] success in
+            guard let self = self else { return }
+            guard success else { self.changingRuntime = false; self.message("无法停止本地助手，运行目录未更改。"); return }
+            self.unregisterBackground { stopped in
+                self.changingRuntime = false
+                guard stopped else { self.message("无法停止后台启动，运行目录未更改。"); return }
+                do {
+                    try BackgroundConfiguration.saveRuntime(url)
+                    self.message("运行目录已保存。退出并重新打开应用后生效。")
+                } catch { self.message("无法保存运行目录，请检查目录权限。") }
+            }
+        }
     }
     @objc func quit() { NSApp.terminate(nil) }
     func didStopHelper(_ process: Process, generation: Int) {
         guard helperGeneration == generation, helper === process else { return }
-        output?.fileHandleForReading.readabilityHandler = nil; helper = nil; ownerURL = nil
-        updateAttention([]); retireOrphanTunnels(); activeRooms = 0
-        finishHelperShutdown(true)
+        output?.fileHandleForReading.readabilityHandler = nil
+        if let handle = output?.fileHandleForReading, let remaining = try? handle.readToEnd(), !remaining.isEmpty { consumeOutput(remaining) }
+        helper = nil; ownerURL = nil
+        input = nil; output = nil
+        updateAttention([]); activeRooms = 0
+        let wasConnected = bridgeConnected; bridgeConnected = false; backgroundActive = false
+        let wasStopping = helperStopToken != nil
+        if wasStopping {
+            // Pipe readability callbacks already queued on the main thread may
+            // contain the final acknowledgement. Check after those callbacks.
+            DispatchQueue.main.async { [weak self] in
+                guard let self = self else { return }
+                if self.serviceStoppedConfirmed { self.waitForForegroundExit() }
+                else { self.finishHelperShutdown(false) }
+            }
+        }
+        let intentionalStop = wasStopping || serviceStopRequested || serviceStoppedConfirmed || exiting
+            || changingRuntime || updates.installationAuthorized
+        let managedAvailable = usingManagedService && backgroundEnabled && backgroundRegistration.status == "enabled"
+        if let delay = BackgroundBridgePolicy.reconnectDelay(attempt: bridgeLaunchAttempts, wasConnected: wasConnected,
+                                                             managedAvailable: managedAvailable, intentionalStop: intentionalStop) {
+            publishBackground()
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                guard let self = self, self.helperGeneration == generation, !self.serviceStopRequested else { return }
+                self.launchBridge()
+            }
+            return
+        }
+        publishBackground()
         if !exiting { setStatus("助手已停止，可从菜单栏重新连接"); setStatusTitle("Co² · 已停止") }
     }
     func beginHelperShutdown(forceOnTimeout: Bool, completion: @escaping (Bool) -> Void) {
-        guard let process = helper else { completion(true); return }
-        if !process.isRunning { didStopHelper(process, generation: helperGeneration); completion(true); return }
+        serviceStopRequested = true
+        guard let process = helper, process.isRunning, bridgeConnected else {
+            // A missing bridge does not prove the independent service stopped.
+            completion(serviceStoppedConfirmed || (!usingManagedService && foregroundDaemon?.isRunning != true)); return
+        }
         let generation = helperGeneration
         helperStopWaiters.append(completion); helperStopForce = helperStopForce || forceOnTimeout
         guard helperStopToken == nil else { return }
-        let token = UUID(); helperStopToken = token
+        let token = UUID(); helperStopToken = token; serviceStoppedConfirmed = false
         send("shutdown")
         DispatchQueue.main.asyncAfter(deadline: .now() + 10) { [weak self] in
             guard let self = self, self.helperStopToken == token else { return }
             if !process.isRunning { self.didStopHelper(process, generation: generation); return }
-            // Updating never force-kills the service: fail closed if its
-            // lifecycle cleanup did not complete. Ordinary Quit keeps its
-            // existing ability to terminate our own child after a grace period.
-            if self.helperStopForce {
-                process.terminate()
-                DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
-                    guard let self = self, self.helperStopToken == token else { return }
-                    if !process.isRunning { self.didStopHelper(process, generation: generation) }
-                    else { self.finishHelperShutdown(false) }
-                }
-            } else { self.finishHelperShutdown(false) }
+            // Killing the bridge cannot prove its independent service stopped.
+            // Leave the application/update open when graceful cleanup fails.
+            self.finishHelperShutdown(false)
         }
     }
     func finishHelperShutdown(_ success: Bool) {
@@ -498,24 +629,55 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         let waiters = helperStopWaiters; helperStopWaiters.removeAll()
         for callback in waiters { callback(success) }
     }
+    func waitForForegroundExit(attempt: Int = 0) {
+        guard helperStopToken != nil else { return }
+        if foregroundDaemon?.isRunning != true { foregroundDaemon = nil; finishHelperShutdown(true); return }
+        if attempt >= 100 { finishHelperShutdown(false); return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in self?.waitForForegroundExit(attempt: attempt + 1) }
+    }
     func prepareUpdateInstallation(_ completion: @escaping (UpdatePreparationResult) -> Void) {
         if helper?.isRunning == true && activeRooms != 0 {
             let alert = NSAlert(); alert.messageText = localized("结束共享并更新")
-            alert.informativeText = localized("更新会结束当前共享，安装后重新打开 Codex Co²。原邀请不会自动恢复。")
+            alert.informativeText = localized("更新会暂时停止共享服务并重新打开 Co²。内网原地址可用时可申请恢复；公网临时链接需要重新分享。")
             alert.addButton(withTitle: localized("结束共享并更新")); alert.addButton(withTitle: localized("取消"))
             guard alert.runModal() == .alertFirstButtonReturn else { completion(.cancelled); return }
         }
-        beginHelperShutdown(forceOnTimeout: false) { success in completion(success ? .ready : .failed) }
+        beginHelperShutdown(forceOnTimeout: false) { [weak self] success in
+            guard let self = self, success else { completion(.failed); return }
+            // Stop login/retry ownership before Sparkle replaces Resources.
+            self.unregisterBackground { stopped in completion(stopped ? .ready : .failed) }
+        }
     }
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         if updates.preventsTermination {
             updates.cancel(); setStatus("更新正在取消，请稍后再次退出。"); return .terminateCancel
         }
-        if helper?.isRunning != true { return .terminateNow }
+        if backgroundSaveID != nil { setStatus("正在保存后台设置，请稍后再次退出。"); return .terminateCancel }
+        if backgroundEnabled && usingManagedService && backgroundRegistration.status == "enabled" && !updates.installationAuthorized {
+            exiting = true
+            // Closing only our pipe detaches the bridge. launchd owns sharing.
+            try? input?.fileHandleForWriting.close()
+            return .terminateNow
+        }
+        if helper?.isRunning != true && !usingManagedService && foregroundDaemon?.isRunning != true { return .terminateNow }
+        if !backgroundEnabled && (helper?.isRunning != true || !bridgeConnected) {
+            exiting = true
+            unregisterBackground { [weak self] stopped in
+                if !stopped { self?.exiting = false }
+                NSApp.reply(toApplicationShouldTerminate: stopped)
+            }
+            return .terminateLater
+        }
         exiting = true
         beginHelperShutdown(forceOnTimeout: true) { [weak self] success in
-            if !success { self?.exiting = false }
-            NSApp.reply(toApplicationShouldTerminate: success)
+            guard let self = self else { NSApp.reply(toApplicationShouldTerminate: false); return }
+            if !success { self.exiting = false; NSApp.reply(toApplicationShouldTerminate: false); return }
+            if !self.backgroundEnabled {
+                self.unregisterBackground { stopped in
+                    if !stopped { self.exiting = false }
+                    NSApp.reply(toApplicationShouldTerminate: stopped)
+                }
+            } else { NSApp.reply(toApplicationShouldTerminate: true) }
         }
         return .terminateLater
     }
@@ -534,6 +696,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         // Use the local macOS name without reading Codex credentials or profiles.
         webView.evaluateJavaScript("window.setCo2SuggestedName?.(\(argument)[0])", completionHandler: nil)
         publishUpdates()
+        publishBackground()
         if pendingAbout { showAboutPage() }
         openPendingAttention()
     }
@@ -548,6 +711,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         if message.name == "appUpdates" {
             guard let object = message.body as? [String: Any] else { return }
             updates.handle(object); return
+        }
+        if message.name == "backgroundService", let (action, enabled) = BackgroundConfiguration.action(message.body) {
+            if action == "set", let enabled = enabled { changeBackground(enabled) }
+            else if action == "settings" { backgroundRegistration.openSettings() }
+            else { publishBackground() }
+            return
         }
         if message.name == "languagePreference" {
             guard let value = message.body as? String, ["zh-CN", "zh-TW", "en"].contains(value) else { return }
@@ -571,6 +740,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
 @main
 enum CodexCo2Application {
     static func main() {
+        if BackgroundConfiguration.runAgentIfRequested() { return }
         let delegate = AppDelegate()
         let application = NSApplication.shared
         application.delegate = delegate

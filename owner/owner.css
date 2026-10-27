@@ -257,6 +257,15 @@ h3 { font-size: 13px; font-weight: 600; }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 
 .project-group { min-width: 0; }
+.invite-recovery-requests { padding: 22px; margin-bottom: 20px; border: 1px solid #cdddf5; border-radius: 14px; background: #f8fbff; }
+.invite-recovery-requests > h2 { display: flex; align-items: center; gap: 8px; font-size: 15px; margin-bottom: 8px; }
+.invite-recovery { padding: 16px; margin-top: 14px; background: white; }
+.invite-recovery:focus { outline: 3px solid #a9cbff; outline-offset: 3px; }
+.invite-recovery .recovery-thread { margin: 10px 0 6px; font-size: 13px; overflow-wrap: anywhere; }
+.invite-recovery .row { flex-wrap: wrap; margin-top: 12px; }
+.invite-recovery .card-heading strong { overflow-wrap: anywhere; }
+.invite-recovery .badge[data-state="approved"] { color: #187449; background: #e6f5ed; }
+.invite-recovery .badge[data-state="failed"] { color: #915b16; background: #fff1d8; }
 .project-heading { display: flex; width: 100%; justify-content: flex-start; text-align: left; background: transparent; border-radius: 8px; padding: 10px 4px; gap: 10px; min-width: 0; white-space: normal; }
 .project-heading:hover { background: #f6f6f8; }
 .project-chevron { color: #92929a; font-size: 22px; font-weight: 400; width: 14px; flex-shrink: 0; text-align: center; transform: rotate(90deg); transition: transform .15s; }

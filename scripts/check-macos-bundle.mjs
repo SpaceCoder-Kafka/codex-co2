@@ -67,6 +67,20 @@ for (const relative of files.filter(name => name !== 'manifest.json')) {
 }
 if (Object.keys(manifest.files).length !== files.length - 1) throw new Error('Manifest file set mismatch');
 if (!manifest.source?.files || hash(JSON.stringify(manifest.source.files)) !== manifest.source.sha256) throw new Error('Invalid source inventory');
+if (manifest.launchAgents || manifest.source.files['macos/BackgroundService.swift']) {
+  const name = 'local.codexco2.sharing.plist';
+  const directory = path.join(app, 'Contents/Library/LaunchAgents');
+  if (Object.keys(manifest.launchAgents ?? {}).join(',') !== name || (await fs.readdir(directory)).join(',') !== name) throw new Error('Unexpected background launch agents');
+  const file = path.join(directory, name), stat = await fs.lstat(file);
+  if (!stat.isFile() || stat.isSymbolicLink()) throw new Error('Background launch agent must be a regular bundled file');
+  const digest = hash(await fs.readFile(file));
+  if (digest !== manifest.launchAgents[name] || digest !== manifest.source.files[`macos/${name}`]) throw new Error('Unreviewed background launch agent');
+  const config = JSON.parse(execFileSync('/usr/bin/plutil', ['-convert', 'json', '-o', '-', file], { encoding: 'utf8' }));
+  if (config.Label !== 'local.codexco2.sharing' || config.BundleProgram !== 'Contents/MacOS/CodexCo2'
+      || JSON.stringify(config.ProgramArguments) !== JSON.stringify(['CodexCo2', '--background-service'])
+      || config.RunAtLoad !== true || config.KeepAlive?.SuccessfulExit !== false
+      || config.LimitLoadToSessionType !== 'Aqua' || config.StandardOutPath !== '/dev/null' || config.StandardErrorPath !== '/dev/null') throw new Error('Unsafe background launch agent configuration');
+}
 for (const relative of files.filter(name => /^service\/(lib|owner|public)\//.test(name))) {
   const sourceName = relative === 'service/owner/app-icon.png' ? 'macos/AppIcon.png' : relative.slice('service/'.length);
   if (manifest.source.files[sourceName] !== manifest.files[relative]) throw new Error(`Unreviewed service source: ${relative}`);

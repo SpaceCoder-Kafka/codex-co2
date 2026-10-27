@@ -3,7 +3,7 @@ const fragment = new URLSearchParams(window.location.hash.slice(1));
 let roomId = fragment.get('room') || '';
 let inviteToken = fragment.get('invite') || '';
 const validScope = value => typeof value === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(value);
-const scopeId = validScope(fragment.get('scope')) ? fragment.get('scope') : '';
+let scopeId = validScope(fragment.get('scope')) ? fragment.get('scope') : '';
 fragment.delete('room');
 fragment.delete('invite');
 window.history.replaceState(null, '', window.location.pathname);
@@ -31,7 +31,8 @@ function isValidInvitation(room, token) {
   return /^[A-Za-z0-9_-]{1,128}$/.test(room || '')
     && /^[A-Za-z0-9_-]{32,128}$/.test(token || '');
 }
-const validInvitation = isValidInvitation(roomId, inviteToken);
+let validInvitation = isValidInvitation(roomId, inviteToken);
+let invitationRecovery = null;
 let invitationReloadPending = false;
 let socket = null;
 let connectTimer = null;
@@ -324,6 +325,26 @@ function setTerminal(message, label, { preserveIdentity = false } = {}) {
   updateControls();
 }
 
+function useRecoveredInvitation(next, request) {
+  if (invitationReloadPending) return;
+  cancelReconnect(); detachSocket(); taskNotifications?.reset();
+  forgetIdentity();
+  roomId = next.roomId; inviteToken = next.inviteToken; scopeId = next.scopeId;
+  validInvitation = isValidInvitation(roomId, inviteToken);
+  terminal = false; connecting = false; admitted = false; hostOnline = false;
+  savedVisitor = false; visitorToken = request.visitorToken; displayName = request.name;
+  lastRevision = null; receivedSnapshot = false; policyKnown = false; requireApproval = true;
+  reconnectAttempts = 0;
+  // A new grant starts a fresh conversation connection, never a replay queue.
+  proposals.clear(); renderProposals(); ui.messages.replaceChildren(); images?.clear(); assistantTexts.clear();
+  ui['proposal-text'].value = ''; saveDraft(); resizeComposer();
+  ui['proposal-feedback'].textContent = ''; ui['history-note'].hidden = true; ui['new-replies-button'].hidden = true;
+  ui['empty-state'].hidden = false; ui['thread-title'].textContent = '共享会话';
+  ui['display-name'].value = displayName; ui['recovery-input'].value = '';
+  emptyState('邀请已更新', '正在连接，完成准入和同步后即可协作。');
+  connect();
+}
+
 function renderSnapshot(payload) {
   if (!admitted || !Array.isArray(payload.items)
       || !['idle', 'running', 'offline'].includes(payload.status)) return;
@@ -479,17 +500,29 @@ function handleMessage(message) {
       updateControls();
       break;
     case 'denied':
+      invitationRecovery?.revoke();
       setTerminal('分享者未同意这次加入。请联系分享者，获取新的邀请后再试。', '未获准加入');
       break;
     case 'revoked':
+      invitationRecovery?.revoke();
       setTerminal('分享者已结束你的访问。若要继续参与，请重新获取邀请。', '访问已撤销');
       break;
     case 'expired':
       setTerminal('邀请已到期。请让分享者重新分享，并发送新邀请。', '邀请已到期');
+      invitationRecovery?.probe();
+      break;
+    case 'interrupted':
+      setTerminal('共享因故中断，正在检查能否申请恢复邀请。', '共享因故中断');
+      invitationRecovery?.probe();
+      break;
+    case 'paused':
+      setTerminal('共享已暂停，正在检查能否申请恢复邀请。', '共享已暂停', { preserveIdentity: true });
+      invitationRecovery?.probe();
       break;
     case 'join-rejected':
       detachSocket();
       disconnect('邀请当前不可用，正在尝试恢复。若持续失败，请让分享者检查共享状态或发送新邀请。');
+      invitationRecovery?.probe();
       break;
     case 'not-admitted':
     case 'authentication-timeout':
@@ -517,8 +550,15 @@ function handleMessage(message) {
     case 'data': {
       if (!admitted || !message.payload || typeof message.payload !== 'object') return;
       const payload = message.payload;
+      if (payload.type === 'share-ended' && ['expired', 'interrupted', 'paused'].includes(payload.reason)) {
+        const expired = payload.reason === 'expired';
+        setTerminal(expired ? '邀请已到期，正在检查能否申请恢复。' : '共享因故中断，正在检查能否申请恢复邀请。',
+          expired ? '邀请已到期' : '共享因故中断', { preserveIdentity: payload.reason === 'paused' });
+        invitationRecovery?.probe(); return;
+      }
       if (payload.type === 'share-paused') {
         setTerminal('共享入口已暂停。同一网站的新邀请会自动恢复身份；如果更换域名，请从协作详情中备份身份。旧消息不会重发。', '共享已暂停', { preserveIdentity: true });
+        invitationRecovery?.probe();
         return;
       }
       if (payload.type === 'visitor-recovery' && Number.isSafeInteger(payload.expiresAt) && payload.expiresAt > Date.now()) {
@@ -723,6 +763,7 @@ ui.conversation.addEventListener('scroll', () => {
 }, { passive: true });
 document.addEventListener('visibilitychange', () => {
   taskNotifications?.refresh();
+  if (document.visibilityState === 'visible') invitationRecovery?.visible();
   if (document.visibilityState === 'visible' && admitted && !terminal
       && socket?.readyState === WebSocket.OPEN) {
     if (heartbeatTimer !== null && Date.now() - lastActivity > 75000) socket.close();
@@ -730,15 +771,18 @@ document.addEventListener('visibilitychange', () => {
   }
 });
 window.addEventListener('online', () => {
+  invitationRecovery?.resume();
   if (!displayName || terminal || invitationReloadPending) return;
   if (socket?.readyState === WebSocket.OPEN) { if (heartbeatTimer !== null) checkHeartbeat(); return; }
   if (!connecting) { reconnectAttempts = 0; connect(); }
 });
 window.addEventListener('pagehide', () => {
+  invitationRecovery?.suspend();
   taskNotifications?.reset();
   cancelReconnect(); detachSocket(); connecting = false; admitted = false; hostOnline = false; updateControls();
 });
 window.addEventListener('pageshow', event => {
+  if (event.persisted) invitationRecovery?.resume();
   if (event.persisted && displayName && !terminal && !invitationReloadPending) { reconnectAttempts = 0; connect(); }
 });
 window.addEventListener('hashchange', () => {
@@ -747,6 +791,7 @@ window.addEventListener('hashchange', () => {
   // Same-document invitation navigation must create a fresh page/session. Keep
   // the new fragment for startup to consume; never mix it into the old socket.
   invitationReloadPending = true;
+  invitationRecovery?.close();
   cancelReconnect(); detachSocket();
   window.location.reload();
 });
@@ -782,7 +827,22 @@ ui['proposal-form'].addEventListener('submit', (event) => {
   updateControls();
 });
 
-if (!validInvitation) {
+invitationRecovery = window.createInviteRecovery?.({ invitation: { roomId, inviteToken },
+  getName: () => displayName || ui['display-name'].value, newToken: newVisitorToken, newRequestId: requestId,
+  onRecoverable: reason => {
+    setTerminal(reason === 'expired' ? '邀请已到期，可以向分享者申请恢复。' : '共享因故中断，可以向分享者申请恢复。',
+      reason === 'expired' ? '邀请已到期' : '共享因故中断');
+    ui['join-panel'].hidden = true;
+  }, onUnavailable: () => {
+    setTerminal('邀请不可恢复，请联系分享者发送新邀请。', '邀请不可恢复');
+    ui['join-panel'].hidden = true;
+  }, onApproved: useRecoveredInvitation,
+});
+if (invitationRecovery?.hasRequest) {
+  terminal = true; ui['join-panel'].hidden = true;
+  setStatus('正在查询恢复申请', 'pending');
+  emptyState('等待邀请恢复', '正在查询此前申请的处理结果。');
+} else if (!validInvitation) {
   terminal = true;
   roomId = '';
   inviteToken = '';
@@ -794,7 +854,8 @@ if (!validInvitation) {
 updateControls();
 resizeComposer();
 window.addEventListener('resize', resizeComposer);
-if (validInvitation && savedVisitor && displayName) connect();
+if (validInvitation && savedVisitor && displayName && !invitationRecovery?.hasRequest) connect();
+invitationRecovery?.start();
 
 // Keep the composer above the software keyboard without changing transcript scroll.
 if (window.visualViewport) {

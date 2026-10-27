@@ -129,7 +129,7 @@ In-app updates verify signed update metadata and packages and remain subject to 
 
 ### Host: share a conversation
 
-1. Install through Homebrew, or open the DMG and drag **Codex Co²** into **Applications**. For an update, stop sharing and quit the old Co² app from its menu bar menu first.
+1. Install through Homebrew, or open the DMG and drag **Codex Co²** into **Applications**. For a manual replacement, stop sharing, turn off background running if available, then quit the old Co² app from its menu bar menu.
 2. Keep official Codex Desktop running, then open Co² from Applications.
 3. Review your display name and message approval preference in **Settings**.
 4. Select an existing conversation with at least one message and generate an invitation. If Codex comes to the foreground to load the conversation, simply switch back to Co².
@@ -142,7 +142,29 @@ In-app updates verify signed update metadata and packages and remain subject to 
 3. By default, new messages enter the Agent directly. If the host enables message approval, wait for the host's decision.
 4. After admission, the page automatically attempts to request notification permission if undecided. If your browser blocks the automatic request, click **Enable notifications** in the page prompt or **Collaboration details → Help**. Reconnecting does not repeat the request, and explicitly disabling notifications prevents automatic requests. Use **Send test notification** to check display and click behavior. A different invitation origin needs its own notification permission. If the browser accepts the test but no banner appears, check Chrome's system notification settings and Focus mode. Keep the page open and connected. Supported browsers can notify you while the page is in the background; clicking the notification returns to that page. A run ending does not necessarily mean it succeeded.
 
-The host can remove a collaborator, stop one share or stop all sharing. Closing the management window leaves the app running in the menu bar; **Quit** ends sharing. Stopping sharing does not cancel work already dispatched to the Agent.
+The host can remove a collaborator, stop one share or stop all sharing. Closing the management window leaves the app in the menu bar. With the macOS background service enabled and authorized, **Quit** closes the management interface while sharing continues. Without it, quitting ends sharing. Stopping sharing always revokes access, but does not cancel work already dispatched to the Agent.
+
+### Background running on macOS
+
+Current macOS source builds add **Settings → Background running**. The setting is on by default: after macOS permits the background item, the local sharing service keeps running when you quit the management interface and starts again when the same user logs in. It does not start or modify official Codex Desktop. Existing collaboration still needs Desktop; the saved intranet recovery page can accept requests while Desktop is closed. Open Desktop before approving a request or creating a share.
+
+If macOS requires approval or prevents background operation, Co² shows that state and can run only in the foreground. Starting this fallback clears previously saved recovery eligibility and does not preserve it across service restarts. Some changes take effect the next time you open Co²; follow the status shown in Settings. Turning the setting off immediately disables automatic startup and clears saved recovery eligibility. Current foreground sharing can continue until you quit Co². Native host notifications are not guaranteed while the management interface is closed; reopen it to review pending requests.
+
+This background service is macOS-only in this version. Windows, browser and CLI management do not expose the native setting.
+
+### Recover an expired invitation
+
+If an invitation expires or sharing ends because of a system interruption, the original page can offer **Request invitation recovery** once it confirms recovery is available. Enter a display name and submit. After the page confirms that the request is awaiting the host, keep it open or **reopen the original invitation in the same browser** later to check the result. The browser saves a request receipt; if storage is unavailable, the page asks you to keep it open. Closing the page disables live updates; there is no push delivery while it is closed.
+
+In **Shared conversations → Invitation recovery requests**, the host can approve and allow joining, or decline. Approval reuses the conversation's current valid invitation, or starts a new share, and admits only this requester. It does not interrupt other collaborators or admit every holder of the old link. The requester supplies their display name; it is not a verified identity.
+
+Recovery is available with Co²'s built-in sharing service; external or standalone relays do not support it yet. The recovery window lasts up to **7 days** after expiry or interruption. A request lasts up to **24 hours**, bounded by that window; approved results and unused admission permissions also expire with the target share. Restarting does not extend these deadlines. Stopping sharing revokes eligibility; a declined or removed guest cannot regain access through their original request.
+
+With the managed macOS background service active, intranet recovery metadata and credential hashes are saved privately. Conversation content and raw invitation, receipt or visitor credentials are not saved by this recovery store. The service reuses the selected private IP and saved port. If either is unavailable, it waits for that exact address and port; it does not choose another IP or port, track address changes with mDNS, or fall back to public sharing. Once the original entry returns, an old invitation can request recovery again.
+
+A whole-service restart does **not** reopen active rooms or restore admission. Pending requests survive; an interrupted approval requires the host to retry. Previously approved results become unavailable, and unused admission permissions are not reissued. No old messages are resent. The host must explicitly approve a new recovery before collaboration resumes.
+
+A public Quick Tunnel can stay alive while its background service keeps running, but its temporary hostname cannot be preserved across tunnel or computer restarts. If the original entry cannot return, or the host changes it, ask for another invitation.
 
 ## What sharing grants
 
@@ -152,8 +174,8 @@ The host can remove a collaborator, stop one share or stop all sharing. Closing 
 - The authenticated local manager reads IDs, titles, update times and project paths from the Desktop index. That catalog is not sent to guests or the relay. Selected content is read through Desktop IPC; the app does not copy default credentials or conversation files.
 - Public sharing uses ordinary TLS and trusts the relay/tunnel infrastructure. **It is not end-to-end encrypted.** Host disconnection pauses collaboration; some failures require a new invitation. Temporary URLs may change and availability is not guaranteed. [Quick Tunnels are intended for testing and development](https://developers.cloudflare.com/tunnel/get-started/quick-tunnels/).
 - Source builds add **Settings → Access scope → Intranet only**. Select a private IPv4 address and save, then invite colleagues through the private IP without creating a Cloudflare entry. End existing shares before changing scope. **Direct intranet access uses unencrypted HTTP; browser system notifications are unavailable.** Chat, admission and message approval remain available. This restricts the collaboration entry; model, tool and remote-image traffic keep their existing network behavior. Cross-device access and company firewall rules still need field acceptance.
-- When creating an intranet invitation, choose **1 hour, 1 day, 7 days or Permanent**. Timed invitations end sharing at a fixed deadline and do not roll forward. Permanent removes that deadline; stopping sharing, quitting, replacing the entry, or loss of network or Desktop availability can still end access. It does not guarantee a fixed address or reuse of the link after restart.
-- Invitations and visitor recovery files are sensitive. Browser storage may retain a visitor identity. Revoking access stops further delivery but cannot erase content a recipient has already copied or saved.
+- When creating an intranet invitation, choose **1 hour, 1 day, 7 days or Permanent**. Timed invitations end sharing at a fixed deadline and do not roll forward. Permanent removes that deadline; stopping sharing, replacing the entry, or loss of service, network or Desktop availability can still end access. With macOS background running enabled and the original intranet address available, an old link can request recovery after restart; it does not automatically restore access.
+- Invitations, visitor recovery files and request receipts are sensitive. Browser storage may retain visitor identities and request receipts. Revoking access stops further delivery but cannot erase content a recipient has already copied or saved.
 
 Review history and attachments before sharing. Avoid disclosing secrets or material you do not have permission to share.
 
@@ -163,7 +185,7 @@ Review history and attachments before sharing. Avoid disclosing secrets or mater
 
 **Why can't I connect?** Confirm official Desktop is running, has a nonempty conversation, and exposes a compatible local interface. Co² fails closed if unavailable or incompatible. It does not restart Desktop, replace a profile or create a fallback backend. Desktop updates may affect compatibility.
 
-**Why has my invitation stopped working?** Public invitations renew with a compatible relay and healthy connections, keeping the same link; the Cloudflare temporary hostname has no one-hour hard deadline. Timed intranet invitations end sharing at their fixed deadline. Permanent invitations still depend on the host and network. Expiry, stopping sharing, quitting or replacing the entry can require a new invitation. Share again from history; choose “Got it” to dismiss an ended share while keeping its history. Check uncertain submissions in Desktop before resending.
+**Why has my invitation stopped working?** Public invitations renew with a compatible relay and healthy connections, keeping the same link; the Cloudflare temporary hostname has no one-hour hard deadline. Timed intranet invitations end sharing at their fixed deadline. Permanent invitations still depend on the host and network. Brief disconnections retry first. For expiry or system interruption with a reachable original entry, follow the page's recovery prompt. Stopping sharing, changing the entry or unavailable recovery requires the host to send another invitation. A macOS background service can preserve the original intranet recovery entry across restart; active access still needs a new host decision. Choose “Got it” to dismiss an ended share while keeping its history and eligible recovery requests. Check uncertain submissions in Desktop before resending.
 
 **What has been verified?** Synthetic tests cover admission, message policy, scoped transport and revocation. Earlier manual sessions verified individual local/public paths. The current release candidate still needs final-package native Desktop, native tool approval and clean-Mac download/install acceptance. Scripted RPC tests do not prove native UI behavior.
 

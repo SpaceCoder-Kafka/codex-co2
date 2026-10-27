@@ -49,3 +49,22 @@ test('only unexpected stops and expiry notify; manual stop and successful re-sha
   const replacement = { ...room(), roomId: 'r2', guests: [], proposals: [] };
   assert.deepEqual(attentionFor({ rooms: [r, replacement] }), []);
 });
+
+test('recovery attention survives room dismissal and contains only opaque request identifiers', () => {
+  const recoveryRequests = [
+    { requestId: 'q1', roomId: 'old-room', threadId: 'private-thread', title: 'private title', name: 'private name', status: 'pending' },
+    { requestId: 'q2', roomId: 'old-room', name: 'private name', status: 'failed' },
+    { requestId: 'q3', roomId: 'another-room', status: 'pending' },
+  ];
+  assert.deepEqual(attentionFor({ rooms: [], recoveryRequests }), [
+    { id: 'old-room:invite-recovery', kind: 'invite-recovery', roomId: 'old-room', members: ['q1', 'q2'], itemId: 'q1', count: 2 },
+    { id: 'another-room:invite-recovery', kind: 'invite-recovery', roomId: 'another-room', members: ['q3'], itemId: 'q3', count: 1 },
+  ]);
+  assert.ok(!JSON.stringify(attentionFor({ recoveryRequests })).includes('private'));
+});
+
+test('recovery processing and terminal outcomes no longer request a host decision', () => {
+  for (const status of ['processing', 'approved', 'rejected', 'expired', 'unavailable']) {
+    assert.deepEqual(attentionFor({ recoveryRequests: [{ requestId: 'q1', roomId: 'r1', status }] }), [], status);
+  }
+});

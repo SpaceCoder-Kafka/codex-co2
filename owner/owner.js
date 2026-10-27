@@ -22,9 +22,10 @@ let renderedThreadRows = [], ownerNameEdited = false;
 const collapsedProjects = new Set(), searchCollapsedProjects = new Set();
 const invitationInputs = new Map();
 const attentionTargets = new Map();
+const recoveryDecisions = new Map();
 const attentionCopy = {
   guest: '访客申请加入', proposal: '协作消息待审批', tool: 'Codex 工具等待审批',
-  unknown: '消息提交结果待核实', offline: '共享连接中断', connection: '公网入口不可用', 'share-stopped': '共享已异常结束或到期',
+  unknown: '消息提交结果待核实', offline: '共享连接中断', connection: '公网入口不可用', 'share-stopped': '共享已异常结束或到期', 'invite-recovery': '邀请恢复申请',
 };
 const intranetMode = () => Boolean(lastState?.network?.intranetOnly);
 const networkWorkBusy = () => networkSaving || Boolean(lastState?.networkBusy);
@@ -57,7 +58,8 @@ function renderAttention(m) {
   $('#attention-toggle').setAttribute('aria-label', $('#attention-summary').textContent);
   $('#attention-list').replaceChildren(...items.map(item => {
     const row = button('', () => openAttention(item.id), 'attention-entry');
-    const room = m.rooms.find(room => room.roomId === item.roomId);
+    const room = m.rooms.find(room => room.roomId === item.roomId)
+      ?? (m.recoveryRequests ?? []).find(request => request.roomId === item.roomId);
     row.append(el('strong', t(attentionLabel(item.kind))), el('span', room?.title ?? t('共享连接')), el('span', item.count, 'count'));
     return row;
   }));
@@ -190,6 +192,42 @@ $('#dismiss-star').onclick = () => {
   $('#about-star').hidden = true;
 };
 if (nativeUpdates) updateAction('info');
+const nativeBackground = window.webkit?.messageHandlers?.backgroundService;
+let backgroundState = window.co2BackgroundState, backgroundSaving = false;
+const backgroundLabels = {
+  running: '后台服务正在运行', disabled: '后台运行已关闭，退出应用后停止服务',
+  'requires-approval': '请在系统设置中允许 Co² 后台运行', unavailable: '后台服务暂不可用',
+  starting: '正在启动后台服务…', stopped: '后台服务已停止',
+  'pending-restart': '下次打开应用后启用后台运行。',
+};
+function renderBackground() {
+  $('#background-setting').hidden = !nativeBackground;
+  $('#background-enabled').checked = backgroundState?.enabled !== false;
+  $('#background-enabled').disabled = !nativeBackground || backgroundState?.supported !== true || backgroundSaving;
+  $('#background-status').textContent = t(backgroundSaving ? '正在保存…'
+    : backgroundState?.message || backgroundLabels[backgroundState?.status] || '正在读取后台运行状态…');
+  const registrationError = backgroundState?.registrationError;
+  if (!backgroundSaving && backgroundState?.status === 'unavailable' && registrationError
+    && typeof registrationError.domain === 'string' && /^[A-Za-z0-9._-]{1,120}$/.test(registrationError.domain)
+    && Number.isSafeInteger(registrationError.code)) {
+    $('#background-status').textContent += ` (${registrationError.domain}: ${registrationError.code})`;
+  }
+  $('#background-system-settings').hidden = !nativeBackground || backgroundState?.status !== 'requires-approval';
+}
+window.receiveCo2BackgroundState = value => {
+  if (!nativeBackground || !value || typeof value.enabled !== 'boolean' || typeof value.supported !== 'boolean'
+    || !Object.hasOwn(backgroundLabels, value.status)) return;
+  backgroundState = value; backgroundSaving = value.saving === true; renderBackground();
+};
+$('#background-enabled').onchange = () => {
+  if (!nativeBackground || backgroundSaving || backgroundState?.supported !== true) return;
+  const enabled = $('#background-enabled').checked;
+  backgroundSaving = true; renderBackground();
+  try { nativeBackground.postMessage({ action: 'set', enabled }); }
+  catch { backgroundSaving = false; backgroundState = { ...backgroundState, message: '后台运行设置未能保存，请重试。' }; renderBackground(); }
+};
+if (nativeBackground) nativeBackground.postMessage({ action: 'status' });
+$('#background-system-settings').onclick = () => nativeBackground?.postMessage({ action: 'settings' });
 $('#new-share').onclick = $('#empty-browse').onclick = () => selectTab('sessions', true);
 $('#edit-profile').onclick = () => { selectTab('settings'); $('#owner-name').focus(); };
 $('#edit-policy').onclick = () => { selectTab('settings'); $('#require-approval').focus(); };
@@ -384,7 +422,7 @@ const inviteLifetimeValues = ['1h', '1d', '7d', 'permanent'];
 const selectedInviteLifetime = () => inviteLifetimeValues.find(value => $(`#invite-lifetime-${value}`).checked);
 function renderInviteLifetimeHint() {
   $('#invite-lifetime-hint').textContent = t(selectedInviteLifetime() === 'permanent'
-    ? '不设固定到期时间，需保持应用和共享运行；停止共享、退出应用或更换入口后失效。'
+    ? '不设固定到期时间；停止共享会撤销邀请。重启恢复取决于后台运行设置及原地址是否可用。'
     : '到期后自动结束共享，已加入的访客也会断开。');
 }
 function cancelInviteLifetime() {
@@ -488,6 +526,59 @@ function renderHistory(m) {
   }
   $('#rooms').append(section);
 }
+const recoveryLabels = {
+  pending: '等待处理', processing: '正在恢复邀请…', failed: '恢复未完成', approved: '已同意恢复',
+  rejected: '已拒绝恢复', expired: '申请已到期', unavailable: '申请已失效',
+};
+function recoveryActionBlocked(type, request) {
+  return disconnected || ws.readyState !== WebSocket.OPEN || recoveryDecisions.has(request.requestId)
+    || !['pending', 'failed'].includes(request.status) || request.expiresAt <= Date.now()
+    || (type === 'approve-recovery' && (networkWorkBusy() || Boolean(connectionAction) || Boolean(busyThreadId)
+      || Boolean(pendingInviteLifetime) || lastState?.connection?.state === 'connecting'));
+}
+function decideRecovery(type, requestId) {
+  const request = (lastState?.recoveryRequests ?? []).find(item => item.requestId === requestId);
+  if (!request || recoveryActionBlocked(type, request)) return;
+  recoveryDecisions.set(requestId, type);
+  send({ type, requestId });
+  renderRooms(lastState);
+}
+function renderRecoveryRequests(m) {
+  const requests = m.recoveryRequests ?? [];
+  if (!requests.length) return false;
+  const section = el('section', null, 'invite-recovery-requests');
+  section.setAttribute('aria-label', t('邀请恢复申请'));
+  const title = el('h2', t('邀请恢复申请'));
+  title.append(el('span', requests.length, 'count'));
+  section.append(title, el('p', t('同意会更新邀请，并允许本次申请者加入；不会向其他旧链接持有人开放访问。'), 'muted'));
+  for (const request of requests) {
+    const card = el('div', null, 'card invite-recovery'), heading = el('div', null, 'card-heading');
+    card.dataset.state = request.status;
+    attentionTargets.set(`${request.roomId}:invite-recovery:${request.requestId}`, card);
+    const status = el('span', t(recoveryLabels[request.status] ?? '申请已失效'), 'badge');
+    status.dataset.state = request.status;
+    heading.append(el('strong', request.name), status);
+    card.append(heading, el('p', t('申请者填写的昵称，身份未经核验。'), 'muted'),
+      el('p', request.title, 'recovery-thread'),
+      el('p', t('申请时间：{time}', { time: new Date(request.createdAt).toLocaleString(i18n.language) }), 'muted'),
+      el('p', t('申请有效至：{time}', { time: new Date(request.expiresAt).toLocaleString(i18n.language) }), 'muted'));
+    if (request.status === 'failed') card.append(el('p', t('恢复尚未完成，请检查连接后重试；不会自动重新分享。'), 'muted'));
+    if (request.status === 'approved') card.append(el('p', t('已向本次申请者提供有效邀请并允许加入。'), 'muted'));
+    if (['pending', 'failed'].includes(request.status)) {
+      const row = el('div', null, 'row');
+      const approve = button(request.status === 'failed' ? '重试并同意' : '同意并允许加入', () => decideRecovery('approve-recovery', request.requestId), 'primary');
+      const reject = button('拒绝', () => decideRecovery('reject-recovery', request.requestId));
+      approve.disabled = recoveryActionBlocked('approve-recovery', request);
+      reject.disabled = recoveryActionBlocked('reject-recovery', request);
+      approve.setAttribute('aria-busy', String(recoveryDecisions.get(request.requestId) === 'approve-recovery'));
+      reject.setAttribute('aria-busy', String(recoveryDecisions.get(request.requestId) === 'reject-recovery'));
+      row.append(approve, reject); card.append(row);
+    }
+    section.append(card);
+  }
+  $('#rooms').append(section);
+  return true;
+}
 const connectionLabels = {
   recovering: '公网连接波动，正在检查；暂不更换链接',
   unavailable: '当前网络无法访问公网入口。请先检查连接；重建会使旧邀请失效。',
@@ -537,7 +628,7 @@ ws.onopen = () => {
 };
 const disableDisconnectedControls = () => {
   document.querySelectorAll('button').forEach(b => {
-    if (b.getAttribute('role') !== 'tab' && b.getAttribute('aria-expanded') == null && !['new-share', 'empty-browse', 'edit-profile', 'edit-policy', 'check-update', 'check-again', 'cancel-update', 'about-repository', 'about-releases', 'about-star-link', 'dismiss-star'].includes(b.id)) b.disabled = true;
+    if (b.getAttribute('role') !== 'tab' && b.getAttribute('aria-expanded') == null && !['new-share', 'empty-browse', 'edit-profile', 'edit-policy', 'check-update', 'check-again', 'cancel-update', 'about-repository', 'about-releases', 'about-star-link', 'dismiss-star', 'background-system-settings'].includes(b.id)) b.disabled = true;
   });
 };
 ws.onclose = () => {
@@ -595,6 +686,9 @@ function proposalCard(room, proposal) {
 ws.onmessage = event => {
   let m; try { m = JSON.parse(event.data); } catch { return; }
   if (m.type === 'error') {
+    if (['approve-recovery', 'reject-recovery'].includes(m.operation)) {
+      for (const [requestId, operation] of recoveryDecisions) if (operation === m.operation) recoveryDecisions.delete(requestId);
+    }
     if (['share', 'reshare'].includes(m.operation)) { busyThreadId = ''; updateShare(); }
     if (['check-connection', 'rebuild-relay'].includes(m.operation)) connectionAction = '';
     if (m.operation === 'set-network-mode') { networkSaving = false; networkStatus = '访问范围未能保存，请重试。'; }
@@ -602,6 +696,11 @@ ws.onmessage = event => {
     if (m.operation === 'set-share-limit') { shareLimitSaving = false; shareLimitStatus = '共享上限未能保存，请重试。'; }
     if (m.code === 'SHARE_LIMIT_REACHED') shareLimitAlert = { limit: m.values.limit };
     renderShareLimit(); notice(m.message, 'error', m.values ?? {}); return;
+  }
+  if (m.type === 'recovery-result') {
+    recoveryDecisions.delete(m.requestId);
+    if (lastState) renderRooms(lastState);
+    notice('邀请恢复申请已处理'); return;
   }
   if (m.type === 'settings-result') {
     shareLimitDirty = false; shareLimitSaving = false; shareLimitAlert = null; shareLimitStatus = '共享上限已保存';
@@ -644,6 +743,10 @@ ws.onmessage = event => {
 };
 function renderRooms(m) {
   lastState = m;
+  for (const requestId of recoveryDecisions.keys()) {
+    const request = (m.recoveryRequests ?? []).find(item => item.requestId === requestId);
+    if (!request || !['pending', 'failed'].includes(request.status)) recoveryDecisions.delete(requestId);
+  }
   if (pendingInviteLifetime && (!intranetMode() || pendingInviteLifetime.lanAddress !== m.network.lanAddress)) {
     cancelInviteLifetime(); notice('访问范围已变更，请重新生成邀请。');
   }
@@ -661,15 +764,19 @@ function renderRooms(m) {
   $('#room-count').textContent = active.length;
   $('#active-count').textContent = active.length;
   $('#guest-count').textContent = active.reduce((n, room) => n + room.guests.filter(guest => guest.status === 'admitted').length, 0);
-  const pending = active.reduce((n, room) => n + room.guests.filter(guest => guest.status === 'pending').length + room.proposals.filter(p => p.status === 'pending').length, 0);
+  const pending = active.reduce((n, room) => n + room.guests.filter(guest => guest.status === 'pending').length + room.proposals.filter(p => p.status === 'pending').length, 0)
+    + (m.recoveryRequests ?? []).filter(request => ['pending', 'failed'].includes(request.status)).length;
   $('#nav-pending').textContent = pending;
   $('#nav-pending').hidden = pending === 0;
   if (!active.length) $('#room-policies').append(el('p', t('暂无正在共享的会话。'), 'muted'));
   $('#workspace').dataset.sharing = m.rooms.some(room => room.state !== 'revoked') ? 'true' : 'false';
+  const hasRecoveryRequests = renderRecoveryRequests(m);
   const visible = m.rooms.filter(room => room.state !== 'revoked' || (m.attention ?? []).some(item => item.roomId === room.roomId));
   if (!visible.length) {
-    $('#rooms').append(emptyState.cloneNode(true)); i18n.apply();
-    $('#empty-browse').onclick = () => selectTab('sessions', true);
+    if (!hasRecoveryRequests) {
+      $('#rooms').append(emptyState.cloneNode(true)); i18n.apply();
+      $('#empty-browse').onclick = () => selectTab('sessions', true);
+    }
     renderHistory(m);
     if (m.historyFailed) $('#rooms').append(el('p', t('分享历史未能保存，请检查本机运行目录权限。'), 'muted'));
     if (m.authorHistoryFailed) $('#rooms').append(el('p', t('消息作者信息未能保存，重新分享后部分署名可能无法恢复。'), 'muted'));
@@ -711,7 +818,7 @@ function renderRooms(m) {
         invite.append(el('p', room.inviteExpiresAt === null
           ? t('不设固定到期时间 · 包含本会话中已展示的文本记录')
           : t('有效至 {time} · 到期后自动结束共享', { time: new Date(room.inviteExpiresAt).toLocaleString(i18n.language) }), 'muted'));
-        if (room.inviteExpiresAt === null) invite.append(el('p', t('不设固定到期时间，需保持应用和共享运行；停止共享、退出应用或更换入口后失效。'), 'muted'));
+        if (room.inviteExpiresAt === null) invite.append(el('p', t('不设固定到期时间；停止共享会撤销邀请。重启恢复取决于后台运行设置及原地址是否可用。'), 'muted'));
       } else {
         invite.append(el('p', t('有效至 {time} · 包含本会话中已展示的文本记录', { time: new Date(room.expiresAt).toLocaleTimeString(i18n.language) }), 'muted'));
         if (room.renewalSupported === true) invite.append(el('p', t('连接正常时自动续期'), 'muted'));
@@ -748,6 +855,7 @@ function updateLanguage() {
   renderInviteLifetimeHint();
   renderShareLimit();
   renderAbout();
+  renderBackground();
   if (threads.length || lastAttached !== undefined) {
     const scroll = document.querySelector('.catalog-scroll'); const top = scroll?.scrollTop;
     renderThreads(); if (scroll) scroll.scrollTop = top;

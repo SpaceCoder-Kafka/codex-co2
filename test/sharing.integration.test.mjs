@@ -11,6 +11,7 @@ import { RpcClient } from '../lib/rpc.mjs';
 import { resolveCli } from '../lib/runtime.mjs';
 import { startOwner, secret } from '../lib/host.mjs';
 import { startRelay } from '../lib/relay.mjs';
+import { InviteRecovery } from '../lib/invite-recovery.mjs';
 import { startResponsesFixture } from './fixtures/responses-server.mjs';
 
 let binary;
@@ -64,6 +65,7 @@ test('real backend → fixed-thread host → relay → guest protocol enforces a
   const assets = path.join(root, 'assets');
   const peers = [];
   const fixture = await startResponsesFixture();
+  const recovery = new InviteRecovery();
   const rpcClients = [];
   let child, relay, owner;
   let stderr = '';
@@ -71,6 +73,7 @@ test('real backend → fixed-thread host → relay → guest protocol enforces a
     for (const peer of peers) peer.ws.terminate();
     if (owner) await owner.close();
     if (relay) await relay.close();
+    recovery.close();
     for (const rpc of rpcClients) rpc.close();
     await stopBackend(child);
     await fixture.close();
@@ -133,8 +136,8 @@ stream_max_retries = 0
   const baselineRequests = fixture.requests.length;
   assert.equal(baselineRequests, 2);
   const registrationSecret = secret();
-  relay = await startRelay({ registrationSecret, publicDir: assets });
-  owner = await startOwner({ socketPath, relayUrl: relay.url, registrationSecret, ownerDir: assets, connection: { state: 'local' } });
+  relay = await startRelay({ registrationSecret, publicDir: assets, recovery });
+  owner = await startOwner({ socketPath, relayUrl: relay.url, registrationSecret, ownerDir: assets, recovery, connection: { state: 'local' } });
   const ownerWsUrl = owner.baseUrl.replace(/^http/, 'ws') + '/owner';
   const ownerToken = new URLSearchParams(new URL(owner.url).hash.slice(1)).get('owner');
 
@@ -224,15 +227,16 @@ stream_max_retries = 0
     assert.equal(fixture.requests.length, baselineRequests);
     const before = await ownerRpc.request('thread/read', { threadId: selected.threadId, includeTurns: true });
     assert.equal(before.thread.turns.length, 1);
-    const held = fixture.holdNextResponse();
+    const held = fixture.holdNextResponse({ holdCompletion: true });
     local.send({ type: 'approve', roomId: room.roomId, proposalId: pending.id });
     try {
       await held.arrived;
       assert.equal(fixture.requests.length, baselineRequests + 1);
       await until(() => pending.status === 'accepted', 'owner decision response');
-    } finally { held.release(); }
-    await until(() => guest.peer.messages.some(message => message.type === 'data' && message.payload.type === 'snapshot'
-      && message.payload.status === 'running' && message.payload.items.some(item => item.text.includes('Synthetic answer 3'))), 'real-time streamed assistant text');
+      held.release();
+      await until(() => guest.peer.messages.some(message => message.type === 'data' && message.payload.type === 'snapshot'
+        && message.payload.status === 'running' && message.payload.items.some(item => item.text.includes('Synthetic answer 3'))), 'real-time streamed assistant text');
+    } finally { held.release(); held.complete(); }
     await until(() => backendEvents.some(event => event.method === 'turn/completed' && event.params.threadId === selected.threadId && event.params.turn.id === pending.turnId), 'guest turn completion');
     guest.peer.send(proposal);
     await until(() => guest.peer.messages.some(message => message.type === 'duplicate' && message.requestId === proposal.requestId), 'duplicate input rejection');
@@ -315,5 +319,33 @@ stream_max_retries = 0
     assert.equal(fixture.requests.length, baselineRequests + 3);
     assert.equal((await ownerRpc.request('thread/read', { threadId: other.threadId, includeTurns: true })).thread.turns.length, 1);
   });
-  t.diagnostic('Pinned backend 0.163.0; one isolated PID; actual Responses fixture + Unix RPC + local owner WebSocket + relay + guest WebSocket. Approved guest input and independent Desktop-like RPC input each streamed through the same admitted guest connection. No native Desktop, browser rendering, or public-network claim.');
+  await t.test('expired invitation recovery requires a local decision, returns to the same thread and grants only its requester', async () => {
+    const count = fixture.requests.length;
+    room.close({ reason: 'expired' });
+    const request = { type: 'request', roomId: room.roomId, inviteToken: room.inviteToken,
+      requestId: randomUUID(), receiptToken: secret(), visitorToken: secret(), name: 'Synthetic late recipient' };
+    const recoveryPeer = await connect(relay.url.replace(/^http/, 'ws') + '/recovery', relay.url, peers);
+    recoveryPeer.send(request);
+    await until(() => recoveryPeer.messages.some(m => m.type === 'recovery-request' && m.status === 'pending'), 'recovery request saved');
+    assert.equal(fixture.requests.length, count);
+    local.send({ type: 'approve-recovery', requestId: request.requestId });
+    const approved = await until(() => recoveryPeer.messages.find(m => m.type === 'recovery-request' && m.status === 'approved'), 'recovery approved');
+    const fragment = new URLSearchParams(new URL(approved.inviteUrl).hash.slice(1));
+    const recovered = await connect(relay.url.replace(/^http/, 'ws') + '/guest', relay.url, peers);
+    recovered.send({ type: 'join', roomId: fragment.get('room'), inviteToken: fragment.get('invite'), name: request.name, sessionId: request.visitorToken });
+    const snapshot = await until(() => recovered.messages.find(m => m.payload?.type === 'snapshot'), 'recovered thread snapshot');
+    assert.ok(snapshot.payload.items.some(item => item.text === 'Visible shared seed'));
+    assert.equal(JSON.stringify(recovered.messages).includes('SECRET_UNSHARED_CONVERSATION'), false);
+    assert.ok(recovered.messages.some(m => m.type === 'admitted'));
+    assert.equal(fixture.requests.length, count, 'recovery never sends an Agent message');
+    const stranger = await connect(relay.url.replace(/^http/, 'ws') + '/guest', relay.url, peers);
+    stranger.send({ type: 'join', roomId: fragment.get('room'), inviteToken: fragment.get('invite'), name: request.name, sessionId: secret() });
+    await until(() => stranger.messages.some(m => m.type === 'pending'), 'same-name stranger awaits admission');
+    await delay(50);
+    assert.equal(stranger.messages.some(m => m.type === 'data' || m.type === 'admitted'), false);
+    local.send({ type: 'revoke', roomId: fragment.get('room') });
+    await until(() => recovered.closed, 'recovered share revoked');
+    assert.equal(recovery.watch(request, relay.url).status, 'unavailable');
+  });
+  t.diagnostic('Pinned backend 0.163.0; one isolated PID; actual Responses fixture + Unix RPC + local owner WebSocket + relay + guest WebSocket. Approved guest input, independent Desktop-like RPC input and invitation recovery exercised. No native Desktop, browser rendering, or public-network claim.');
 });

@@ -79,6 +79,11 @@ if (cloudflaredSourceSHA256 !== CLOUDFLARED_MACOS.source.sha256) throw new Error
 await fs.rm(app, { recursive: true, force: true });
 await fs.mkdir(path.join(app, 'Contents/MacOS'), { recursive: true });
 await fs.mkdir(runtime, { recursive: true }); await fs.mkdir(service, { recursive: true });
+const launchAgentName = 'local.codexco2.sharing.plist';
+const launchAgentSource = await fs.readFile(path.join(root, 'macos', launchAgentName));
+const launchAgentDirectory = path.join(app, 'Contents/Library/LaunchAgents');
+await fs.mkdir(launchAgentDirectory, { recursive: true });
+await fs.writeFile(path.join(launchAgentDirectory, launchAgentName), launchAgentSource);
 await fs.mkdir(path.join(resources, 'Licenses'));
 const frameworks = path.join(app, 'Contents/Frameworks'); await fs.mkdir(frameworks);
 await fs.cp(sparkle.framework, path.join(frameworks, 'Sparkle.framework'), { recursive: true, verbatimSymlinks: true });
@@ -157,9 +162,9 @@ const executable = path.join(app, 'Contents/MacOS/CodexCo2');
 const appSlices = [];
 for (const architecture of MACOS_ARCHITECTURES) {
   const slice = path.join(universalCache, architecture, 'CodexCo2'); appSlices.push(slice);
-  run('/usr/bin/swiftc', ['-O', '-target', `${architecture}-apple-macos${minimumMacOS}`, '-framework', 'AppKit', '-framework', 'WebKit',
+  run('/usr/bin/swiftc', ['-O', '-target', `${architecture}-apple-macos${minimumMacOS}`, '-framework', 'AppKit', '-framework', 'WebKit', '-framework', 'ServiceManagement',
   '-F', frameworks, '-framework', 'Sparkle', '-Xlinker', '-rpath', '-Xlinker', '@executable_path/../Frameworks',
-  path.join(root, 'macos/App.swift'), path.join(root, 'macos/Updater.swift'), '-o', slice]);
+  path.join(root, 'macos/App.swift'), path.join(root, 'macos/BackgroundService.swift'), path.join(root, 'macos/Updater.swift'), '-o', slice]);
 }
 run('/usr/bin/lipo', ['-create', ...appSlices, '-output', executable]);
 nativeBinaries.executable = requireMacOSCompatibility(inspectMacOSBinary(executable, { embeddedSparkle: true }), minimumMacOS, 'CodexCo2');
@@ -191,6 +196,7 @@ async function inventory(dir, prefix = '') {
 }
 await inventory(resources);
 await fs.writeFile(path.join(resources, 'manifest.json'), JSON.stringify({ name: 'Codex Co²', version: appVersion, build: buildNumber, architecture: 'universal', architectures: MACOS_ARCHITECTURES, nativeBinaries, frameworkBinaries, notarized: false,
+  launchAgents: { [launchAgentName]: sha(launchAgentSource) },
   channel: release.channel, distributable: !release.testing,
   updater: { version: SPARKLE.version, archiveSHA256: SPARKLE.sha256, feedURL: release.feedURL, publicKey: release.publicKey,
     testing: release.testing, framework: sparkle.files },
