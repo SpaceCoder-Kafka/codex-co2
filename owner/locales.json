@@ -445,7 +445,15 @@
     "恢复记录不可用，请检查运行目录": "恢复记录不可用，请检查运行目录",
     "正在建立公网入口，请等待完成": "正在建立公网入口，请等待完成",
     "后台服务未能安全停止，请重试。": "后台服务未能安全停止，请重试。",
-    "恢复授权无法安全保存，共享已停止。请检查运行目录。": "恢复授权无法安全保存，共享已停止。请检查运行目录。"
+    "恢复授权无法安全保存，共享已停止。请检查运行目录。": "恢复授权无法安全保存，共享已停止。请检查运行目录。",
+    "Co² · 启动失败": "Co² · 启动失败",
+    "本地管理启动超时。请检查系统登录项权限或重新连接助手。": "本地管理启动超时。请检查系统登录项权限或重新连接助手。",
+    "本地服务未能启动。请检查运行目录权限或重新连接助手。": "本地服务未能启动。请检查运行目录权限或重新连接助手。",
+    "终止信号": "终止信号",
+    "退出代码": "退出代码",
+    "后台服务无法启动。请检查系统登录项设置后重试。": "后台服务无法启动。请检查系统登录项设置后重试。",
+    "本地管理启动已取消，请重新连接助手。": "本地管理启动已取消，请重新连接助手。",
+    "已有后台共享记录。请恢复系统后台许可后重试，以保留邀请恢复资格。": "已有后台共享记录。请恢复系统后台许可后重试，以保留邀请恢复资格。"
   },
   "zh-TW": {
     "应用导航": "應用程式導覽",
@@ -893,7 +901,15 @@
     "恢复记录不可用，请检查运行目录": "恢復記錄不可用，請檢查執行目錄",
     "正在建立公网入口，请等待完成": "正在建立公網入口，請等待完成",
     "后台服务未能安全停止，请重试。": "背景服務未能安全停止，請重試。",
-    "恢复授权无法安全保存，共享已停止。请检查运行目录。": "恢復授權無法安全儲存，分享已停止。請檢查執行目錄。"
+    "恢复授权无法安全保存，共享已停止。请检查运行目录。": "恢復授權無法安全儲存，分享已停止。請檢查執行目錄。",
+    "Co² · 启动失败": "Co² · 啟動失敗",
+    "本地管理启动超时。请检查系统登录项权限或重新连接助手。": "本機管理啟動逾時。請檢查系統登入項目權限或重新連接助手。",
+    "本地服务未能启动。请检查运行目录权限或重新连接助手。": "本機服務未能啟動。請檢查執行目錄權限或重新連接助手。",
+    "终止信号": "終止訊號",
+    "退出代码": "結束代碼",
+    "后台服务无法启动。请检查系统登录项设置后重试。": "背景服務無法啟動。請檢查系統登入項目設定後重試。",
+    "本地管理启动已取消，请重新连接助手。": "本機管理啟動已取消，請重新連接助手。",
+    "已有后台共享记录。请恢复系统后台许可后重试，以保留邀请恢复资格。": "已有背景共享記錄。請恢復系統背景許可後重試，以保留邀請恢復資格。"
   },
   "en": {
     "应用导航": "App navigation",
@@ -1341,6 +1357,14 @@
     "恢复记录不可用，请检查运行目录": "Recovery records are unavailable. Check the runtime directory.",
     "正在建立公网入口，请等待完成": "Creating the public entry. Please wait until it finishes.",
     "后台服务未能安全停止，请重试。": "The background service could not stop safely. Please try again.",
-    "恢复授权无法安全保存，共享已停止。请检查运行目录。": "Recovery authorization could not be saved safely. Sharing has stopped. Check the runtime directory."
+    "恢复授权无法安全保存，共享已停止。请检查运行目录。": "Recovery authorization could not be saved safely. Sharing has stopped. Check the runtime directory.",
+    "Co² · 启动失败": "Co² · Startup failed",
+    "本地管理启动超时。请检查系统登录项权限或重新连接助手。": "Local management timed out. Check Login Items permissions or reconnect the helper.",
+    "本地服务未能启动。请检查运行目录权限或重新连接助手。": "The local service could not start. Check runtime folder permissions or reconnect the helper.",
+    "终止信号": "Termination signal",
+    "退出代码": "Exit code",
+    "后台服务无法启动。请检查系统登录项设置后重试。": "The background service could not start. Check Login Items in System Settings, then try again.",
+    "本地管理启动已取消，请重新连接助手。": "Local management startup was cancelled. Reconnect the helper.",
+    "已有后台共享记录。请恢复系统后台许可后重试，以保留邀请恢复资格。": "Background sharing records already exist. Restore background permission in System Settings, then retry to preserve invitation recovery."
   }
 }

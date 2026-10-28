@@ -101,10 +101,12 @@ brew install --cask SpaceCoder-Kafka/tap/codex-co2 && open "$(brew --repository 
 也可以从 [Releases](https://github.com/SpaceCoder-Kafka/codex-co2/releases/tag/v0.2.0) 下载 DMG 和对应 `.sha256` 文件，下载后执行：
 
 ```sh
-shasum -a 256 -c Codex-Co2-0.2.0-build24-universal.dmg.sha256
+shasum -a 256 -c Codex-Co2-0.2.0-build25-universal.dmg.sha256
 ```
 
 macOS 包采用临时签名，**未经 Apple 公证**，首次打开可能受系统拦截。先尝试从 Applications 打开 Co²，再到「系统设置 → 隐私与安全性 → 仍要打开」确认。Homebrew 会直接安装应用，不会展示 DMG 的安装引导窗口。请参考 [Apple 指引](https://support.apple.com/zh-cn/102445)。
+
+复制完成后，推出所有旧版 Co² 安装盘，并从 Applications 打开已安装的副本。系统同时识别多个版本可能干扰后台服务注册；启动失败时，可使用界面中的重试或系统设置入口。
 
 ### 关于与更新
 

@@ -10,6 +10,10 @@
 2. **Request invitation recovery**: Request host-approved recovery for expired or interrupted shares while the original entry remains reachable.
 3. **Background sharing and LAN recovery**: On macOS, system-approved background running keeps sharing active after the manager closes. LAN restarts retain pending recovery requests when the original address and port remain available.
 
+**Bug Fixes**
+
+1. **macOS startup recovery (Build 25)**: Repair missing background-service registrations and show a clear error with retry and settings actions when startup fails. Preserve invitation recovery records during retries.
+
 **Chore**
 
 1. **Local access protection**: Check user identity, file permissions and attachment paths to reduce unauthorized access.

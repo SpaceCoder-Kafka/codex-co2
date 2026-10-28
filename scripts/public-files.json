@@ -143,6 +143,7 @@
   "test/native-background.test.mjs",
   "test/native-invite-copy.test.mjs",
   "test/native-notifications.test.mjs",
+  "test/native-startup.test.mjs",
   "test/native-updates.test.mjs",
   "test/owner-lazy.test.mjs",
   "test/owner-lifecycle.test.mjs",

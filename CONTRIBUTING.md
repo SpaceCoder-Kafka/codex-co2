@@ -44,7 +44,7 @@ Application build numbers in `macos/release.json` increase globally, including a
 After verifying a production bundle, prepare signed update metadata locally:
 
 ```sh
-npm run updates:prepare -- --app "dist/Codex Co².app" --dmg dist/Codex-Co2-0.2.0-build24-universal.dmg --output dist/appcast.xml --previous-feed dist/previous-appcast.xml
+npm run updates:prepare -- --app "dist/Codex Co².app" --dmg dist/Codex-Co2-0.2.0-build25-universal.dmg --output dist/appcast.xml --previous-feed dist/previous-appcast.xml
 ```
 
 Use `--initial` only for the first feed. Later updates must pass `--previous-feed <previous-signed-appcast.xml>` instead, preserving older channel entries and checking the global build increase. Preparation verifies the DMG, source inventory, embedded bundle and matching signing key, and does not publish anything. Publish matching Release assets first, then the signed feed unchanged as `appcast.xml` on the existing repository's separate `updates` branch. Keep generated appcasts outside the source inventory to avoid a digest cycle. Coordinate `auto_updates true` in the existing Homebrew cask when publishing the first updater-enabled release. Build 16 and earlier need a manual upgrade. The 0.3.3 → 0.1.0/0.2.0 transition uses an increasing Build; manual Homebrew migration requires a one-time `brew reinstall --cask SpaceCoder-Kafka/tap/codex-co2`.

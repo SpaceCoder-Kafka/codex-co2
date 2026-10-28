@@ -10,6 +10,56 @@ enum BackgroundConfigurationError: Error {
     case registrationUnavailable
 }
 
+enum BackgroundStartResult: Equatable {
+    case started
+    case missing
+    case cancelled
+    case failed(Int32)
+}
+
+struct BackgroundLaunchPolicy {
+    // BTM can still report enabled after launchd has lost the job. Repair that
+    // registration once; never start a foreground daemon that would discard
+    // the managed service's persistent invitation recovery state.
+    static func start(shouldContinue: @escaping () -> Bool,
+                      kickstart: @escaping (@escaping (BackgroundStartResult) -> Void) -> Void,
+                      repair: @escaping (@escaping (Bool) -> Void) -> Void,
+                      completion: @escaping (BackgroundStartResult) -> Void) {
+        guard shouldContinue() else { completion(.cancelled); return }
+        kickstart { result in
+            guard shouldContinue() else { completion(.cancelled); return }
+            guard result == .missing else { completion(result); return }
+            repair { repaired in
+                guard shouldContinue() else { completion(.cancelled); return }
+                guard repaired else { completion(.missing); return }
+                kickstart { result in completion(shouldContinue() ? result : .cancelled) }
+            }
+        }
+    }
+    static func runKickstart(arguments: [String], completion: @escaping (BackgroundStartResult) -> Void) {
+        let task = Process(); task.executableURL = URL(fileURLWithPath: "/bin/launchctl")
+        task.arguments = arguments
+        task.standardInput = FileHandle.nullDevice; task.standardOutput = FileHandle.nullDevice; task.standardError = FileHandle.nullDevice
+        var finished = false
+        func finish(_ result: BackgroundStartResult) {
+            guard !finished else { return }; finished = true; completion(result)
+        }
+        task.terminationHandler = { process in DispatchQueue.main.async {
+            guard process.terminationReason == .exit else { finish(.failed(process.terminationStatus)); return }
+            switch process.terminationStatus {
+            case 0: finish(.started)
+            case 113: finish(.missing) // launchctl: service not found in this domain
+            default: finish(.failed(process.terminationStatus))
+            }
+        } }
+        do { try task.run() } catch { finish(.failed(-1)); return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
+            guard !finished else { return }
+            finish(.failed(-1)); if task.isRunning { task.terminate() }
+        }
+    }
+}
+
 struct BackgroundRegistrationPolicy {
     static func registerIfNeeded(status: () -> SMAppService.Status, register: () throws -> Void) throws {
         switch status() {
@@ -43,6 +93,12 @@ struct BackgroundBridgePolicy {
 struct BackgroundConfiguration {
     static let plistName = "local.codexco2.sharing.plist"
     static let label = "local.codexco2.sharing"
+    static func hasRecoveryState(runtime: URL) -> Bool {
+        // Inspect presence only, never invitation credentials or conversation
+        // data. Ambiguous/unsafe entries must not authorize destructive fallback.
+        var info = stat()
+        return lstat(runtime.appendingPathComponent("lan-invite-recovery.json").path, &info) == 0 || errno != ENOENT
+    }
     static func defaultRuntime(home: URL = FileManager.default.homeDirectoryForCurrentUser) -> URL {
         home.appendingPathComponent("Library/Application Support/Codex Co²/.coop")
     }
@@ -187,12 +243,21 @@ final class BackgroundRegistration {
         // the framework can report the actual bundle/signing error.
         try BackgroundRegistrationPolicy.registerIfNeeded(status: { self.service.status }, register: { try self.service.register() })
     }
-    func kickstart() {
-        guard service.status == .enabled else { return }
-        let task = Process(); task.executableURL = URL(fileURLWithPath: "/bin/launchctl")
-        task.arguments = ["kickstart", "gui/\(geteuid())/\(BackgroundConfiguration.label)"]
-        task.standardInput = FileHandle.nullDevice; task.standardOutput = FileHandle.nullDevice; task.standardError = FileHandle.nullDevice
-        try? task.run()
+    func start(shouldContinue: @escaping () -> Bool, completion: @escaping (BackgroundStartResult) -> Void) {
+        guard service.status == .enabled else { completion(.missing); return }
+        BackgroundLaunchPolicy.start(shouldContinue: shouldContinue, kickstart: { reply in
+            BackgroundLaunchPolicy.runKickstart(arguments: ["kickstart", "gui/\(geteuid())/\(BackgroundConfiguration.label)"], completion: reply)
+        }, repair: { reply in
+            self.service.unregister { error in DispatchQueue.main.async {
+                guard error == nil, shouldContinue() else { reply(false); return }
+                do {
+                    // Unregistration has completed. Do not let a stale status
+                    // lookup skip the actual registration operation again.
+                    try self.service.register()
+                    reply(self.service.status == .enabled)
+                } catch { reply(false) }
+            } }
+        }, completion: completion)
     }
     func unregister(_ completion: @escaping (Bool) -> Void) {
         if service.status == .notRegistered || service.status == .notFound { completion(true); return }

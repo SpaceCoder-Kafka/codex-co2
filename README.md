@@ -101,10 +101,12 @@ The command opens a local first-launch guide after successful installation. Use 
 Alternatively, download the DMG and matching `.sha256` file from [Releases](https://github.com/SpaceCoder-Kafka/codex-co2/releases/tag/v0.2.0), then check the file:
 
 ```sh
-shasum -a 256 -c Codex-Co2-0.2.0-build24-universal.dmg.sha256
+shasum -a 256 -c Codex-Co2-0.2.0-build25-universal.dmg.sha256
 ```
 
 The macOS package is **ad-hoc signed and not notarized by Apple**. macOS may block its first launch. Attempt to open Co² from Applications, then go to **System Settings → Privacy & Security → Open Anyway** and confirm. Homebrew installs the app directly without showing the DMG's installation window. See [Apple's guidance](https://support.apple.com/en-us/102445).
+
+After copying the app, eject all older Co² disk images and open the installed copy from Applications. Keeping multiple versions available to macOS can interfere with background-service registration. If startup fails, use the displayed retry or system-settings action.
 
 ### About and updates
 
