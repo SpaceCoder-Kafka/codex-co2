@@ -101,7 +101,7 @@ The command opens a local first-launch guide after successful installation. Use 
 Alternatively, download the DMG and matching `.sha256` file from [Releases](https://github.com/SpaceCoder-Kafka/codex-co2/releases/tag/v0.2.0), then check the file:
 
 ```sh
-shasum -a 256 -c Codex-Co2-0.2.0-build25-universal.dmg.sha256
+shasum -a 256 -c Codex-Co2-0.2.0-build27-universal.dmg.sha256
 ```
 
 The macOS package is **ad-hoc signed and not notarized by Apple**. macOS may block its first launch. Attempt to open Co² from Applications, then go to **System Settings → Privacy & Security → Open Anyway** and confirm. Homebrew installs the app directly without showing the DMG's installation window. See [Apple's guidance](https://support.apple.com/en-us/102445).
@@ -144,9 +144,11 @@ The host can remove a collaborator, stop one share or stop all sharing. Closing 
 
 ### Background running on macOS
 
-Current macOS source builds add **Settings → Background running**. The setting is on by default: after macOS permits the background item, the local sharing service keeps running when you quit the management interface and starts again when the same user logs in. It does not start or modify official Codex Desktop. Existing collaboration still needs Desktop; the saved intranet recovery page can accept requests while Desktop is closed. Open Desktop before approving a request or creating a share.
+Current public macOS packages are ad-hoc signed. To keep system background-registration constraints from blocking management, Co² first reuses an existing service. Otherwise it clears only confirmed inactive registrations belonging to Co² and runs with the management app. Closing the window leaves the app in the menu bar; quitting Co² pauses foreground sharing. Login startup is not promised. **Sharing recovery records** in Settings explains the current mode and lets you retain or revoke recovery eligibility.
 
-If macOS requires approval or prevents background operation, Co² shows that state and can run only in the foreground. Starting this fallback clears previously saved recovery eligibility and does not preserve it across service restarts. Some changes take effect the next time you open Co²; follow the status shown in Settings. Turning the setting off immediately disables automatic startup and clears saved recovery eligibility. Current foreground sharing can continue until you quit Co². Native host notifications are not guaranteed while the management interface is closed; reopen it to review pending requests.
+Recovery records are retained by default. When enabled, reopening Co² allows recovery requests at the original LAN address and port, still subject to host approval. Turning this off immediately revokes saved eligibility; enabling it later does not restore old eligibility. Public temporary hostnames cannot survive tunnel restarts. The app does not start or modify official Codex Desktop.
+
+Builds with a stable developer signature may still use system-approved background operation. The app distinguishes that from foreground mode; an enabled preference does not mean a background service is running. Native notifications are not guaranteed while the management interface is closed; reopen it to review pending requests.
 
 This background service is macOS-only in this version. Windows, browser and CLI management do not expose the native setting.
 
@@ -158,7 +160,7 @@ In **Shared conversations → Invitation recovery requests**, the host can appro
 
 Recovery is available with Co²'s built-in sharing service; external or standalone relays do not support it yet. The recovery window lasts up to **7 days** after expiry or interruption. A request lasts up to **24 hours**, bounded by that window; approved results and unused admission permissions also expire with the target share. Restarting does not extend these deadlines. Stopping sharing revokes eligibility; a declined or removed guest cannot regain access through their original request.
 
-With the managed macOS background service active, intranet recovery metadata and credential hashes are saved privately. Conversation content and raw invitation, receipt or visitor credentials are not saved by this recovery store. The service reuses the selected private IP and saved port. If either is unavailable, it waits for that exact address and port; it does not choose another IP or port, track address changes with mDNS, or fall back to public sharing. Once the original entry returns, an old invitation can request recovery again.
+With macOS recovery records enabled, intranet recovery metadata and credential hashes are saved privately. Conversation content and raw invitation, receipt or visitor credentials are not saved by this recovery store. The service reuses the selected private IP and saved port. If either is unavailable, it waits for that exact address and port; it does not choose another IP or port, track address changes with mDNS, or fall back to public sharing. Once the original entry returns, an old invitation can request recovery again.
 
 A whole-service restart does **not** reopen active rooms or restore admission. Pending requests survive; an interrupted approval requires the host to retry. Previously approved results become unavailable, and unused admission permissions are not reissued. No old messages are resent. The host must explicitly approve a new recovery before collaboration resumes.
 

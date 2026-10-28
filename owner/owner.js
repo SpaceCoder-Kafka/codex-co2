@@ -198,13 +198,20 @@ const backgroundLabels = {
   running: '后台服务正在运行', disabled: '后台运行已关闭，退出应用后停止服务',
   'requires-approval': '请在系统设置中允许 Co² 后台运行', unavailable: '后台服务暂不可用',
   starting: '正在启动后台服务…', stopped: '后台服务已停止',
+  foreground: '当前以前台方式运行。退出 Co² 后共享暂停；重新打开后可申请恢复。',
   'pending-restart': '下次打开应用后启用后台运行。',
 };
 function renderBackground() {
+  const foreground = backgroundState?.foregroundOnly === true;
   $('#background-setting').hidden = !nativeBackground;
+  $('#background-title').textContent = t(foreground ? '共享恢复记录' : '后台运行');
+  $('#background-description').textContent = t(foreground ? '服务随管理应用运行，退出应用后暂停共享。' : '退出管理界面后继续共享；电脑登录后自动启动本机服务。');
+  $('#background-toggle-label').textContent = t(foreground ? '保留邀请恢复记录' : '后台运行并自动恢复共享服务');
+  $('#background-hint').textContent = t(foreground ? '开启后，重新打开应用可在原内网地址申请恢复；关闭会撤销已保存的恢复资格。' : '默认开启。关闭后，退出应用会停止服务，且不再后台自启动。停止共享始终立即撤销访问。');
   $('#background-enabled').checked = backgroundState?.enabled !== false;
   $('#background-enabled').disabled = !nativeBackground || backgroundState?.supported !== true || backgroundSaving;
   $('#background-status').textContent = t(backgroundSaving ? '正在保存…'
+    : foreground && backgroundState?.enabled === false ? '恢复记录已关闭，退出应用后停止共享。'
     : backgroundState?.message || backgroundLabels[backgroundState?.status] || '正在读取后台运行状态…');
   const registrationError = backgroundState?.registrationError;
   if (!backgroundSaving && backgroundState?.status === 'unavailable' && registrationError

@@ -84,8 +84,8 @@
       <div id="panel-settings" class="tab-panel" role="tabpanel" aria-labelledby="tab-settings" hidden>
         <div class="panel-scroll settings-scroll">
           <section id="background-setting" class="settings-card" hidden>
-            <div class="settings-heading"><h2 data-i18n="后台运行">后台运行</h2><p data-i18n="退出管理界面后继续共享；电脑登录后自动启动本机服务。">退出管理界面后继续共享；电脑登录后自动启动本机服务。</p></div>
-            <div class="settings-row"><div><label for="background-enabled" data-i18n="后台运行并自动恢复共享服务">后台运行并自动恢复共享服务</label><p id="background-hint" class="muted" data-i18n="默认开启。关闭后，退出应用会停止服务，且不再后台自启动。停止共享始终立即撤销访问。">默认开启。关闭后，退出应用会停止服务，且不再后台自启动。停止共享始终立即撤销访问。</p></div><input id="background-enabled" class="switch" type="checkbox" role="switch" checked disabled aria-describedby="background-hint background-status background-note"></div>
+            <div class="settings-heading"><h2 id="background-title" data-i18n="后台运行">后台运行</h2><p id="background-description" data-i18n="退出管理界面后继续共享；电脑登录后自动启动本机服务。">退出管理界面后继续共享；电脑登录后自动启动本机服务。</p></div>
+            <div class="settings-row"><div><label id="background-toggle-label" for="background-enabled" data-i18n="后台运行并自动恢复共享服务">后台运行并自动恢复共享服务</label><p id="background-hint" class="muted" data-i18n="默认开启。关闭后，退出应用会停止服务，且不再后台自启动。停止共享始终立即撤销访问。">默认开启。关闭后，退出应用会停止服务，且不再后台自启动。停止共享始终立即撤销访问。</p></div><input id="background-enabled" class="switch" type="checkbox" role="switch" checked disabled aria-describedby="background-hint background-status background-note"></div>
             <p id="background-status" class="muted" role="status" aria-live="polite"></p>
             <button id="background-system-settings" data-i18n="打开系统后台设置" hidden>打开系统后台设置</button>
             <p id="background-note" class="settings-note" data-i18n="内网地址不变时，重启后旧链接可重新申请恢复；公网临时地址无法跨隧道重启保留。">内网地址不变时，重启后旧链接可重新申请恢复；公网临时地址无法跨隧道重启保留。</p>

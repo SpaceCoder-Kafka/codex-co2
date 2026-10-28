@@ -453,7 +453,21 @@
     "退出代码": "退出代码",
     "后台服务无法启动。请检查系统登录项设置后重试。": "后台服务无法启动。请检查系统登录项设置后重试。",
     "本地管理启动已取消，请重新连接助手。": "本地管理启动已取消，请重新连接助手。",
-    "已有后台共享记录。请恢复系统后台许可后重试，以保留邀请恢复资格。": "已有后台共享记录。请恢复系统后台许可后重试，以保留邀请恢复资格。"
+    "已有后台共享记录。请恢复系统后台许可后重试，以保留邀请恢复资格。": "已有后台共享记录。请恢复系统后台许可后重试，以保留邀请恢复资格。",
+    "后台启动状态未能保存，后续启动时将重新检查。": "后台启动状态未能保存，后续启动时将重新检查。",
+    "未找到后台服务。请重新连接助手。": "未找到后台服务。请重新连接助手。",
+    "后台启动命令超时。请重新连接助手。": "后台启动命令超时。请重新连接助手。",
+    "无法执行后台启动命令。请重新安装应用后重试。": "无法执行后台启动命令。请重新安装应用后重试。",
+    "无法确认后台服务状态。请稍后重新连接助手。": "无法确认后台服务状态。请稍后重新连接助手。",
+    "后台服务登记未能更新。请检查系统登录项设置后重试。": "后台服务登记未能更新。请检查系统登录项设置后重试。",
+    "请在系统登录项中允许 Codex Co² 在后台运行，然后重试。": "请在系统登录项中允许 Codex Co² 在后台运行，然后重试。",
+    "正在核对后台服务登记…": "正在核对后台服务登记…",
+    "当前以前台方式运行。退出 Co² 后共享暂停；重新打开后可申请恢复。": "当前以前台方式运行。退出 Co² 后共享暂停；重新打开后可申请恢复。",
+    "共享恢复记录": "共享恢复记录",
+    "服务随管理应用运行，退出应用后暂停共享。": "服务随管理应用运行，退出应用后暂停共享。",
+    "保留邀请恢复记录": "保留邀请恢复记录",
+    "开启后，重新打开应用可在原内网地址申请恢复；关闭会撤销已保存的恢复资格。": "开启后，重新打开应用可在原内网地址申请恢复；关闭会撤销已保存的恢复资格。",
+    "恢复记录已关闭，退出应用后停止共享。": "恢复记录已关闭，退出应用后停止共享。"
   },
   "zh-TW": {
     "应用导航": "應用程式導覽",
@@ -909,7 +923,21 @@
     "退出代码": "結束代碼",
     "后台服务无法启动。请检查系统登录项设置后重试。": "背景服務無法啟動。請檢查系統登入項目設定後重試。",
     "本地管理启动已取消，请重新连接助手。": "本機管理啟動已取消，請重新連接助手。",
-    "已有后台共享记录。请恢复系统后台许可后重试，以保留邀请恢复资格。": "已有背景共享記錄。請恢復系統背景許可後重試，以保留邀請恢復資格。"
+    "已有后台共享记录。请恢复系统后台许可后重试，以保留邀请恢复资格。": "已有背景共享記錄。請恢復系統背景許可後重試，以保留邀請恢復資格。",
+    "后台启动状态未能保存，后续启动时将重新检查。": "背景啟動狀態未能儲存，後續啟動時將重新檢查。",
+    "未找到后台服务。请重新连接助手。": "找不到背景服務。請重新連接助手。",
+    "后台启动命令超时。请重新连接助手。": "背景啟動命令逾時。請重新連接助手。",
+    "无法执行后台启动命令。请重新安装应用后重试。": "無法執行背景啟動命令。請重新安裝應用程式後重試。",
+    "无法确认后台服务状态。请稍后重新连接助手。": "無法確認背景服務狀態。請稍後重新連接助手。",
+    "后台服务登记未能更新。请检查系统登录项设置后重试。": "背景服務登記未能更新。請檢查系統登入項目設定後重試。",
+    "请在系统登录项中允许 Codex Co² 在后台运行，然后重试。": "請在系統登入項目中允許 Codex Co² 在背景執行，然後重試。",
+    "正在核对后台服务登记…": "正在核對背景服務登記…",
+    "当前以前台方式运行。退出 Co² 后共享暂停；重新打开后可申请恢复。": "目前以前景方式執行。退出 Co² 後共享暫停；重新開啟後可申請恢復。",
+    "共享恢复记录": "共享恢復記錄",
+    "服务随管理应用运行，退出应用后暂停共享。": "服務隨管理應用程式執行，退出應用程式後暫停共享。",
+    "保留邀请恢复记录": "保留邀請恢復記錄",
+    "开启后，重新打开应用可在原内网地址申请恢复；关闭会撤销已保存的恢复资格。": "開啟後，重新開啟應用程式可在原內網位址申請恢復；關閉會撤銷已儲存的恢復資格。",
+    "恢复记录已关闭，退出应用后停止共享。": "恢復記錄已關閉，退出應用程式後停止共享。"
   },
   "en": {
     "应用导航": "App navigation",
@@ -1365,6 +1393,20 @@
     "退出代码": "Exit code",
     "后台服务无法启动。请检查系统登录项设置后重试。": "The background service could not start. Check Login Items in System Settings, then try again.",
     "本地管理启动已取消，请重新连接助手。": "Local management startup was cancelled. Reconnect the helper.",
-    "已有后台共享记录。请恢复系统后台许可后重试，以保留邀请恢复资格。": "Background sharing records already exist. Restore background permission in System Settings, then retry to preserve invitation recovery."
+    "已有后台共享记录。请恢复系统后台许可后重试，以保留邀请恢复资格。": "Background sharing records already exist. Restore background permission in System Settings, then retry to preserve invitation recovery.",
+    "后台启动状态未能保存，后续启动时将重新检查。": "Background startup state could not be saved. It will be checked again next time.",
+    "未找到后台服务。请重新连接助手。": "The background service was not found. Reconnect the helper.",
+    "后台启动命令超时。请重新连接助手。": "The background startup command timed out. Reconnect the helper.",
+    "无法执行后台启动命令。请重新安装应用后重试。": "The background startup command could not run. Reinstall the app and try again.",
+    "无法确认后台服务状态。请稍后重新连接助手。": "The background service state could not be confirmed. Reconnect the helper shortly.",
+    "后台服务登记未能更新。请检查系统登录项设置后重试。": "The background service registration could not be updated. Check Login Items in System Settings and retry.",
+    "请在系统登录项中允许 Codex Co² 在后台运行，然后重试。": "Allow Codex Co² to run in the background in Login Items, then retry.",
+    "正在核对后台服务登记…": "Checking background service registration…",
+    "当前以前台方式运行。退出 Co² 后共享暂停；重新打开后可申请恢复。": "Running in the foreground. Quitting Co² pauses sharing; recovery can be requested after reopening.",
+    "共享恢复记录": "Sharing recovery records",
+    "服务随管理应用运行，退出应用后暂停共享。": "The service runs with the management app. Quitting the app pauses sharing.",
+    "保留邀请恢复记录": "Keep invitation recovery records",
+    "开启后，重新打开应用可在原内网地址申请恢复；关闭会撤销已保存的恢复资格。": "When enabled, reopening the app allows recovery requests at the original LAN address. Turning this off revokes saved recovery eligibility.",
+    "恢复记录已关闭，退出应用后停止共享。": "Recovery records are off. Quitting the app stops sharing."
   }
 }

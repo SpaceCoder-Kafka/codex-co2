@@ -12,7 +12,7 @@
 
 **Bug Fixes**
 
-1. **macOS startup recovery (Build 25)**: Repair missing background-service registrations and show a clear error with retry and settings actions when startup fails. Preserve invitation recovery records during retries.
+1. **macOS startup recovery (Build 27)**: Ad-hoc signed packages reuse an existing service or run with the management app, avoiding repeated rejected background launches. Quitting pauses foreground sharing; saved LAN recovery records remain available when enabled. Startup failures distinguish timeouts from process exit codes.
 
 **Chore**
 

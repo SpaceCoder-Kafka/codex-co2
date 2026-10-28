@@ -1145,6 +1145,26 @@ test('background setting uses native confirmation and never sends a sharing webs
   assert.equal(e['background-enabled'].disabled, false);
 });
 
+test('foreground operation explains its lifetime and offers recovery storage without promising login startup', () => {
+  const page = browser({ nativeLanguage: 'en', nativeBackground: true,
+    backgroundState: { supported: true, enabled: true, status: 'foreground', foregroundOnly: true } });
+  const e = page.elements;
+  assert.equal(e['background-title'].textContent, messages.en['共享恢复记录']);
+  assert.equal(e['background-toggle-label'].textContent, messages.en['保留邀请恢复记录']);
+  assert.equal(e['background-description'].textContent, messages.en['服务随管理应用运行，退出应用后暂停共享。']);
+  assert.equal(e['background-enabled'].checked, true);
+  assert.equal(e['background-enabled'].disabled, false);
+  assert.equal(e['background-system-settings'].hidden, true);
+  e['background-enabled'].checked = false; e['background-enabled'].onchange();
+  assert.deepEqual(page.background.at(-1), { action: 'set', enabled: false });
+  page.window.receiveCo2BackgroundState({ supported: true, enabled: false, status: 'disabled', foregroundOnly: true });
+  assert.equal(e['background-enabled'].checked, false);
+  assert.equal(e['background-toggle-label'].textContent, messages.en['保留邀请恢复记录']);
+  page.window.receiveCo2BackgroundState({ supported: true, enabled: true, status: 'running', foregroundOnly: false });
+  assert.equal(e['background-title'].textContent, messages.en['后台运行']);
+  assert.equal(e['background-toggle-label'].textContent, messages.en['后台运行并自动恢复共享服务']);
+});
+
 test('background setting distinguishes system approval from running and stays hidden in browser-only management', () => {
   assert.equal(browser().elements['background-setting'].hidden, true);
   const page = browser({ nativeBackground: true, nativeLanguage: 'en',

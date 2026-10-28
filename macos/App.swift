@@ -95,7 +95,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
     var managedStartAttempt: UUID?
     var managedStartupRequired = false
     var startupAttempt: UUID?
-    var startupTimeout: TimeInterval = 20
+    var startupTimeout: TimeInterval = 30
     var startupFailure: String?
     var startupPanel: NSStackView?
     var startupExplanation: NSTextField?
@@ -166,8 +166,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
     }
     var backgroundState: [String: Any] {
         let registration = backgroundRegistration.status
+        let foregroundOnly = !backgroundActive && (!backgroundRegistration.supportsManagedLaunch || !usingManagedService)
         let status: String
         if !backgroundEnabled { status = "disabled" }
+        else if foregroundOnly && bridgeConnected { status = "foreground" }
         else if registration == "requires-approval" { status = "requires-approval" }
         else if !backgroundSupported { status = "unavailable" }
         else if !usingManagedService {
@@ -177,7 +179,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         else if backgroundActive && bridgeConnected { status = "running" }
         else { status = helper?.isRunning == true ? "starting" : "stopped" }
         var state: [String: Any] = ["supported": backgroundSupported, "enabled": backgroundEnabled,
-                                    "status": status, "saving": backgroundSaveID != nil, "registration": registration]
+                                    "status": status, "saving": backgroundSaveID != nil, "registration": registration,
+                                    "foregroundOnly": foregroundOnly]
         if let message = backgroundMessage { state["message"] = message }
         if let error = backgroundRegistrationError { state["registrationError"] = error }
         return state
@@ -375,11 +378,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
     func didStopForeground(_ process: Process) {
         guard foregroundDaemon === process else { return }
         foregroundDaemon = nil
+        let generation = helperGeneration
+        // Another legitimate service may have won the private runtime lease.
+        // Give the authenticated bridge a bounded chance to connect to it.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
+            guard let self = self, self.helperGeneration == generation,
+                  self.foregroundDaemon == nil, !self.bridgeConnected else { return }
+            self.reportForegroundFailure(process)
+        }
+    }
+    func reportForegroundFailure(_ process: Process) {
         guard ownerURL == nil, startupFailure == nil, !serviceStopRequested,
               !exiting, !changingRuntime, !updates.installationAuthorized else { return }
         let label = process.terminationReason == .uncaughtSignal ? localized("终止信号") : localized("退出代码")
         failStartup("本地服务未能启动。请检查运行目录权限或重新连接助手。", detail: "\(label): \(process.terminationStatus)")
         if helper?.isRunning == true { helper?.terminate() }
+    }
+    func confirmBackgroundRegistrationIfReady() {
+        guard usingManagedService, backgroundActive, bridgeConnected, ownerURL != nil,
+              startupFailure == nil, let runtime = activeRuntime else { return }
+        do { try backgroundRegistration.confirmReady(runtime: runtime) }
+        catch {
+            backgroundMessage = "后台启动状态未能保存，后续启动时将重新检查。"
+            publishBackground()
+        }
     }
     func finishManagedStart(_ result: BackgroundStartResult, attempt: UUID) {
         guard managedStartAttempt == attempt else { return }
@@ -392,17 +414,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         guard startupAttempt == attempt, startupFailure == nil, usingManagedService,
               backgroundEnabled, !exiting, !changingRuntime, !serviceStopRequested,
               !updates.installationAuthorized else { return }
-        if result == .started { launchBridge(); return }
-        let code: Int32
+        if result == .started { managedStartupRequired = true; launchBridge(); return }
+        if result == .foreground, let resources = Bundle.main.resourceURL {
+            usingManagedService = false
+            managedStartupRequired = false
+            backgroundMessage = "当前以前台方式运行。退出 Co² 后共享暂停；重新打开后可申请恢复。"
+            launchForeground(resources: resources)
+            return
+        }
+        let reason: String
+        var detail: String?
+        backgroundRegistrationError = nil
         switch result {
-        case .missing: code = 113
-        case .failed(let status): code = status
-        case .started, .cancelled: return
+        case .missing: reason = "未找到后台服务。请重新连接助手。"
+        case .timedOut: reason = "后台启动命令超时。请重新连接助手。"
+        case .launchFailed: reason = "无法执行后台启动命令。请重新安装应用后重试。"
+        case .unverified: reason = "无法确认后台服务状态。请稍后重新连接助手。"
+        case .registrationFailed: reason = "后台服务登记未能更新。请检查系统登录项设置后重试。"
+        case .requiresApproval: reason = "请在系统登录项中允许 Codex Co² 在后台运行，然后重试。"
+        case .failed(let status):
+            reason = "后台服务无法启动。请检查系统登录项设置后重试。"
+            detail = "\(localized("退出代码")): \(status)"
+            backgroundRegistrationError = ["domain": "launchctl", "code": status]
+        case .started, .foreground, .cancelled: return
         }
         if result == .missing && backgroundRegistration.status != "enabled" { usingManagedService = false }
-        backgroundMessage = "后台服务无法启动。请检查系统登录项设置后重试。"
-        backgroundRegistrationError = ["domain": "launchctl", "code": code]
-        publishBackground(); failStartup(backgroundMessage!, detail: "\(localized("退出代码")): \(code)")
+        backgroundMessage = reason
+        publishBackground(); failStartup(reason, detail: detail)
     }
     func launchHelper() {
         guard helper == nil, startupAttempt == nil, managedStartAttempt == nil, !exiting, !changingRuntime,
@@ -426,20 +464,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         }
         backgroundMessage = nil; backgroundRegistrationError = nil; backgroundEnablePendingRestart = false
         bridgeLaunchAttempts = 0; serviceStopRequested = false; beginStartup()
-        if backgroundEnabled && backgroundSupported {
-            do { try backgroundRegistration.register() }
-            catch {
-                let failure = error as NSError
-                let domain = failure.domain.range(of: "^[A-Za-z0-9._-]{1,96}$", options: .regularExpression) == nil ? "unknown" : failure.domain
-                backgroundRegistrationError = ["domain": domain, "code": failure.code]
-                if backgroundRegistration.status != "requires-approval" { backgroundMessage = "无法启用后台服务，请检查系统登录项设置。" }
-            }
-        }
-        usingManagedService = backgroundEnabled && backgroundSupported && backgroundRegistration.status == "enabled"
+        usingManagedService = backgroundEnabled && backgroundSupported
         if usingManagedService {
-            managedStartupRequired = true
+            // The registration layer checks the running job and the exact
+            // bundled identity before it registers or launches any executable.
+            managedStartupRequired = managedStartupRequired || backgroundRegistration.status == "enabled"
             let attempt = startupAttempt!; managedStartAttempt = attempt
-            backgroundRegistration.start(shouldContinue: { [weak self] in
+            setStatus("正在核对后台服务登记…")
+            backgroundRegistration.start(runtime: activeRuntime!, shouldContinue: { [weak self] in
                 guard let self = self else { return false }
                 return self.startupAttempt == attempt && self.startupFailure == nil && self.usingManagedService
                     && self.backgroundEnabled && !self.exiting && !self.changingRuntime
@@ -447,30 +479,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
             }, completion: { [weak self] result in self?.finishManagedStart(result, attempt: attempt) })
             return
         }
-        else if managedStartupRequired {
-            // A failed repair or an existing recovery checkpoint requires the
-            // managed service even after retry/relaunch. Foreground startup
-            // intentionally erases that checkpoint and is not a safe fallback.
-            backgroundMessage = "已有后台共享记录。请恢复系统后台许可后重试，以保留邀请恢复资格。"
-            publishBackground(); failStartup(backgroundMessage!); return
+        else { launchForeground(resources: resources) }
+    }
+    func launchForeground(resources: URL) {
+        guard foregroundDaemon?.isRunning != true, let activeRuntime = activeRuntime, startupFailure == nil,
+              !exiting, !changingRuntime, !serviceStopRequested, !updates.installationAuthorized else { return }
+        let daemon = Process(); daemon.executableURL = resources.appendingPathComponent("runtime/node")
+        daemon.arguments = BackgroundConfiguration.arguments(resources: resources, runtime: activeRuntime, mode: "--daemon") + ["--foreground"]
+        if let official = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.openai.codex") {
+            daemon.arguments?.append(contentsOf: ["--desktop-app", official.path])
         }
-        else {
-            let daemon = Process(); daemon.executableURL = resources.appendingPathComponent("runtime/node")
-            daemon.arguments = BackgroundConfiguration.arguments(resources: resources, runtime: activeRuntime!, mode: "--daemon") + ["--foreground"]
-            if let official = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.openai.codex") {
-                daemon.arguments?.append(contentsOf: ["--desktop-app", official.path])
-            }
-            daemon.environment = BackgroundConfiguration.environment(resources: resources)
-            daemon.currentDirectoryURL = resources
-            daemon.standardInput = FileHandle.nullDevice; daemon.standardOutput = FileHandle.nullDevice; daemon.standardError = FileHandle.nullDevice
-            daemon.terminationHandler = { [weak self] process in
-                DispatchQueue.main.async { self?.didStopForeground(process) }
-            }
-            do { foregroundDaemon = daemon; try daemon.run() }
-            catch {
-                foregroundDaemon = nil; backgroundMessage = "无法启动内置助手。请重新安装完整的应用包。"
-                publishBackground(); failStartup(backgroundMessage!); return
-            }
+        daemon.environment = BackgroundConfiguration.environment(resources: resources)
+        daemon.currentDirectoryURL = resources
+        daemon.standardInput = FileHandle.nullDevice; daemon.standardOutput = FileHandle.nullDevice; daemon.standardError = FileHandle.nullDevice
+        daemon.terminationHandler = { [weak self] process in
+            DispatchQueue.main.async { self?.didStopForeground(process) }
+        }
+        do { foregroundDaemon = daemon; try daemon.run() }
+        catch {
+            foregroundDaemon = nil; backgroundMessage = "无法启动内置助手。请重新安装完整的应用包。"
+            publishBackground(); failStartup(backgroundMessage!); return
         }
         launchBridge()
     }
@@ -534,12 +562,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         if type == "background-state", let enabled = object["enabled"] as? Bool {
             bridgeConnected = true; bridgeLaunchAttempts = 0; backgroundEnabled = enabled
             backgroundActive = object["background"] as? Bool == true
+            if backgroundActive || foregroundDaemon?.isRunning != true {
+                usingManagedService = backgroundActive
+                managedStartupRequired = backgroundActive
+            }
+            if backgroundActive { backgroundMessage = nil }
+            confirmBackgroundRegistrationIfReady()
             publishBackground()
         }
         if type == "stopped" { serviceStoppedConfirmed = true; backgroundActive = false; publishBackground() }
         if type == "result", object["command"] as? String == "set-background", let enabled = object["enabled"] as? Bool {
             backgroundSaveID = nil; backgroundEnabled = enabled; backgroundMessage = nil
-            backgroundEnablePendingRestart = enabled && !usingManagedService
+            backgroundEnablePendingRestart = enabled && !usingManagedService && backgroundRegistration.supportsManagedLaunch
             if enabled && backgroundRegistrationError != nil && backgroundRegistration.status != "requires-approval" {
                 backgroundMessage = "无法启用后台服务，请检查系统登录项设置。"
             }
@@ -550,7 +584,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         }
         if type == "ready", startupFailure == nil, let raw = object["ownerUrl"] as? String, let url = URL(string: raw), url.scheme == "http", url.host == "127.0.0.1", url.port != nil {
             startupAttempt = nil; startupFailure = nil; startupPanel?.isHidden = true
-            ownerURL = url; managerOrigin = url; webView.load(URLRequest(url: url)); send("account"); return
+            ownerURL = url; managerOrigin = url; confirmBackgroundRegistrationIfReady()
+            webView.load(URLRequest(url: url)); send("account"); return
         }
         if type == "status" {
             if let items = object["attention"] as? [[String: Any]] { updateAttention(items) }
@@ -774,9 +809,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
             exiting = true; serviceStopRequested = true; startupAttempt = nil
             return .terminateNow
         }
-        if backgroundEnabled && usingManagedService && backgroundRegistration.status == "enabled" && !updates.installationAuthorized {
+        if backgroundEnabled && usingManagedService && !updates.installationAuthorized {
             exiting = true
-            // Closing only our pipe detaches the bridge. launchd owns sharing.
+            // Closing this pipe only detaches management. An independent
+            // service is not ours to kill merely because its handshake is late.
             try? input?.fileHandleForWriting.close()
             return .terminateNow
         }

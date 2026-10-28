@@ -29,8 +29,14 @@ while [ "$#" -gt 0 ]; do
 done
 scenario=$(/bin/cat "$runtime/fixture-mode")
 if [ "$mode" = "--daemon" ]; then
-  if [ "$scenario" = "dead" ]; then exit 23; fi
+  if [ "$scenario" = "dead" ] || [ "$scenario" = "winner" ]; then exit 23; fi
+  if [ "$scenario" = "winner-first" ]; then /bin/sleep 0.4; exit 23; fi
   exec /bin/sleep 30
+fi
+if [ "$scenario" = "winner" ] || [ "$scenario" = "winner-first" ]; then
+  if [ "$scenario" = "winner" ]; then /bin/sleep 0.2; fi
+  printf '%s\\n' '{"type":"background-state","enabled":true,"background":true}' '{"type":"ready","ownerUrl":"http://127.0.0.1:12345/"}'
+  while IFS= read -r line; do :; done
 fi
 if [ "$scenario" = "retrying" ]; then exit 7; fi
 if [ "$scenario" != "ready" ]; then exec /bin/sleep 30; fi
@@ -129,17 +135,31 @@ for cancelStage in ["kickstart", "repair", "retry"] {
 
 // The actual manager never substitutes a foreground daemon for a failed
 // managed service, and ignores results belonging to an older launch attempt.
-for result: BackgroundStartResult in [.missing, .failed(5)] {
+for result: BackgroundStartResult in [.missing, .failed(5), .timedOut, .launchFailed, .unverified, .registrationFailed, .requiresApproval] {
     let managed = manager(timeout: 5)
     managed.activeRuntime = runtime; managed.usingManagedService = true; managed.managedStartupRequired = true; managed.beginStartup()
     let attempt = managed.startupAttempt!; managed.managedStartAttempt = attempt
     managed.finishManagedStart(result, attempt: attempt)
     precondition(managed.startupFailure != nil && managed.foregroundDaemon == nil && managed.helper == nil)
     precondition(!managed.startupPanel!.isHidden)
+    if result != .failed(5) {
+        precondition(!managed.startupExplanation!.stringValue.contains("-1"))
+        precondition(!managed.startupExplanation!.stringValue.contains("退出代码"))
+    }
     managed.finishManagedStart(.started, attempt: attempt)
     precondition(managed.foregroundDaemon == nil && managed.helper == nil)
     cleanup(managed)
 }
+// A known unavailable background service may use foreground ownership even
+// when recovery must be preserved; the shared service owns that persistence.
+scenario("ready")
+let approval = manager(timeout: 5)
+approval.activeRuntime = runtime; approval.usingManagedService = true; approval.managedStartupRequired = true; approval.beginStartup()
+approval.managedStartAttempt = approval.startupAttempt
+approval.finishManagedStart(.foreground, attempt: approval.startupAttempt!)
+wait { approval.ownerURL != nil }
+precondition(!approval.usingManagedService && approval.foregroundDaemon?.isRunning == true)
+cleanup(approval)
 scenario("ready")
 let existingService = Process()
 existingService.executableURL = URL(fileURLWithPath: "/bin/sleep"); existingService.arguments = ["30"]
@@ -169,14 +189,15 @@ precondition(pending.managedStartAttempt == pendingAttempt && pending.helper == 
 precondition(pending.startupFailure == timeoutFailure)
 pending.finishManagedStart(.cancelled, attempt: pendingAttempt)
 precondition(pending.managedStartAttempt == nil && pending.startupRetry!.isEnabled)
+scenario("ready")
 pending.retry()
-precondition(pending.startupFailure != nil && pending.startupFailure != timeoutFailure)
-precondition(pending.helper == nil && pending.foregroundDaemon == nil && pending.managedStartupRequired)
+wait { pending.ownerURL != nil }
+precondition(pending.startupFailure == nil && pending.foregroundDaemon?.isRunning == true)
 cleanup(pending)
 
 // Failed managed startup, retry, and a fresh app launch all preserve a
-// checkpoint even when its contents are not valid JSON. Presence alone rules
-// out the foreground path that would otherwise erase recovery state.
+// checkpoint even when its contents are not valid JSON. Native fallback must
+// leave storage decisions to the service instead of deleting recovery state.
 let checkpoint = runtime.appendingPathComponent("lan-invite-recovery.json")
 let sentinel = Data("synthetic recovery sentinel; must not be read as JSON".utf8)
 try! sentinel.write(to: checkpoint)
@@ -190,8 +211,9 @@ for inheritedRequirement in [true, false] {
         precondition(failed.startupFailure != nil)
     }
     failed.retry()
-    precondition(failed.managedStartupRequired && failed.helper == nil && failed.foregroundDaemon == nil)
-    precondition(failed.startupFailure != nil && (try! Data(contentsOf: checkpoint)) == sentinel)
+    wait { failed.ownerURL != nil }
+    precondition(failed.foregroundDaemon?.isRunning == true)
+    precondition(failed.startupFailure == nil && (try! Data(contentsOf: checkpoint)) == sentinel)
     cleanup(failed)
 }
 try! FileManager.default.removeItem(at: checkpoint)
@@ -237,6 +259,20 @@ precondition(dead.startupExplanation!.stringValue.contains("23"))
 precondition(dead.startupPanel!.isHidden == false && dead.startupRetry!.isEnabled)
 precondition(dead.bridgeLaunchAttempts <= 1)
 cleanup(dead)
+
+// A lease loser must not kill the bridge that authenticates a legitimate
+// existing winner. Shutdown behavior follows the authenticated service state.
+for ordering in ["winner", "winner-first"] {
+    scenario(ordering)
+    let winner = manager(timeout: 5)
+    winner.launchHelper()
+    wait { winner.ownerURL != nil && winner.foregroundDaemon == nil }
+    tick(1.1)
+    precondition(winner.startupFailure == nil && winner.helper?.isRunning == true)
+    precondition(winner.backgroundActive && winner.usingManagedService)
+    precondition(winner.applicationShouldTerminate(application) == .terminateNow)
+    cleanup(winner)
+}
 
 // A live, silent helper has a bounded wait. Killing its management connection
 // must not kill an independently owned service or create another daemon.

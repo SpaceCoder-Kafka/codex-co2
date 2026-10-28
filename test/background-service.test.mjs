@@ -109,9 +109,18 @@ test('failed recovery erasure cannot persist a background-enabled preference', a
 
 test('forced foreground service never outlives its manager even with enabled preference', async t => {
   const f = await fixture(t, { foreground: true }); await f.daemon.start();
-  const c = await client(f); assert.equal(f.services[0].args.persistentLan, false);
+  const c = await client(f); assert.equal(f.services[0].args.persistentLan, true);
   assert.equal(c.messages.find(value => value.type === 'background-state').background, false);
   const closed = once(f.daemon, 'closed'); await c.close(); await closed;
+  assert.equal(f.services[0].closed, true);
+});
+
+test('foreground startup without a manager still closes while a disabled preference forbids persistence', async t => {
+  const f = await fixture(t, { foreground: true, firstClientMs: 40 });
+  await writeBackgroundSettings(f.runtimeDir, false);
+  const closed = once(f.daemon, 'closed');
+  await f.daemon.start(); await closed;
+  assert.equal(f.services[0].args.persistentLan, false);
   assert.equal(f.services[0].closed, true);
 });
 

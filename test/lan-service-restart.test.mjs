@@ -6,8 +6,10 @@ import http from 'node:http';
 import { EventEmitter, once } from 'node:events';
 import { randomUUID } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
+import { PassThrough } from 'node:stream';
 import WebSocket from 'ws';
 import { SharingService } from '../lib/sharing-service.mjs';
+import { BackgroundService, connectBackground } from '../lib/background-service.mjs';
 import { startRelay } from '../lib/relay.mjs';
 import { secret } from '../lib/host.mjs';
 
@@ -29,7 +31,7 @@ async function peer(t, origin, route, lan = false) {
 }
 async function fixture(t) {
   const root = await fs.mkdtemp('/tmp/co2-lan-restart-'), runtimeDir = path.join(root, '.coop');
-  const services = [], calls = [];
+  const services = [], daemons = [], calls = [];
   let available = true, desktop = true, occupied = false;
   const dependencies = {
     lanInterfaces: () => available ? [{ name: 'synthetic', address }] : [],
@@ -72,18 +74,31 @@ async function fixture(t) {
       } });
     },
   };
-  const start = async (options = {}) => {
+  const create = (options = {}) => {
     const service = new SharingService({ mode: 'host', attach: true, deferDesktop: true, persistentLan: true,
       resourceRoot, runtimeDir, lazyPublic: true, lanRetryIntervalMs: 20, lanCheckIntervalMs: 20, ...options }, dependencies);
-    services.push(service); await service.start(); return service;
+    services.push(service); return service;
+  };
+  const start = async options => { const service = create(options); await service.start(); return service; };
+  const startForeground = async () => {
+    const daemon = new BackgroundService({ runtimeDir, foreground: true, firstClientMs: 4000,
+      serviceFactory: options => create(options), command: async () => ({ ok: true }) });
+    daemons.push(daemon); await daemon.start();
+    const input = new PassThrough(), output = new PassThrough(); let received = '';
+    output.on('data', chunk => { received += chunk.toString('utf8'); });
+    const bridge = connectBackground({ runtimeDir, input, output });
+    await until(() => received.includes('"type":"ready"'));
+    return { service: daemon.service, async disconnect() {
+      const closed = once(daemon, 'closed'); input.end(); await bridge; await closed;
+    } };
   };
   const manager = async service => {
     const local = await peer(t, service.owner.baseUrl, '/owner');
     local.send({ type: 'auth', token: new URLSearchParams(new URL(service.owner.url).hash.slice(1)).get('owner') });
     await until(() => local.messages.some(message => message.type === 'state')); return local;
   };
-  t.after(async () => { for (const service of services) await service.close(); await fs.rm(root, { recursive: true, force: true }); });
-  return { start, manager, runtimeDir, calls, set available(value) { available = value; },
+  t.after(async () => { for (const daemon of daemons) await daemon.close(); for (const service of services) await service.close(); await fs.rm(root, { recursive: true, force: true }); });
+  return { start, startForeground, manager, runtimeDir, calls, set available(value) { available = value; },
     set desktop(value) { desktop = value; }, set occupied(value) { occupied = value; } };
 }
 async function share(f, service) {
@@ -168,5 +183,69 @@ test('disabled foreground startup clears a pre-disable checkpoint before re-enab
   assert.equal(second.inviteOrigin, origin);
   assert.equal(second.recovery.status(original, origin).status, 'unavailable');
   await second.close(); const third = await f.start();
+  assert.equal(third.recovery.status(original, origin).status, 'unavailable');
+});
+
+test('foreground manager disconnect preserves enabled recovery but never restores an approved grant', async t => {
+  const f = await fixture(t), first = await f.startForeground(), { room } = await share(f, first.service);
+  const origin = first.service.inviteOrigin, original = { roomId: room.roomId, inviteToken: room.inviteToken };
+  await first.disconnect();
+  assert.equal(first.service.closed, true);
+  f.desktop = false;
+  const before = f.calls.length, second = await f.startForeground();
+  assert.equal(second.service.inviteOrigin, origin);
+  assert.equal(second.service.recovery.status(original, origin).status, 'recoverable');
+  assert.equal(f.calls.length, before, 'restoration does not attach to Desktop');
+  const input = { ...original, requestId: randomUUID(), receiptToken: secret(), visitorToken: secret(), name: 'Synthetic foreground guest' };
+  const guest = await peer(t, origin, '/recovery', true);
+  guest.send({ type: 'request', ...input });
+  await until(() => guest.messages.some(message => message.status === 'pending'));
+  await second.disconnect();
+  const third = await f.startForeground();
+  assert.equal(third.service.recovery.watch(input, origin).status, 'pending');
+  f.desktop = true;
+  const local = await f.manager(third.service), resumed = await peer(t, origin, '/recovery', true);
+  resumed.send({ type: 'watch', requestId: input.requestId, receiptToken: input.receiptToken });
+  local.send({ type: 'approve-recovery', requestId: input.requestId });
+  const approved = await until(() => resumed.messages.find(message => message.status === 'approved'));
+  assert.ok(approved.inviteUrl);
+  const disk = await fs.readFile(path.join(f.runtimeDir, 'lan-invite-recovery.json'), 'utf8');
+  for (const credential of [input.inviteToken, input.receiptToken, input.visitorToken, approved.inviteUrl]) assert.equal(disk.includes(credential), false);
+  await third.disconnect();
+  const fourth = await f.startForeground();
+  const result = fourth.service.recovery.watch(input, origin);
+  assert.equal(result.status, 'unavailable'); assert.equal(result.inviteUrl, undefined);
+  await fourth.disconnect();
+});
+
+test('OFF revokes an unopened checkpoint while LAN is missing before same-process ON can load it', async t => {
+  const f = await fixture(t), first = await f.start(), { room } = await share(f, first);
+  const origin = first.inviteOrigin, original = { roomId: room.roomId, inviteToken: room.inviteToken };
+  await first.close(); f.available = false;
+  const second = await f.start();
+  assert.equal(second.recovery.persistenceEnabled, false);
+  const checkpoint = path.join(f.runtimeDir, 'lan-invite-recovery.json');
+  assert.ok((await fs.stat(checkpoint)).size);
+  await second.setBackgroundEnabled(false);
+  await assert.rejects(fs.stat(checkpoint), { code: 'ENOENT' });
+  await second.setBackgroundEnabled(true); f.available = true;
+  await until(() => second.inviteOrigin === origin);
+  assert.equal(second.recovery.status(original, origin).status, 'unavailable');
+});
+
+test('failed erasure of an unopened checkpoint blocks ON until a new disabled startup', async t => {
+  const f = await fixture(t), first = await f.start(), { room } = await share(f, first);
+  const origin = first.inviteOrigin, original = { roomId: room.roomId, inviteToken: room.inviteToken };
+  await first.close(); f.available = false;
+  const second = await f.start(), checkpoint = path.join(f.runtimeDir, 'lan-invite-recovery.json');
+  await fs.chmod(checkpoint, 0o644);
+  await assert.rejects(second.setBackgroundEnabled(false), /恢复记录/);
+  await fs.chmod(checkpoint, 0o600);
+  await assert.rejects(second.setBackgroundEnabled(true), /恢复记录/);
+  assert.equal(second.options.persistentLan, false);
+  await second.close();
+  const third = await f.start({ persistentLan: false });
+  await third.setBackgroundEnabled(true); f.available = true;
+  await until(() => third.inviteOrigin === origin);
   assert.equal(third.recovery.status(original, origin).status, 'unavailable');
 });
