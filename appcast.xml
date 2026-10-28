@@ -6,13 +6,13 @@ IMPORTANT: This file was signed by Sparkle. Any modifications to this file requi
     <link>https://github.com/SpaceCoder-Kafka/codex-co2</link>
     <description>Real-time collaboration for Codex</description>
     <item>
-      <title>Codex Co² 0.2.0 (Build 24)</title>
+      <title>Codex Co² 0.2.0 (Build 25)</title>
       <link>https://github.com/SpaceCoder-Kafka/codex-co2/releases/tag/v0.2.0</link>
-      <pubDate>Tue, 27 Oct 2026 07:23:18 GMT</pubDate>
-      <sparkle:version>24</sparkle:version>
+      <pubDate>Wed, 28 Oct 2026 06:06:09 GMT</pubDate>
+      <sparkle:version>25</sparkle:version>
       <sparkle:shortVersionString>0.2.0</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
-      <enclosure url="https://github.com/SpaceCoder-Kafka/codex-co2/releases/download/v0.2.0/Codex-Co2-0.2.0-build24-universal.dmg" sparkle:edSignature="zG0UT/6eg9xptxMomhj+Eu8lqaCQjd2FyGm9Jdu+OAsMgXFffwFTXJ2JXss3TOowiA5DQCLCg7pmIxakiYAJBA==" length="131121520" type="application/octet-stream"></enclosure>
+      <enclosure url="https://github.com/SpaceCoder-Kafka/codex-co2/releases/download/v0.2.0/Codex-Co2-0.2.0-build25-universal.dmg" sparkle:edSignature="9Oyj2Yw+qhJwBnxdFV6+7jxoiUmZilZIULSHiox5T5mII2Qe02lxzRNvF7NvMX3yrOOG7qw0gvh4RNSU5qKNDg==" length="131151579" type="application/octet-stream"></enclosure>
     </item>
 <item>
       <title>Codex Co² 0.1.0 (Build 23)</title>
@@ -25,6 +25,6 @@ IMPORTANT: This file was signed by Sparkle. Any modifications to this file requi
     </item>
   </channel>
 </rss><!-- sparkle-signatures:
-edSignature: ZFw7ymLa/pI0ueO+lFexZK/lpPqtv5MFsjtYOt/CFyW17F2KpyzvssAn7ZORQIlc8l/BBYzH3CPswS3Msn00Bw==
+edSignature: BKMhd7oS83Jb4hpGP0aRBHzZm7M+zoZb67UyV1JvZn/y6wMgPacQ8ARKX383fzXvae8F8YsK2EzENjvL+vi8Bw==
 length: 1975
 -->
