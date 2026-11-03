@@ -1,0 +1,26 @@
+binary@0.3.0: reviewed supplemental license declaration
+
+Published author metadata (verbatim JSON): {"name":"James Halliday","email":"mail@substack.net","url":"http://substack.net"}
+Published license metadata: "MIT"
+Published package.json SHA-256: 355ec61b56448e3d9ad74b286fa07e1b18bcbf153f45223b1a4f68d86bec891f
+Published tarball: https://registry.npmjs.org/binary/-/binary-0.3.0.tgz
+Published integrity: sha512-D4H1y5KYwpJgK8wk1Cue5LLPgmwHKYSChkbspQg5JtVuR5ulGckxfR62H3AE9UDkdMC8yyXlqYihuz3Aqg2XZg==
+Registry metadata source: https://registry.npmjs.org/binary/0.3.0
+Registry metadata SHA-256: 3ac278ec8b39ec0fb9b697ed49553dc8d118fe64d41f3edec0a8147e28be527e
+
+The exact published package declares MIT; it does not supply a full license file or a copyright year. The author metadata above is preserved without inventing a copyright notice or date. No fork license is represented as an original package file.
+
+Standard MIT terms are reproduced below from SPDX as an unmodified license template, in addition to the exact upstream declaration. The template's <year> and <copyright holders> placeholders are not assertions about this package. The upstream declaration remains MIT.
+Standard terms source: https://spdx.org/licenses/MIT.txt
+Standard terms SHA-256: c3b1b78bc8bd3ea13aa4bc9778442d16560270afa235006d816e5e88cef24db4
+
+--- SPDX MIT license template (not an upstream copyright notice) ---
+MIT License
+
+Copyright (c) <year> <copyright holders>
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.

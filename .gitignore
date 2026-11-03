@@ -37,3 +37,8 @@ windows/obj/
 *.msi
 *.pdb
 *.nupkg
+
+assets/feedback-demo
+
+# Generated from locked web-preview dependencies.
+public/vendor/

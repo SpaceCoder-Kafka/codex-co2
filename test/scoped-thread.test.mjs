@@ -66,8 +66,12 @@ test('start scopes read and resume; snapshot exposes only named text messages', 
   assert.deepEqual(rpc.calls.map(call => call.method), ['thread/read', 'thread/resume', 'thread/read']);
   assert.ok(rpc.calls.every(call => call.params.threadId === THREAD));
   assert.deepEqual(rpc.calls[1].params, { threadId: THREAD });
+  const turnId = bridge.snapshot.items[0].turnId;
+  assert.match(turnId, /^[a-f0-9]{64}$/);
+  assert.notEqual(turnId, 'seed');
   assert.deepEqual(bridge.snapshot.items, [
-    { id: 'user', role: 'user', text: 'Hello' }, { id: 'assistant', role: 'assistant', text: 'Ready' },
+    { id: 'user', role: 'user', text: 'Hello', turnId, turnStatus: 'completed' },
+    { id: 'assistant', role: 'assistant', text: 'Ready', turnId },
   ]);
   assert.equal(bridge.snapshot.status, 'idle');
   assert.equal(bridge.snapshot.title, 'Shared test');
@@ -76,6 +80,71 @@ test('start scopes read and resume; snapshot exposes only named text messages', 
   const copy = bridge.snapshot;
   copy.items[0].text = 'changed by caller';
   assert.equal(bridge.snapshot.items[0].text, 'Hello');
+});
+
+test('user presentation survives normalization without changing user role and oversized plan metadata never evicts dialogue', async t => {
+  const rpc = new FakeRpc();
+  rpc.thread.turns[0].items.unshift({ id: 'plan-user', type: 'userMessage', content: [{ type: 'text', text: '是的，执行此计划' }],
+    presentation: { kind: 'plan_execution', plan: '原生计划'.repeat(50000), token: 'private-token' },
+    createdAt: 1793660000123, source: { kind: 'chatgpt', roomId: 'private-room' } });
+  const bridge = new ScopedThread({ rpc, threadId: THREAD }); t.after(() => bridge.close()); await bridge.start();
+  const item = bridge.snapshot.items.find(item => item.id === 'plan-user');
+  assert.equal(item.role, 'user'); assert.equal(item.text, '是的，执行此计划'); assert.equal(item.presentation, undefined);
+  assert.deepEqual(item.source, { kind: 'chatgpt' }); assert.equal(item.createdAt, 1793660000123);
+  assert.ok(bridge.snapshot.items.some(item => item.text === 'Ready'));
+  assert.ok(Buffer.byteLength(JSON.stringify(bridge.snapshot)) < 48 * 1024);
+  assert.ok(!JSON.stringify(bridge.snapshot).includes('private-'));
+});
+
+test('display-normalized question and plan replies retain guest attribution while private source text never leaves the snapshot', async t => {
+  const rpc = new FakeRpc(), bridge = new ScopedThread({ rpc, threadId: THREAD, ownerName: '分享者' });
+  t.after(() => bridge.close()); await bridge.start();
+  const author = { id: 'guest', name: '协作者', kind: 'guest' };
+  for (const [index, text] of ['PLEASE IMPLEMENT THIS PLAN:\n# 计划\n\n- 仅本机验证',
+    '<send_user_message_question_reply>\n' + JSON.stringify([{ questionItemId: 'private-call-id', question: '验证哪里？', answer: '本机' }]) + '\n</send_user_message_question_reply>'].entries()) {
+    const turnId = `presentation-${index}`, itemId = `user-${index}`;
+    let release; rpc.handler = method => method === 'turn/start' ? new Promise(resolve => { release = resolve; }) : undefined;
+    const pending = bridge.submitApproved(text, randomUUID(), { author }); await delay(0);
+    rpc.notification('turn/started', { threadId: THREAD, turn: { id: turnId } });
+    rpc.notification('item/started', { threadId: THREAD, turnId, item: { id: itemId, type: 'userMessage', content: [{ type: 'text', text }] } });
+    release({ turn: { id: turnId } }); await pending;
+    const visible = bridge.snapshot.items.find(item => item.id === itemId);
+    assert.equal(visible.role, 'user'); assert.deepEqual(visible.author, author); assert.ok(visible.presentation);
+    assert.equal(Object.getOwnPropertySymbols(visible).length, 0);
+    assert.ok(!JSON.stringify(visible).includes('private-call-id'));
+    visible.presentation.kind = 'mutated';
+    assert.notEqual(bridge.snapshot.items.find(item => item.id === itemId).presentation.kind, 'mutated');
+    assert.equal(rpc.calls.filter(call => call.method === 'turn/start').at(-1).params.input[0].text, text, 'the execution prompt remains exact');
+  }
+});
+
+test('live item and cumulative turn diffs share one card and old detail scope is revoked after updates and rollback', async t => {
+  const { rpc, bridge } = await fixture(t);
+  rpc.notification('turn/started', { threadId: THREAD, turn: { id: 'diff-turn', status: 'inProgress' } });
+  const change = (id, name, diff) => ({ id, type: 'fileChange', status: 'completed', changes: [{ path: name, kind: 'update', diff }] });
+  rpc.notification('item/completed', { threadId: THREAD, turnId: 'diff-turn', item: change('first', 'a.mjs', '-old\n+new') });
+  const first = bridge.snapshot.items.find(item => item.kind === 'diff'); assert.equal(first.summary.fileCount, 1);
+  rpc.notification('item/completed', { threadId: THREAD, turnId: 'diff-turn', item: change('second', 'b.mjs', '+two') });
+  const cards = bridge.snapshot.items.filter(item => item.kind === 'diff');
+  assert.equal(cards.length, 1); assert.equal(cards[0].summary.fileCount, 2); assert.equal(bridge.hasActivity(first.detailId), false);
+  const patch = 'diff --git a/a.mjs b/a.mjs\n--- a/a.mjs\n+++ b/a.mjs\n@@ -1 +1 @@\n-old\n+final\n';
+  rpc.notification('turn/diff/updated', { threadId: THREAD, turnId: 'diff-turn', diff: patch });
+  const latest = bridge.snapshot.items.find(item => item.kind === 'diff');
+  assert.equal(latest.summary.fileCount, 2); assert.equal(latest.summary.added, 2); assert.equal(latest.summary.removed, 1);
+  const details = JSON.parse((await bridge.readActivity(latest.detailId)).bytes);
+  assert.equal(details.files.find(file => file.path === 'a.mjs').diff, patch);
+  assert.equal(bridge.hasActivity(cards[0].detailId), false);
+  rpc.notification('item/completed', { threadId: THREAD, turnId: 'diff-turn', item: { id: 'diff-final', type: 'agentMessage', phase: 'final_answer', text: '全部完成' } });
+  assert.equal(bridge.snapshot.items.at(-1).kind, 'diff');
+  assert.equal(bridge.snapshot.items.at(-2).id, 'diff-final', 'a later final response moves the existing diff summary below it');
+  rpc.thread.turns.push({ id: 'diff-turn', status: 'completed', items: [{ id: latest.id, type: 'fileChange', status: 'running',
+    changes: details.files.map(file => ({ ...file, kind: { type: file.kind } })) },
+  { id: 'diff-final', type: 'agentMessage', phase: 'final_answer', text: '全部完成' }] });
+  rpc.notification('turn/completed', { threadId: THREAD, turn: { id: 'diff-turn', status: 'completed' } });
+  await bridge.refresh();
+  rpc.thread.turns = rpc.thread.turns.filter(turn => turn.id !== 'diff-turn'); await bridge.refresh();
+  assert.equal(bridge.snapshot.items.some(item => item.kind === 'diff'), false);
+  await assert.rejects(bridge.readActivity(latest.detailId), /Unavailable/);
 });
 
 test('foreign, unscoped and unknown notifications cannot enter snapshots or cause arbitrary RPC', async t => {
@@ -113,6 +182,64 @@ test('live text streams only for known turn and matching assistant item membersh
   assert.equal(bridge.snapshot.items.at(-1).text, 'Final answer');
   rpc.notification('turn/completed', { threadId: THREAD, turn: { id: 'live', status: 'completed' } });
   assert.equal(bridge.snapshot.status, 'idle');
+});
+
+test('turn presentation keys are room-local and preserve only native phase, status and bounded duration', async t => {
+  const rpc = new FakeRpc();
+  rpc.thread.turns[0].durationMs = 1234;
+  rpc.thread.turns[0].items[1].phase = 'final_answer';
+  rpc.thread.turns[0].items.push({ id: 'work', type: 'agentMessage', text: 'Working', phase: 'commentary' },
+    { id: 'unknown-phase', type: 'agentMessage', text: 'Keep visible', phase: 'private-phase' },
+    { id: 'cmd', type: 'commandExecution', command: 'synthetic check', status: 'completed', aggregatedOutput: 'ok' });
+  const first = new ScopedThread({ rpc, threadId: THREAD });
+  const second = new ScopedThread({ rpc: new FakeRpc(), threadId: THREAD });
+  t.after(() => { first.close(); second.close(); });
+  await first.start(); await second.start();
+  const items = first.snapshot.items, key = items[0].turnId;
+  assert.ok(items.every(item => item.turnId === key));
+  assert.equal(items[0].turnStatus, 'completed'); assert.equal(items[0].turnDurationMs, 1234);
+  assert.ok(items.slice(1).every(item => item.turnStatus === undefined && item.turnDurationMs === undefined));
+  assert.notEqual(key, second.snapshot.items[0].turnId);
+  assert.equal(items.find(item => item.id === 'assistant').phase, 'final_answer');
+  assert.equal(items.find(item => item.id === 'work').phase, 'commentary');
+  assert.equal(items.find(item => item.id === 'unknown-phase').phase, undefined);
+  assert.equal(JSON.stringify(first.snapshot).includes('private-phase'), false);
+  assert.equal(JSON.stringify(first.snapshot).includes('"seed"'), false);
+  for (const duration of [-1, Infinity, '1234', 7 * 24 * 60 * 60 * 1000 + 1]) {
+    rpc.thread.turns[0].durationMs = duration;
+    rpc.thread.turns[0].status = 'private-status';
+    await first.refresh();
+    assert.ok(first.snapshot.items.every(item => item.turnDurationMs === undefined && item.turnStatus === undefined));
+  }
+});
+
+test('live deltas retain phase and one visible turn anchor updates before history catches up', async t => {
+  const { rpc, bridge } = await fixture(t);
+  rpc.notification('turn/started', { threadId: THREAD, turn: { id: 'live-metadata' } });
+  rpc.notification('item/started', { threadId: THREAD, turnId: 'live-metadata', item: {
+    id: 'live-work', type: 'agentMessage', phase: 'commentary', text: 'Start' } });
+  rpc.notification('item/agentMessage/delta', { threadId: THREAD, turnId: 'live-metadata', itemId: 'live-work', delta: ' progress' });
+  rpc.notification('item/started', { threadId: THREAD, turnId: 'live-metadata', item: {
+    id: 'live-final', type: 'agentMessage', phase: 'final_answer', text: 'Done' } });
+  const before = bridge.snapshot.items.filter(item => item.id.startsWith('live-'));
+  assert.equal(before[0].turnStatus, 'running');
+  assert.ok(before.every(item => item.turnDurationMs === undefined));
+  assert.ok(before.slice(1).every(item => item.turnStatus === undefined));
+  assert.equal(before[0].phase, 'commentary'); assert.equal(before[0].text, 'Start progress');
+  const key = before[0].turnId;
+  rpc.notification('turn/completed', { threadId: THREAD, turn: { id: 'live-metadata', status: 'interrupted', durationMs: 321 } });
+  await bridge.refresh();
+  const ended = bridge.snapshot.items.filter(item => item.id.startsWith('live-'));
+  assert.ok(ended.every(item => item.turnId === key));
+  assert.equal(ended[0].turnStatus, 'interrupted'); assert.equal(ended[0].turnDurationMs, 321);
+  assert.ok(ended.slice(1).every(item => item.turnStatus === undefined && item.turnDurationMs === undefined));
+  rpc.thread.turns.push({ id: 'live-metadata', status: 'interrupted', durationMs: 321, items: [
+    { id: 'live-work', type: 'agentMessage', phase: 'commentary', text: 'Start progress' },
+    { id: 'live-final', type: 'agentMessage', phase: 'final_answer', text: 'Done' },
+  ] });
+  await bridge.refresh();
+  rpc.thread.turns.pop(); await bridge.refresh();
+  assert.ok(!bridge.snapshot.items.some(item => item.turnId === key));
 });
 
 test('unknown turn asks only the fixed thread for authoritative state', async t => {
@@ -242,6 +369,84 @@ test('snapshot budget preserves newest messages and explicitly labels omitted hi
   assert.equal(snapshot.items.some(item => item.id === 'too-old'), false);
   assert.ok(snapshot.items[0].text.length > 0);
   assert.equal(/[\uDC00-\uDFFF]/.test(snapshot.items[0].text[0]), false);
+});
+
+test('a 412-item Chinese history keeps old seven-file Diff and late ChatGPT input ahead of small tool rows', async t => {
+  const rpc = new FakeRpc(), bodies = new Map();
+  const user = (id, text, extra = {}) => { bodies.set(id, text); return { id, type: 'userMessage', content: [{ type: 'text', text }], ...extra }; };
+  const assistant = (id, text, phase) => { bodies.set(id, text); return { id, type: 'agentMessage', text, phase }; };
+  const changes = count => Array.from({ length: count }, (_, i) => ({ path: `synthetic/view-${i}.dart`, kind: { type: 'update' },
+    diff: `--- a/synthetic/view-${i}.dart\n+++ b/synthetic/view-${i}.dart\n@@ -1 +1 @@\n-old\n+new\n` }));
+  rpc.thread.turns = Array.from({ length: 4 }, (_, turn) => {
+    const items = [user(`user-${turn}`, turn === 0 ? '## 合成用户计划\n\n' + '计划正文'.repeat(250) : `合成用户输入 ${turn}`)];
+    if (turn === 3) items.push(user('review-user', '合成 reviewInput latest-user marker', { source: { kind: 'chatgpt' } }));
+    for (let i = 0; i < (turn === 3 ? 7 : 6); i++) items.push(assistant(`assistant-${turn}-${i}`,
+      `${turn === 1 && i === 0 ? 'afterUnlock marker' : '合成进度'}\n` + '中文正文'.repeat(100), i === 5 ? 'final_answer' : 'commentary'));
+    if (turn !== 1) items.push({ id: `diff-${turn}`, type: 'fileChange', status: 'completed', changes: changes(turn === 0 ? 7 : turn === 2 ? 1 : 3) });
+    if (turn === 0) items.push({ id: 'important-plan', type: 'plan', text: '合成计划正文'.repeat(100) });
+    for (let i = 0; i < (turn === 3 ? 78 : 100); i++) items.push({ id: `command-${turn}-${i}`, type: 'commandExecution', status: 'completed',
+      command: `synthetic check ${turn}-${i}`, aggregatedOutput: 'ok' });
+    return { id: `turn-${turn}`, status: 'completed', durationMs: 478999 + turn, items };
+  });
+  assert.equal(rpc.thread.turns.reduce((count, turn) => count + turn.items.length, 0), 412);
+  const bridge = new ScopedThread({ rpc, threadId: THREAD }); t.after(() => bridge.close()); await bridge.start();
+  const snapshot = bridge.snapshot;
+  assert.ok(Buffer.byteLength(JSON.stringify(snapshot)) < 48 * 1024);
+  assert.equal(snapshot.historyTruncated, true);
+  assert.equal(snapshot.items.filter(item => item.role !== 'activity').length, bodies.size);
+  for (const [id, text] of bodies) assert.equal(snapshot.items.find(item => item.id === id)?.text, text, `${id} keeps its full source text`);
+  assert.equal(snapshot.items.find(item => item.id === 'review-user').source.kind, 'chatgpt');
+  const diffs = snapshot.items.filter(item => item.kind === 'diff');
+  assert.equal(diffs.length, 3);
+  assert.deepEqual(await Promise.all(diffs.map(async item => JSON.parse((await bridge.readActivity(item.detailId)).bytes).files.length)), [7, 1, 3]);
+  assert.ok(snapshot.items.some(item => item.kind === 'plan'));
+  assert.equal(snapshot.items.filter(item => item.turnDurationMs !== undefined).length, 4);
+  for (const turnId of new Set(snapshot.items.map(item => item.turnId))) {
+    const group = snapshot.items.filter(item => item.turnId === turnId);
+    assert.equal(group[0].turnStatus, 'completed');
+    assert.ok(group.slice(1).every(item => item.turnStatus === undefined && item.turnDurationMs === undefined));
+  }
+  if (snapshot.omittedActivities !== undefined) assert.ok(snapshot.omittedActivities > 0);
+  const oldDetailId = diffs[0].detailId;
+  rpc.thread.turns[0].items = rpc.thread.turns[0].items.filter(item => item.type !== 'fileChange');
+  await bridge.refresh(); await assert.rejects(bridge.readActivity(oldDetailId));
+});
+
+test('oversized activity previews degrade to readable Diff and plan handles without changing the latest body', async t => {
+  const rpc = new FakeRpc(), body = '中'.repeat(15750), plan = '合成计划细节'.repeat(1000);
+  rpc.thread.turns = [{ id: 'long', status: 'completed', durationMs: 1234, items: [
+    { id: 'latest', type: 'agentMessage', phase: 'final_answer', text: body },
+    { id: 'important-diff', type: 'fileChange', status: 'completed', changes: Array.from({ length: 7 }, (_, i) => ({
+      path: `synthetic/${'文'.repeat(220)}-${i}.dart`, kind: { type: 'update' }, diff: '-old\n+new\n' })) },
+    { id: 'important-plan', type: 'plan', text: plan },
+  ] }];
+  const bridge = new ScopedThread({ rpc, threadId: THREAD }); t.after(() => bridge.close()); await bridge.start();
+  const snapshot = bridge.snapshot;
+  assert.ok(Buffer.byteLength(JSON.stringify(snapshot)) < 48 * 1024);
+  assert.equal(snapshot.items.find(item => item.id === 'latest').text, body);
+  const diff = snapshot.items.find(item => item.kind === 'diff'), planCard = snapshot.items.find(item => item.kind === 'plan');
+  assert.ok(diff); assert.ok(planCard);
+  assert.equal(diff.summary, undefined, 'large summaries cannot replace the read handle');
+  assert.equal(JSON.parse((await bridge.readActivity(diff.detailId)).bytes).files.length, 7);
+  assert.equal(JSON.parse((await bridge.readActivity(planCard.detailId)).bytes).text, plan);
+});
+
+test('a body that leaves no room for an important handle is explicit and does not substitute a smaller tool card', async t => {
+  const rpc = new FakeRpc(), body = '中'.repeat(16174);
+  rpc.thread.turns = [{ id: 'full', status: 'completed', durationMs: 1000, items: [
+    { id: 'latest', type: 'agentMessage', phase: 'final_answer', text: body },
+    { id: 'important', type: 'fileChange', status: 'completed', changes: Array.from({ length: 7 }, (_, i) => ({
+      path: `synthetic/${i}.js`, kind: { type: 'update' }, diff: '-old\n+new\n' })) },
+    { id: 'small', type: 'mcpToolCall', server: 's', tool: 'x', status: 'completed', result: { content: [{ type: 'text', text: 'ok' }] } },
+  ] }];
+  const bridge = new ScopedThread({ rpc, threadId: THREAD }); t.after(() => bridge.close()); await bridge.start();
+  const snapshot = bridge.snapshot;
+  assert.ok(Buffer.byteLength(JSON.stringify(snapshot)) < 48 * 1024);
+  assert.equal(snapshot.items.find(item => item.id === 'latest').text, body);
+  assert.equal(snapshot.items.some(item => item.role === 'activity'), false);
+  assert.equal(snapshot.omittedActivities, 2); assert.equal(snapshot.historyTruncated, true);
+  const unadvertised = bridge._snapshot.items.find(item => item.kind === 'diff');
+  await assert.rejects(bridge.readActivity(unadvertised.detailId));
 });
 
 test('bounded idempotency cache refuses new submissions rather than forgetting old accepted IDs', async t => {

@@ -5,7 +5,9 @@ import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { binaryVersion } from '../lib/runtime.mjs';
+import { buildWeb } from './build-web.mjs';
 import { npmNotices } from './third-party-notices.mjs';
+import { removeDependencyBins } from './production-dependencies.mjs';
 import { publicSource } from './public-source.mjs';
 import { releaseNotes } from './release-notes.mjs';
 import { buildCloudflaredMacOS, CLOUDFLARED_MACOS } from './cloudflared-macos.mjs';
@@ -37,7 +39,9 @@ if (process.env.CO2_BUILD_CLOUDFLARED) throw new Error('macOS builds require the
 // A pre-existing failure is still a failure in the app being shipped. Stop
 // before modifying build outputs if any local regression test fails.
 const tests = (await fs.readdir(path.join(root, 'test'))).filter(name => name.endsWith('.test.mjs')).sort();
-run(process.execPath, ['--test', ...tests.map(name => path.join(root, 'test', name))]);
+// Native fixture tests compile Swift and exercise timed AppKit startup paths.
+// Run files serially so those deadlines do not compete with other fixtures.
+run(process.execPath, ['--test', '--test-concurrency=1', ...tests.map(name => path.join(root, 'test', name))]);
 run(process.env.CO2_BUILD_PYTHON ?? 'python3', ['-m', 'unittest', 'discover', '-s', path.join(root, 'test'), '-p', 'test_cloudflared_notices.py']);
 await fs.mkdir(cache, { recursive: true, mode: 0o700 }); await fs.chmod(path.join(root, '.coop'), 0o700);
 await fs.mkdir(universalCache, { recursive: true, mode: 0o700 });
@@ -113,10 +117,12 @@ await fs.copyFile(path.join(root, 'macos/AppIcon.png'), path.join(service, 'owne
 const dependencies = await fs.mkdtemp(path.join(cache, 'production-'));
 try {
   for (const name of ['package.json', 'package-lock.json']) await fs.copyFile(path.join(root, name), path.join(dependencies, name));
-  execFileSync('npm', ['ci', '--omit=dev', '--ignore-scripts', '--no-audit', '--no-fund'], { cwd: dependencies, stdio: 'inherit' });
+  execFileSync('npm', ['ci', '--include=dev', '--ignore-scripts', '--no-audit', '--no-fund'], { cwd: dependencies, stdio: 'inherit' });
+  await buildWeb({ root, publicDir: path.join(service, 'public'), dependencyRoot: dependencies });
+  execFileSync('npm', ['prune', '--omit=dev', '--omit=optional', '--ignore-scripts', '--no-audit', '--no-fund'], { cwd: dependencies, stdio: 'inherit' });
   const notices = await npmNotices(root, dependencies);
   if (notices !== await fs.readFile(path.join(root, 'third-party/npm-NOTICES.txt'), 'utf8')) throw new Error('Review and regenerate third-party npm notices');
-  await fs.rm(path.join(dependencies, 'node_modules/.bin'), { recursive: true, force: true });
+  await removeDependencyBins(path.join(dependencies, 'node_modules'));
   await fs.cp(path.join(dependencies, 'node_modules'), path.join(service, 'node_modules'), { recursive: true });
   await fs.writeFile(path.join(resources, 'Licenses/npm-NOTICES.txt'), notices);
 } finally { await fs.rm(dependencies, { recursive: true, force: true }); }

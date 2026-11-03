@@ -135,7 +135,7 @@ precondition(BackgroundRegistrationPolicy.foregroundStatus(registration: "requir
 print("native background configuration passed")
 `);
     execFileSync('/usr/bin/swiftc', ['-framework', 'AppKit', '-framework', 'ServiceManagement',
-      path.join(root, 'macos/BackgroundService.swift'), script, '-o', binary], { stdio: 'pipe', timeout: 30000 });
+      path.join(root, 'macos/BackgroundService.swift'), script, '-o', binary], { stdio: 'pipe', timeout: 120000 });
     assert.equal(execFileSync(binary, [temporary], { encoding: 'utf8', timeout: 10000 }).trim(), 'native background configuration passed');
   } finally { await fs.rm(temporary, { recursive: true, force: true }); }
 });
@@ -334,7 +334,7 @@ wait { commandResults.count == 4 }
 print("native background preflight passed")
 `);
     execFileSync('/usr/bin/swiftc', ['-framework', 'AppKit', '-framework', 'ServiceManagement',
-      path.join(root, 'macos/BackgroundService.swift'), script, '-o', binary], { stdio: 'pipe', timeout: 30000 });
+      path.join(root, 'macos/BackgroundService.swift'), script, '-o', binary], { stdio: 'pipe', timeout: 120000 });
     assert.equal(execFileSync(binary, [temporary], { encoding: 'utf8', timeout: 10000,
       env: { HOME: temporary, PATH: '/usr/bin:/bin', LANG: 'en_US.UTF-8' } }).trim(), 'native background preflight passed');
   } finally { await fs.rm(temporary, { recursive: true, force: true }); }

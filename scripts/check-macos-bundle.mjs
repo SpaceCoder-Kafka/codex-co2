@@ -4,6 +4,7 @@ import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { publicSource } from './public-source.mjs';
+import { readWebAssets } from '../lib/web-assets.mjs';
 import { CLOUDFLARED_MACOS, validateCloudflaredMacOSProvenance } from './cloudflared-macos.mjs';
 import { SPARKLE, MACOS_ARCHITECTURES, MACOS_MINIMUM_VERSION, compareMacOSVersions, digest, frameworkBinaryInspection, frameworkInventory, inspectMacOSBinary, requireMacOSCompatibility, validPublicKey } from './sparkle-distribution.mjs';
 const app = path.resolve(process.argv[2] ?? 'dist/Codex Co².app');
@@ -81,9 +82,24 @@ if (manifest.launchAgents || manifest.source.files['macos/BackgroundService.swif
       || config.RunAtLoad !== true || config.KeepAlive?.SuccessfulExit !== false
       || config.LimitLoadToSessionType !== 'Aqua' || config.StandardOutPath !== '/dev/null' || config.StandardErrorPath !== '/dev/null') throw new Error('Unsafe background launch agent configuration');
 }
+const generatedWebFiles = new Set();
+if (Object.hasOwn(manifest.source.files, 'lib/web-assets.mjs')) {
+  const publicDir = await fs.realpath(path.join(resources, 'service/public'));
+  const assets = await readWebAssets(publicDir, true);
+  const assetManifest = JSON.parse(await fs.readFile(path.join(publicDir, 'vendor/asset-manifest.json'), 'utf8'));
+  const required = ['/vendor/previews.mjs', '/vendor/office.worker.mjs', '/vendor/xlsx.worker.mjs', '/vendor/rich-render.js', '/vendor/pdf.worker.mjs', '/rich-render.html'];
+  if (required.some(url => !Object.hasOwn(assets, url)) || !/^[a-f0-9]{64}$/.test(assetManifest.sourceSHA256 ?? '')
+      || Object.keys(assetManifest.files).sort().join('\0') !== Object.keys(assets).sort().join('\0')) throw new Error('Incomplete preview resource manifest');
+  for (const [url, [file]] of Object.entries(assets)) {
+    if (path.relative(publicDir, file).split(path.sep).join('/') !== url.slice(1)) throw new Error('Preview resource URL/path mismatch');
+    generatedWebFiles.add('service/public/' + url.slice(1));
+  }
+  generatedWebFiles.add('service/public/vendor/asset-manifest.json');
+}
 for (const relative of files.filter(name => /^service\/(lib|owner|public)\//.test(name))) {
   const sourceName = relative === 'service/owner/app-icon.png' ? 'macos/AppIcon.png' : relative.slice('service/'.length);
-  if (manifest.source.files[sourceName] !== manifest.files[relative]) throw new Error(`Unreviewed service source: ${relative}`);
+  if (Object.hasOwn(manifest.source.files, sourceName)
+      ? manifest.source.files[sourceName] !== manifest.files[relative] : !generatedWebFiles.has(relative)) throw new Error(`Unreviewed service source: ${relative}`);
 }
 for (const name of ['LICENSE', 'npm-NOTICES.txt', 'Node-LICENSE', 'cloudflared-LICENSE', 'Sparkle-LICENSE.txt', 'THIRD_PARTY_NOTICES.md', 'ASSET_PROVENANCE.md', 'cloudflared-modules/Go-LICENSE', 'cloudflared-modules/index.json']) {
   if (!(await fs.stat(path.join(resources, 'Licenses', name))).size) throw new Error(`Missing license text: ${name}`);

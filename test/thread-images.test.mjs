@@ -7,7 +7,7 @@ import { EventEmitter, once } from 'node:events';
 import { createHash } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
 import WebSocket from 'ws';
-import { imageInputParts, imageRefs, assistantImageRefs, readImage, imageMessageText, MAX_IMAGE_BYTES } from '../lib/thread-images.mjs';
+import { imageInputParts, imageRefs, assistantImageRefs, structuredImageIndices, readImage, imageMessageText, MAX_IMAGE_BYTES } from '../lib/thread-images.mjs';
 import { ScopedThread } from '../lib/scoped-thread.mjs';
 import { projectDesktopThread } from '../lib/desktop-ipc.mjs';
 import { SharedRoom, secret } from '../lib/host.mjs';
@@ -73,6 +73,22 @@ test('unmatched attachments, ordinary text, incomplete wrappers and assistant me
   assert.match(clean, /Distinguish instructions/); assert.ok(clean.endsWith('保留其他附件。'));
 });
 
+test('user image placeholders are suppressed only by one-to-one native attachment matches', () => {
+  const file = '/synthetic/含 空格.png', data = `data:image/png;base64,${png.toString('base64')}`;
+  const content = [{ type: 'localImage', path: file }, { type: 'image', url: data }];
+  const text = `\`![代码](<${file}>)\`\n\n\`\`\`md\n![示例](<${file}>)\n\`\`\`\n\n`
+    + `![不匹配](/synthetic/other.png) ![远程](https://example.invalid/a.png) ![附件](<${file}>) ![重复](<${file}>)\n\n`
+    + `![内联](${data}) ![]() ![保留说明]() ![不同目录](/other/%E5%90%AB%20%E7%A9%BA%E6%A0%BC.png)`;
+  assert.deepEqual(structuredImageIndices(text, content), [2, 4]);
+  assert.deepEqual(structuredImageIndices(`![百分号路径](${encodeURI(file)})`, content), [0]);
+  assert.deepEqual(structuredImageIndices('![]() ![]() ![]() ![用户说明]()', content), [0, 1]);
+  assert.deepEqual(structuredImageIndices('![]() ![用户说明]()', []), []);
+  assert.deepEqual(structuredImageIndices(`![文本无权](${file})`, [{ type: 'text', text: file }]), []);
+  assert.deepEqual(structuredImageIndices('![相对](./example.png) ![协议相对](//example.invalid/a.png) ![非法百分号](/%zz.png)', content), []);
+  assert.deepEqual(structuredImageIndices(`![同形路径](/synthetic/sub/../${encodeURIComponent('含 空格.png')})`, content), []);
+  assert.equal(imageRefs('user', content, 'room').length, 2, 'display matching neither creates nor consumes read references');
+});
+
 test('snapshot cleanup preserves raw native messages and author matching while retaining image authorization', async t => {
   const { file } = await files(t), raw = envelope([imageEntry(file)], '准备源码快照是什么意思？');
   const rpc = new Rpc([{ type: 'text', text: raw }, { type: 'localImage', path: file }]);
@@ -110,25 +126,61 @@ test('only structured supported image input authorizes reads; signatures, size, 
   await fs.writeFile(disguised, Buffer.alloc(MAX_IMAGE_BYTES + 1)); await assert.rejects(readImage(get(disguised)));
 });
 
-test('assistant Markdown grants only image-token scope, with stable positions across unsupported sources and code examples', async t => {
+test('assistant Markdown preserves image-token positions while adding bounded local image-link scope', async t => {
   const { dir, file } = await files(t);
   const spaced = path.join(dir, '含 空格.png'); await fs.writeFile(spaced, png);
   const text = `普通路径 ${file}\n\n[普通链接](${file})\n\n\`![代码](${file})\`\n\n\`\`\`md\n![示例](${file})\n\`\`\`\n\n<img src="${file}">\n\n![不支持](/private.svg)\n\n![本地](<${spaced}>)\n\n![远程](https://example.invalid/image.png)\n\n![内联](data:image/png;base64,${png.toString('base64')})`;
   const refs = assistantImageRefs('reply', text, 'key');
-  assert.deepEqual(refs.map(r => r.index), [1, 2, 3]);
-  assert.deepEqual(refs.map(r => r.name), ['本地', '远程', '内联']);
+  assert.deepEqual(refs.filter(r => r.syntax !== 'link').map(r => r.index), [1, 2, 3]);
+  assert.deepEqual(refs.filter(r => r.syntax !== 'link').map(r => r.name), ['本地', '远程', '内联']);
+  assert.deepEqual(refs.filter(r => r.syntax === 'link').map(({ linkIndex, label, name }) => ({ linkIndex, label, name })),
+    [{ linkIndex: 0, label: '普通链接', name: 'example.png' }]);
   assert.equal((await readImage(refs[0])).mime, 'image/png');
   assert.equal((await readImage(refs[2])).mime, 'image/png');
   await assert.rejects(readImage(refs[1]), 'remote sources never cause host HTTP requests');
-  assert.deepEqual(assistantImageRefs('reply', `路径 ${file}\n\n[link](${file})\n\n\`![code](${file})\``, 'key'), []);
+  assert.deepEqual(assistantImageRefs('reply', `路径 ${file}\n\n\`[link](${file})\`\n\n\`![code](${file})\``, 'key'), []);
   assert.deepEqual(assistantImageRefs('reply', '![relative](./asset.png) ![protocol relative](//example.invalid/a.png)', 'key'), []);
   assert.equal(assistantImageRefs('reply', text, 'key')[0].id, refs[0].id);
   assert.notEqual(assistantImageRefs('other', text, 'key')[0].id, refs[0].id);
   assert.notEqual(assistantImageRefs('reply', text, 'other-room')[0].id, refs[0].id);
 });
 
+test('local image links keep independent positions, inert labels and room-bound read authority', async t => {
+  const { file } = await files(t);
+  const text = `[web](https://example.invalid/a.png) [relative](./a.png) [encoded protocol](/%2Fexample.invalid/a.png) [PDF](/synthetic/out.pdf)\n\n`
+    + `\`[code](${file})\`\n\n\`\`\`md\n[example](${file})\n\`\`\`\n\n<img src="${file}">\n\n$[formula](${file})$\n\n`
+    + `[**真机截图** \`原图\` ![预览](${file})](${file})\n\n![原图片](${file})\n\n[再次查看](${file})`;
+  const refs = assistantImageRefs('reply', text, 'room-a');
+  assert.deepEqual(refs.filter(ref => ref.syntax !== 'link').map(({ index, name }) => ({ index, name })),
+    [{ index: 0, name: '预览' }, { index: 1, name: '原图片' }]);
+  const links = refs.filter(ref => ref.syntax === 'link');
+  assert.deepEqual(links.map(({ linkIndex, label, name }) => ({ linkIndex, label, name })), [
+    { linkIndex: 4, label: '真机截图 原图 预览', name: 'example.png' },
+    { linkIndex: 5, label: '再次查看', name: 'example.png' },
+  ]);
+  assert.ok(links.every(ref => !Object.hasOwn(ref, 'index')), 'old guests cannot confuse link and image positions');
+  assert.notEqual(links[0].id, links[1].id, 'the same source at two real link positions has separate authority');
+  assert.notEqual(links[0].id, assistantImageRefs('other-item', text, 'room-a').find(ref => ref.syntax === 'link').id);
+  assert.notEqual(links[0].id, assistantImageRefs('reply', text, 'room-b').find(ref => ref.syntax === 'link').id);
+  assert.equal((await readImage(links[0])).mime, 'image/png');
+  assert.deepEqual((await readImage(links[1])).bytes, (await readImage(links[0])).bytes);
+  await assert.rejects(readImage(JSON.parse(JSON.stringify(links[0]))), 'wire metadata never supplies a readable source');
+  assert.ok(!JSON.stringify(links).includes(file));
+});
+
+test('image links share the eight-reference budget without displacing existing image-syntax scope', async t => {
+  const { file } = await files(t);
+  const text = Array.from({ length: 12 }, (_, i) => `[图 ${i}](${file})`).join(' ') + `\n\n![原图](${file})`;
+  const refs = assistantImageRefs('reply', text, 'room');
+  assert.equal(refs.length, 8);
+  assert.equal(refs[0].index, 0);
+  assert.equal(refs[0].name, '原图');
+  assert.deepEqual(refs.slice(1).map(ref => ref.linkIndex), [0, 1, 2, 3, 4, 5, 6]);
+  assert.equal(new Set(refs.map(ref => ref.id)).size, 8);
+});
+
 test('assistant image refs survive both Desktop projections, stream deltas and completion; truncation and history removal revoke reads', async t => {
-  const { file } = await files(t), text = `之前\n\n![预览](${file})\n\n之后`;
+  const { file } = await files(t), text = `之前\n\n![预览](${file})\n\n[真机弹窗截图](${file})\n\n之后`;
   for (const canonical of [false, true]) {
     const turn = { turnId: 'turn', status: 'completed', items: [{ id: 'reply', type: 'agentMessage', text }] };
     const state = { id: 'selected', hostId: 'local', ...(canonical
@@ -139,8 +191,13 @@ test('assistant image refs survive both Desktop projections, stream deltas and c
     const ref = thread.snapshot.items[0].images[0];
     assert.deepEqual(Object.keys(ref).sort(), ['id', 'index', 'name']);
     assert.equal((await thread.readImage(ref.id)).mime, 'image/png');
+    const linkRef = thread.snapshot.items[0].images.find(ref => ref.syntax === 'link');
+    assert.deepEqual(Object.keys(linkRef).sort(), ['id', 'label', 'linkIndex', 'name', 'syntax']);
+    assert.deepEqual({ label: linkRef.label, linkIndex: linkRef.linkIndex }, { label: '真机弹窗截图', linkIndex: 0 });
+    assert.equal((await thread.readImage(linkRef.id)).mime, 'image/png');
     rpc.thread.turns[0].items[0].text = '开始'; await thread.refresh();
     await assert.rejects(thread.readImage(ref.id));
+    await assert.rejects(thread.readImage(linkRef.id));
     rpc.emit('notification', { method: 'item/agentMessage/delta', params: { threadId: 'other', turnId: 'turn', itemId: 'reply', delta: text } });
     assert.equal(thread.snapshot.items[0].images, undefined);
     rpc.emit('notification', { method: 'item/agentMessage/delta', params: { threadId: 'selected', turnId: 'turn', itemId: 'reply', delta: `\n![预览](${file}` } });
@@ -152,10 +209,12 @@ test('assistant image refs survive both Desktop projections, stream deltas and c
     rpc.thread.turns[0].items[0].text = text;
     rpc.emit('notification', { method: 'turn/completed', params: { threadId: 'selected', turn: { id: 'turn' } } });
     await thread.refresh(); assert.equal(thread._liveTurns.size, 0);
+    assert.equal(thread.snapshot.items[0].images.find(ref => ref.syntax === 'link').id, linkRef.id);
     rpc.thread.turns[0].items[0].text = 'x'.repeat(100000) + text; await thread.refresh();
     assert.equal(thread.snapshot.historyTruncated, true);
     assert.equal(thread.snapshot.items[0].images, undefined);
     await assert.rejects(thread.readImage(ref.id));
+    await assert.rejects(thread.readImage(linkRef.id));
     thread.close();
   }
 });

@@ -6,7 +6,9 @@ import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { publicSource } from './public-source.mjs';
 import { releaseNotes } from './release-notes.mjs';
+import { buildWeb } from './build-web.mjs';
 import { npmNotices } from './third-party-notices.mjs';
+import { removeDependencyBins } from './production-dependencies.mjs';
 import { WINDOWS, fileInventory, peArchitecture, sha256, windowsAssetName } from './windows-distribution.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -99,10 +101,12 @@ await fs.copyFile(path.join(root, 'macos/AppIcon.png'), path.join(service, 'owne
 const dependencies = await fs.mkdtemp(path.join(cache, 'dependencies-'));
 try {
   for (const name of ['package.json', 'package-lock.json']) await fs.copyFile(path.join(root, name), path.join(dependencies, name));
-  run(process.execPath, [process.env.npm_execpath, 'ci', '--prefix', dependencies, '--omit=dev', '--ignore-scripts', '--no-audit', '--no-fund']);
+  run(process.execPath, [process.env.npm_execpath, 'ci', '--prefix', dependencies, '--include=dev', '--ignore-scripts', '--no-audit', '--no-fund']);
+  await buildWeb({ root, publicDir: path.join(service, 'public'), dependencyRoot: dependencies });
+  run(process.execPath, [process.env.npm_execpath, 'prune', '--prefix', dependencies, '--omit=dev', '--omit=optional', '--ignore-scripts', '--no-audit', '--no-fund']);
   const notices = await npmNotices(root, dependencies);
   if (notices !== await fs.readFile(path.join(root, 'third-party/npm-NOTICES.txt'), 'utf8')) throw new Error('Review and regenerate locked npm notices');
-  await fs.rm(path.join(dependencies, 'node_modules/.bin'), { recursive: true, force: true });
+  await removeDependencyBins(path.join(dependencies, 'node_modules'));
   await fs.cp(path.join(dependencies, 'node_modules'), path.join(service, 'node_modules'), { recursive: true });
   await fs.writeFile(path.join(licenses, 'npm-NOTICES.txt'), notices);
 } finally { await fs.rm(dependencies, { recursive: true, force: true }); }

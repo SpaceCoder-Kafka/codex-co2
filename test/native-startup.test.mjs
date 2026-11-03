@@ -74,10 +74,10 @@ final class AppUpdates {
     await fs.writeFile(path.join(temporary, 'main.swift'), `import AppKit
 let application = NSApplication.shared
 let runtime = URL(fileURLWithPath: CommandLine.arguments[2])
-func wait(_ seconds: TimeInterval = 3, until condition: () -> Bool) {
+func wait(_ seconds: TimeInterval = 3, file: StaticString = #fileID, line: UInt = #line, until condition: () -> Bool) {
     let end = Date().addingTimeInterval(seconds)
     while !condition() && Date() < end { RunLoop.current.run(until: Date().addingTimeInterval(0.01)) }
-    precondition(condition(), "Timed out waiting for synthetic startup state")
+    precondition(condition(), "Timed out waiting for synthetic startup state", file: file, line: line)
 }
 func tick(_ seconds: TimeInterval) { RunLoop.current.run(until: Date().addingTimeInterval(seconds)) }
 func scenario(_ name: String) { try! Data(name.utf8).write(to: runtime.appendingPathComponent("fixture-mode")) }
@@ -90,11 +90,11 @@ func manager(timeout: TimeInterval) -> AppDelegate {
     delegate.startupRetry = NSButton()
     return delegate
 }
-func cleanup(_ delegate: AppDelegate) {
+func cleanup(_ delegate: AppDelegate, file: StaticString = #fileID, line: UInt = #line) {
     delegate.serviceStopRequested = true; delegate.startupAttempt = nil
     if delegate.helper?.isRunning == true { delegate.helper?.terminate() }
     if delegate.foregroundDaemon?.isRunning == true { delegate.foregroundDaemon?.terminate() }
-    wait { delegate.helper == nil && delegate.foregroundDaemon == nil }
+    wait(file: file, line: line) { delegate.helper == nil && delegate.foregroundDaemon == nil }
 }
 // Only a positive missing-job result permits one registration repair. Other
 // failures must remain visible without creating a replacement foreground job.
@@ -190,6 +190,9 @@ precondition(pending.startupFailure == timeoutFailure)
 pending.finishManagedStart(.cancelled, attempt: pendingAttempt)
 precondition(pending.managedStartAttempt == nil && pending.startupRetry!.isEnabled)
 scenario("ready")
+// The short deadline above deliberately triggers a failure. Recovery checks
+// normal startup rather than requiring process creation within 50 ms.
+pending.startupTimeout = 5
 pending.retry()
 wait { pending.ownerURL != nil }
 precondition(pending.startupFailure == nil && pending.foregroundDaemon?.isRunning == true)
@@ -288,6 +291,7 @@ precondition(silent.startupPanel!.isHidden == false)
 silent.receive(["type": "ready", "ownerUrl": "http://127.0.0.1:12345/"])
 precondition(silent.startupFailure != nil && silent.ownerURL == nil && !silent.startupPanel!.isHidden)
 scenario("ready")
+silent.startupTimeout = 5
 silent.retry()
 wait { silent.ownerURL != nil }
 precondition(silent.foregroundDaemon === daemon)
@@ -316,7 +320,8 @@ print("native startup lifecycle passed")
 `);
     execFileSync('/usr/bin/swiftc', ['-framework', 'AppKit', '-framework', 'WebKit', '-framework', 'ServiceManagement',
       ...['App.swift', 'Background.swift', 'Updates.swift', 'main.swift'].map(name => path.join(temporary, name)), '-o', binary],
-    { stdio: 'pipe', timeout: 30000 });
+    // Compilation has a separate budget from the startup deadlines below.
+    { stdio: 'pipe', timeout: 120000 });
     assert.equal(execFileSync(binary, ['--runtime-dir', runtime], { encoding: 'utf8', timeout: 15000,
       env: { HOME: temporary, PATH: '/usr/bin:/bin', LANG: 'en_US.UTF-8' } }).trim(), 'native startup lifecycle passed');
   } finally { await fs.rm(temporary, { recursive: true, force: true }); }

@@ -44,7 +44,11 @@ class Element {
   remove() { this.removed = true; }
 }
 
-function browser({ storage = new Map(), persistentStorage = new Map(), storageBlocked = false, sessionStorageBlocked = false, viewport = null, notification = null, focused = true, markdown = false, inviteRecovery = false,
+function nodesByClass(node, name) {
+  return [...(node.className?.split(' ').includes(name) ? [node] : []), ...node.children.flatMap(child => nodesByClass(child, name))];
+}
+
+function browser({ storage = new Map(), persistentStorage = new Map(), storageBlocked = false, sessionStorageBlocked = false, viewport = null, notification = null, focused = true, markdown = false, inviteRecovery = false, previewLoader = undefined,
   invitation = `#room=synthetic-room&invite=${'x'.repeat(43)}` } = {}) {
   const urls = { created: [], revoked: [] };
   class PreviewURL extends URL {
@@ -106,7 +110,7 @@ function browser({ storage = new Map(), persistentStorage = new Map(), storageBl
     window: {
       ...(viewport ? { visualViewport: viewport } : {}),
       ...(notification ? { Notification: notification } : {}),
-      location, focus() {},
+      location, focus() {}, co2PreviewLoader: previewLoader,
       history: { replaceState(_state, _title, url) { redactedUrl = url; location.hash = ''; } },
       addEventListener(name, listener) { windowListeners.set(name, listener); },
       setTimeout: (fn, ms) => schedule(fn, ms), clearTimeout: id => timers.delete(id),
@@ -599,12 +603,12 @@ test('structured images request admitted room bytes once, survive redraw, enlarg
   socket.receive({ type: 'data', payload: { type: 'image-chunk', imageId, mime: 'image/png', total: 1, index: 0, data } });
   let button = page.elements.messages.children[0].children[2].children[0];
   assert.equal(button.children[0].src, 'data:image/png;base64,' + data);
-  button.trigger('click'); const dialog = page.document.body.children[0]; assert.equal(dialog.open, true);
+  button.trigger('click'); const dialog = nodesByClass(page.document.body, 'image-dialog')[0]; assert.equal(dialog.open, true);
   snapshot(socket, 2, [item]); button = page.elements.messages.children[0].children[2].children[0];
   assert.equal(button.children[0].tag, 'img');
   assert.equal(socket.sent.filter(m => m.type === 'image-request').length, 1);
   socket.receive({ type: 'revoked' });
-  assert.equal(dialog.open, false); assert.equal(dialog.children[1].src, undefined);
+  assert.equal(dialog.open, false); assert.equal(nodesByClass(dialog, 'image-dialog-image')[0].src, undefined);
   assert.equal(page.elements.messages.children.length, 0);
 });
 
@@ -646,6 +650,36 @@ test('assistant images render at Markdown positions, preserve text, reuse cached
   assert.equal(page.elements.messages.children.length, 0);
 });
 
+test('local image download is an icon in the open preview and closing or revoking clears its authority', async () => {
+  const page = browser({ markdown: true }), socket = page.join(), imageId = '9'.repeat(64);
+  const image = { id: imageId, name: 'synthetic.png', index: 0 };
+  snapshot(socket, 1, [{ ...reply('![合成图片](/synthetic/synthetic.png)'), images: [image] }]);
+  assert.equal(nodesByClass(page.elements.messages, 'file-download').length, 0);
+  assert.equal(nodesByClass(page.elements.messages, 'preview-download').length, 0);
+  const bytes = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLttAAAAABJRU5ErkJggg==', 'base64');
+  socket.receive({ type: 'data', payload: { type: 'image-chunk', imageId, mime: 'image/png', total: 1, index: 0, data: bytes.toString('base64') } });
+  const figure = nodesByClass(page.elements.messages, 'message-image')[0], thumbnail = figure.children[0];
+  const dialog = nodesByClass(page.document.body, 'image-dialog')[0], download = nodesByClass(dialog, 'image-dialog-download')[0];
+  assert.equal(download.hidden, true); assert.equal(download.disabled, true);
+  thumbnail.trigger('click');
+  assert.equal(dialog.open, true); assert.equal(download.hidden, false); assert.equal(download.disabled, false);
+  assert.equal(download.textContent, ''); assert.match(download['aria-label'], /下载原图/); assert.match(download.title, /下载/);
+  assert.equal(nodesByClass(dialog, 'image-dialog-title')[0].textContent, 'synthetic.png');
+  download.trigger('click');
+  assert.deepEqual(Buffer.from(await page.urls.created.at(-1).blob.arrayBuffer()), bytes);
+  assert.equal(socket.sent.filter(message => message.type === 'image-request').length, 1);
+  assert.equal(socket.sent.some(message => message.type === 'file-request'), false);
+  const beforeClose = page.urls.created.length;
+  nodesByClass(dialog, 'image-dialog-close')[0].trigger('click');
+  assert.equal(dialog.open, false); assert.equal(download.hidden, true); assert.equal(download.disabled, true);
+  assert.equal(nodesByClass(dialog, 'image-dialog-image')[0].src, undefined);
+  download.trigger('click'); assert.equal(page.urls.created.length, beforeClose);
+  thumbnail.trigger('click'); assert.equal(download.hidden, false);
+  socket.receive({ type: 'revoked' });
+  assert.equal(dialog.open, false); assert.equal(download.hidden, true); assert.equal(download.disabled, true);
+  download.trigger('click'); assert.equal(page.urls.created.length, beforeClose);
+});
+
 test('remote assistant images load without host fetches or referrers, retry failures and reject unsafe URL metadata', () => {
   const page = browser({ markdown: true }), socket = page.join(), imageId = 'f'.repeat(64);
   snapshot(socket, 1, [{ ...reply('![远程](https://example.invalid/image.png)'),
@@ -656,6 +690,11 @@ test('remote assistant images load without host fetches or referrers, retry fail
   assert.equal(socket.sent.some(m => m.type === 'image-request'), false);
   button.children[0].trigger('error'); assert.match(button.textContent, /无法加载远程图片/);
   button.trigger('click'); assert.equal(button.children[0].tag, 'img');
+  button.trigger('click');
+  const dialog = nodesByClass(page.document.body, 'image-dialog')[0], download = nodesByClass(dialog, 'image-dialog-download')[0];
+  assert.equal(dialog.open, true); assert.equal(download.hidden, true); assert.equal(download.disabled, true);
+  download.trigger('click'); assert.equal(page.urls.created.length, 0);
+  nodesByClass(dialog, 'image-dialog-close')[0].trigger('click');
   for (const url of ['javascript:alert(1)', 'file:///private/example.png', 'data:image/svg+xml,<svg/>']) {
     const other = browser({ markdown: true }), connection = other.join();
     snapshot(connection, 1, [{ ...reply('![危险](https://example.invalid/a.png)'), images: [{ id: imageId, name: '危险', index: 0, url }] }]);
@@ -672,9 +711,10 @@ test('text previews load only by click, render HTML as code, handle empty files 
     const figure = page.elements.messages.children[0].children[2]; figure.children[0].trigger('click');
     assert.deepEqual(socket.sent.at(-1), { type: 'file-request', fileId });
     socket.receive({ type: 'data', payload: { type: 'file-chunk', fileId, mime: 'text/plain; charset=utf-8', index: 0, total: 1, data: Buffer.from(text).toString('base64') } });
-    assert.equal(figure.children[2].tag, 'pre');
-    assert.equal(figure.children[2].children[0].tag, 'code');
-    assert.equal(figure.children[2].children[0].textContent, text || '（空文件）');
+    const preview = nodesByClass(figure, 'file-text-preview')[0];
+    assert.equal(preview.tag, 'pre');
+    assert.equal(preview.children[0].tag, 'code');
+    assert.equal(preview.children[0].textContent, text || '（空文件）');
     assert.deepEqual(page.messages(), [prompt.text]);
   }
 });
@@ -685,11 +725,11 @@ test('MP4 controls and media element survive snapshot redraw; revocation stops v
   snapshot(socket, 1, [item]);
   page.elements.messages.children[0].children[2].children[0].trigger('click');
   socket.receive({ type: 'data', payload: { type: 'file-chunk', fileId, mime: 'video/mp4', index: 0, total: 1, data: Buffer.from('synthetic MP4').toString('base64') } });
-  const video = page.elements.messages.children[0].children[2].children[2];
+  const video = nodesByClass(page.elements.messages, 'file-video-preview')[0];
   assert.equal(video.tag, 'video'); assert.equal(video.controls, true); assert.equal(video.playsInline, true);
   assert.equal(video.src, 'blob:synthetic-0'); video.currentTime = 4; video.paused = false;
   snapshot(socket, 2, [item, reply('正在流式回复')]);
-  assert.equal(page.elements.messages.children[0].children[2].children[2], video);
+  assert.equal(nodesByClass(page.elements.messages, 'file-video-preview')[0], video);
   assert.equal(video.currentTime, 4); assert.equal(socket.sent.filter(m => m.type === 'file-request').length, 1);
   socket.receive({ type: 'revoked' });
   assert.equal(video.paused, true); assert.equal(video.src, undefined); assert.deepEqual(page.urls.revoked, ['blob:synthetic-0']);
@@ -702,7 +742,7 @@ test('file MIME cannot cross preview types and forged packet IDs never create me
   socket.receive({ type: 'data', payload: { type: 'file-chunk', fileId: 'f'.repeat(64), mime: 'text/plain; charset=utf-8', index: 0, total: 1, data: 'b2s=' } });
   assert.equal(figure.children.length, 2);
   socket.receive({ type: 'data', payload: { type: 'file-chunk', fileId, mime: 'text/html', index: 0, total: 1, data: 'b2s=' } });
-  assert.match(figure.children[0].textContent, /无法预览/); assert.equal(figure.children.length, 2);
+  assert.match(nodesByClass(figure, 'file-preview-notice')[0].textContent, /无法预览/); assert.equal(figure.children.length, 2);
 });
 
 test('automatic reconnect retains unsent tab draft, seeks fresh admission and never replays submitted messages', () => {
@@ -1124,4 +1164,415 @@ test('only confirmed admission automatically requests notification permission an
   socket.receive({ type: 'admitted' }); assert.equal(requests, 1);
   Notification.permission = 'granted'; finish('granted'); await new Promise(resolve => setImmediate(resolve));
   assert.equal(page.elements['notification-test'].disabled, false);
+});
+
+test('new file capability requests exact originals, downloads bytes and preserves audio across redraw', async () => {
+  const page = browser({ markdown: true }), socket = page.join(), fileId = 'a'.repeat(64);
+  const item = { ...reply('收听 ![音频](/synthetic/a.wav)'), files: [{ id: fileId, name: 'a.wav', kind: 'audio', syntax: 'image', index: 0 }] };
+  const update = revision => socket.receive({ type: 'data', payload: { type: 'snapshot', revision, status: 'idle', items: [item], capabilities: ['file-original'] } });
+  update(1);
+  const find = (node, tag) => node.tag === tag ? node : node.children.map(n => find(n, tag)).find(Boolean);
+  const figure = find(page.elements.messages, 'span');
+  assert.equal(nodesByClass(figure, 'file-download')[0].hidden, true);
+  figure.children[0].trigger('click');
+  assert.deepEqual(socket.sent.at(-1), { type: 'file-request', fileId, representation: 'original' });
+  const bytes = Buffer.from('RIFFsyntheticWAVE');
+  socket.receive({ type: 'data', payload: { type: 'file-chunk', fileId, representation: 'original', mime: 'application/octet-stream', total: 1, index: 0, data: bytes.toString('base64') } });
+  const audio = find(page.elements.messages, 'audio'); assert.ok(audio); assert.equal(audio.controls, true); assert.equal(audio.autoplay, undefined);
+  audio.currentTime = 12; update(2); assert.equal(find(page.elements.messages, 'audio'), audio); assert.equal(audio.currentTime, 12);
+  const download = nodesByClass(find(page.elements.messages, 'span'), 'file-download')[0];
+  assert.equal(download.hidden, false); assert.equal(download.textContent, ''); assert.match(download['aria-label'], /下载原件/);
+  download.trigger('click');
+  assert.deepEqual(Buffer.from(await page.urls.created.at(-1).blob.arrayBuffer()), bytes);
+  socket.receive({ type: 'revoked' }); assert.equal(audio.paused, true); assert.equal(audio.src, undefined);
+});
+
+test('activity cards are lazy, literal, revision-bound and revoke on snapshot removal', () => {
+  const page = browser(), socket = page.join(), activityId = 'b'.repeat(64);
+  socket.receive({ type: 'data', payload: { type: 'snapshot', revision: 1, status: 'idle', capabilities: ['activity-details'], items: [{ id: 'activity-1', role: 'activity', kind: 'tool', text: '工具结果', detailId: activityId }] } });
+  assert.equal(socket.sent.some(m => m.type === 'activity-request'), false);
+  const figure = page.elements.messages.children[0].children[0]; figure.children[0].trigger('click');
+  assert.deepEqual(socket.sent.at(-1), { type: 'activity-request', activityId });
+  socket.receive({ type: 'data', payload: { type: 'activity-chunk', activityId, mime: 'application/json', total: 1, index: 0,
+    data: Buffer.from(JSON.stringify({ kind: 'tool', text: '<script>literal()</script>', status: 'completed' })).toString('base64') } });
+  assert.match(figure.textContent, /<script>literal/);
+  snapshot(socket, 2, []); assert.equal(page.elements.messages.children.length, 0);
+  socket.receive({ type: 'data', payload: { type: 'activity-chunk', activityId, mime: 'application/json', total: 1, index: 0, data: 'e30=' } });
+  assert.equal(page.elements.messages.children.length, 0);
+});
+
+test('activity disclosure stays collapsed by default and respects toggles while loading and across revisions', () => {
+  const page = browser(), socket = page.join(), firstId = '1'.repeat(64), nextId = '2'.repeat(64);
+  const find = (node, className) => node.className?.split(' ').includes(className) ? node : node.children.map(child => find(child, className)).find(Boolean);
+  const update = (revision, detailId = firstId) => socket.receive({ type: 'data', payload: {
+    type: 'snapshot', revision, status: 'idle', capabilities: ['activity-details'],
+    items: [{ id: 'activity-command', role: 'activity', kind: 'command', status: 'completed', text: 'printf synthetic-only', detailId }],
+  } });
+  const receive = (activityId, text) => socket.receive({ type: 'data', payload: {
+    type: 'activity-chunk', activityId, mime: 'application/json', total: 1, index: 0,
+    data: Buffer.from(JSON.stringify({ kind: 'command', status: 'completed', text, exitCode: 0, durationMs: 15 })).toString('base64'),
+  } });
+  const requested = () => socket.sent.filter(message => message.type === 'activity-request');
+  update(1);
+  let card = find(page.elements.messages, 'activity-card'), button = find(card, 'activity-summary'), panel = find(card, 'activity-panel');
+  assert.equal(button['aria-expanded'], 'false'); assert.equal(panel.hidden, true); assert.equal(requested().length, 0);
+  assert.match(button.textContent, /printf synthetic-only/);
+  assert.equal(find(card, 'image-caption'), undefined, 'the row does not repeat its title in a file caption');
+  button.trigger('click');
+  assert.equal(button['aria-expanded'], 'true'); assert.equal(button['aria-busy'], 'true'); assert.equal(requested().length, 1);
+  button.trigger('click');
+  assert.equal(button['aria-expanded'], 'false'); assert.equal(panel.hidden, true);
+  receive(firstId, '<script>literal result</script>');
+  assert.equal(panel.hidden, true); assert.equal(button['aria-expanded'], 'false');
+  assert.equal(find(card, 'activity-detail'), undefined, 'a late response does not create an opened detail');
+  button.trigger('click');
+  const detail = find(card, 'activity-detail');
+  assert.equal(panel.hidden, false); assert.match(detail.textContent, /<script>literal result<\/script>/);
+  assert.equal(find(detail, 'activity-meta').textContent, '已完成 · 退出码 0 · 15 ms');
+  assert.equal(requested().length, 1, 'reopening uses the room-scoped cached result');
+  update(2);
+  card = find(page.elements.messages, 'activity-card'); button = find(card, 'activity-summary'); panel = find(card, 'activity-panel');
+  assert.equal(button['aria-expanded'], 'true'); assert.equal(find(card, 'activity-detail'), detail);
+  button.trigger('click'); update(3);
+  card = find(page.elements.messages, 'activity-card');
+  assert.equal(find(card, 'activity-summary')['aria-expanded'], 'false');
+  assert.equal(find(card, 'activity-panel').hidden, true);
+  update(4, nextId); card = find(page.elements.messages, 'activity-card');
+  assert.equal(detail.removed, true); assert.equal(find(card, 'activity-summary')['aria-expanded'], 'false');
+  assert.equal(find(card, 'activity-detail'), undefined);
+  receive(firstId, 'stale result'); assert.equal(find(card, 'activity-detail'), undefined);
+  find(card, 'activity-summary').trigger('click');
+  assert.equal(requested().at(-1).activityId, nextId); receive(nextId, 'current result');
+  assert.match(card.textContent, /current result/); assert.doesNotMatch(card.textContent, /stale result|literal result/);
+  socket.receive({ type: 'revoked' }); assert.equal(page.elements.messages.children.length, 0);
+});
+
+test('compact activity details keep literal diff lines and readable plan statuses without execution controls', () => {
+  const page = browser(), socket = page.join(), diffId = '3'.repeat(64), planId = '4'.repeat(64);
+  const all = (node, className) => [node, ...node.children.flatMap(child => all(child, className))].filter(child => child.className?.split(' ').includes(className));
+  socket.receive({ type: 'data', payload: { type: 'snapshot', revision: 1, status: 'idle', capabilities: ['activity-details'], items: [
+    { id: 'diff', role: 'activity', kind: 'diff', status: 'completed', text: '文件变更 · 1 项', detailId: diffId },
+    { id: 'plan', role: 'activity', kind: 'plan', status: 'running', text: '执行计划', detailId: planId },
+  ] } });
+  const cards = all(page.elements.messages, 'activity-card');
+  cards.forEach(card => all(card, 'activity-summary')[0].trigger('click'));
+  for (const [activityId, detail] of [
+    [diffId, { kind: 'diff', status: 'completed', files: [{ path: '<file>.js', kind: 'update', diff: '-before\n+<script>after</script>' }] }],
+    [planId, { kind: 'plan', status: 'running', steps: [{ step: '已完成的合成步骤', status: 'completed' }, { step: '当前步骤', status: 'running' }] }],
+  ]) socket.receive({ type: 'data', payload: { type: 'activity-chunk', activityId, mime: 'application/json', total: 1, index: 0, data: Buffer.from(JSON.stringify(detail)).toString('base64') } });
+  assert.equal(all(cards[0], 'activity-file-name')[0].textContent, '<file>.js');
+  assert.equal(all(cards[0], 'activity-file-kind')[0].textContent, '修改');
+  assert.equal(all(cards[0], 'activity-file-added')[0].textContent, '+1');
+  assert.equal(all(cards[0], 'activity-file-removed')[0].textContent, '−1');
+  assert.equal(all(cards[0], 'diff-preview').length, 0);
+  const fileToggle = all(cards[0], 'activity-file-toggle')[0];
+  assert.equal(fileToggle['aria-expanded'], 'false'); fileToggle.trigger('click');
+  assert.equal(all(cards[0], 'diff-remove')[0].textContent, '-before\n');
+  assert.equal(all(cards[0], 'diff-add')[0].textContent, '+<script>after</script>\n');
+  const steps = all(cards[1], 'activity-steps')[0].children;
+  assert.equal(steps[0].dataset.status, 'completed'); assert.equal(steps[1].dataset.status, 'running');
+  assert.deepEqual(steps.map(step => step.children[0].textContent), ['已完成', '进行中']);
+  const walk = node => [node, ...node.children.flatMap(walk)];
+  assert.ok(cards.flatMap(card => all(card, 'activity-detail')).flatMap(walk).filter(node => node.tag === 'button')
+    .every(button => button.dataset.action === 'view-diff' && button.className === 'activity-file-toggle'));
+});
+
+test('diff files form one lazy accordion, retain selection for the same detail and reset on changed detail IDs', () => {
+  const page = browser(), socket = page.join(), firstId = '5'.repeat(64), nextId = '6'.repeat(64);
+  const update = (revision, detailId = firstId) => socket.receive({ type: 'data', payload: { type: 'snapshot', revision, status: 'idle', capabilities: ['activity-details'],
+    items: [{ id: 'diff-accordion', role: 'activity', kind: 'diff', status: 'completed', text: '文件变更 · 2 项', detailId }] } });
+  const deliver = (activityId, files) => socket.receive({ type: 'data', payload: { type: 'activity-chunk', activityId, mime: 'application/json', index: 0, total: 1,
+    data: Buffer.from(JSON.stringify({ kind: 'diff', status: 'completed', files })).toString('base64') } });
+  update(1); nodesByClass(page.elements.messages, 'activity-summary')[0].trigger('click');
+  deliver(firstId, [{ path: 'first.js', kind: 'update', diff: '--- a/first.js\n+++ b/first.js\n-old\n+new' }, { path: 'second.js', kind: 'add', diff: '+second' }]);
+  let toggles = nodesByClass(page.elements.messages, 'activity-file-toggle'), bodies = nodesByClass(page.elements.messages, 'diff-file-body');
+  assert.ok(toggles.every(button => button['aria-expanded'] === 'false')); assert.ok(bodies.every(body => body.hidden));
+  assert.equal(nodesByClass(page.elements.messages, 'diff-preview').length, 0);
+  assert.equal(nodesByClass(page.elements.messages, 'activity-file-added')[0].textContent, '+1', 'file headers do not count as added lines');
+  assert.equal(nodesByClass(page.elements.messages, 'activity-file-removed')[0].textContent, '−1');
+  const requests = socket.sent.length;
+  toggles[0].trigger('click'); assert.equal(toggles[0]['aria-expanded'], 'true'); assert.equal(nodesByClass(bodies[0], 'diff-preview').length, 1);
+  toggles[1].trigger('click');
+  assert.equal(toggles[0]['aria-expanded'], 'false'); assert.equal(bodies[0].hidden, true); assert.equal(bodies[0].children.length, 0);
+  assert.equal(toggles[1]['aria-expanded'], 'true'); assert.equal(nodesByClass(page.elements.messages, 'diff-preview').length, 1);
+  assert.equal(socket.sent.length, requests, 'file disclosure performs no RPC or file request');
+  update(2); toggles = nodesByClass(page.elements.messages, 'activity-file-toggle');
+  assert.equal(toggles[1]['aria-expanded'], 'true', 'same opaque detail reuses its selected file DOM');
+  const oldToggle = toggles[0]; update(3, nextId);
+  assert.equal(nodesByClass(page.elements.messages, 'activity-file-toggle').length, 0);
+  oldToggle.trigger('click'); assert.equal(bodies[0].children.length, 0, 'retired detail cannot rebuild a patch through an old button');
+  nodesByClass(page.elements.messages, 'activity-summary')[0].trigger('click');
+  deliver(nextId, [{ path: 'replacement.js', kind: 'update', diff: '-previous\n+current' }]);
+  assert.equal(nodesByClass(page.elements.messages, 'activity-file-toggle')[0]['aria-expanded'], 'false');
+  assert.equal(nodesByClass(page.elements.messages, 'diff-preview').length, 0);
+});
+
+test('an opened diff file bounds rendered rows and reports truncation without expanding other files', () => {
+  const page = browser(), socket = page.join(), activityId = '0'.repeat(64);
+  socket.receive({ type: 'data', payload: { type: 'snapshot', revision: 1, status: 'idle', capabilities: ['activity-details'],
+    items: [{ id: 'large-diff', role: 'activity', kind: 'diff', text: '文件变更', detailId: activityId }] } });
+  nodesByClass(page.elements.messages, 'activity-summary')[0].trigger('click');
+  const bytes = Buffer.from(JSON.stringify({ kind: 'diff', files: [{ path: 'many-lines.js', kind: 'add', diff: '+x\n'.repeat(20010) }, { path: 'closed.js', kind: 'add', diff: '+unopened' }] }));
+  const chunks = Array.from({ length: Math.ceil(bytes.length / 30720) }, (_, index) => bytes.subarray(index * 30720, (index + 1) * 30720));
+  chunks.forEach((chunk, index) => socket.receive({ type: 'data', payload: { type: 'activity-chunk', activityId, mime: 'application/json', index, total: chunks.length, data: chunk.toString('base64') } }));
+  assert.equal(nodesByClass(page.elements.messages, 'diff-preview').length, 0);
+  nodesByClass(page.elements.messages, 'activity-file-toggle')[0].trigger('click');
+  const pre = nodesByClass(page.elements.messages, 'diff-preview')[0];
+  assert.equal(pre.children.length, 20000); assert.match(nodesByClass(page.elements.messages, 'activity-notice')[0].textContent, /20,000 行/);
+  const bodies = nodesByClass(page.elements.messages, 'diff-file-body'); assert.equal(bodies[1].children.length, 0); assert.equal(bodies[1].hidden, true);
+  nodesByClass(page.elements.messages, 'activity-file-toggle')[1].trigger('click');
+  assert.equal(bodies[0].children.length, 0); assert.equal(nodesByClass(page.elements.messages, 'diff-preview')[0].children.length, 1);
+});
+
+test('adding original capability cannot download normalized legacy preview bytes as an original', async () => {
+  const page = browser(), socket = page.join(), fileId = 'c'.repeat(64);
+  const item = { ...prompt, files: [{ id: fileId, name: 'utf16.txt', kind: 'text' }] };
+  snapshot(socket, 1, [item]); page.elements.messages.children[0].children[2].children[0].trigger('click');
+  socket.receive({ type: 'data', payload: { type: 'file-chunk', fileId, mime: 'text/plain; charset=utf-8', total: 1, index: 0, data: Buffer.from('normalized').toString('base64') } });
+  socket.receive({ type: 'data', payload: { type: 'snapshot', revision: 2, status: 'idle', items: [item], capabilities: ['file-original'] } });
+  const download = nodesByClass(page.elements.messages.children[0], 'file-download')[0]; download.trigger('click');
+  assert.deepEqual(socket.sent.at(-1), { type: 'file-request', fileId, representation: 'original' });
+  assert.equal(page.urls.created.length, 0);
+  const original = Buffer.from([0xff, 0xfe, 0x41, 0x00]);
+  socket.receive({ type: 'data', payload: { type: 'file-chunk', fileId, representation: 'original', mime: 'application/octet-stream', index: 0, total: 1, data: original.toString('base64') } });
+  assert.deepEqual(Buffer.from(await page.urls.created.at(-1).blob.arrayBuffer()), original);
+  assert.equal(download.hidden, true, 'download-only completion leaves the preview collapsed');
+});
+
+test('failed file previews keep an original-download icon without opening a download-only response', async () => {
+  const page = browser(), socket = page.join(), fileId = '8'.repeat(64);
+  socket.receive({ type: 'data', payload: { type: 'snapshot', revision: 1, status: 'idle', capabilities: ['file-original'],
+    items: [{ ...prompt, files: [{ id: fileId, name: 'synthetic.pdf', kind: 'pdf' }] }] } });
+  const figure = nodesByClass(page.elements.messages, 'message-file')[0], download = nodesByClass(figure, 'file-download')[0];
+  assert.equal(download.hidden, true); assert.equal(download.textContent, '');
+  figure.children[0].trigger('click');
+  socket.receive({ type: 'data', payload: { type: 'file-unavailable', fileId } });
+  assert.equal(download.hidden, false); assert.equal(download.disabled, false);
+  download.trigger('click');
+  assert.deepEqual(socket.sent.at(-1), { type: 'file-request', fileId, representation: 'original' });
+  const bytes = Buffer.from('original synthetic PDF bytes');
+  socket.receive({ type: 'data', payload: { type: 'file-chunk', fileId, representation: 'original', mime: 'application/octet-stream', index: 0, total: 1, data: bytes.toString('base64') } });
+  assert.deepEqual(Buffer.from(await page.urls.created.at(-1).blob.arrayBuffer()), bytes);
+  assert.equal(download.hidden, true); assert.equal(nodesByClass(figure, 'file-rich-preview').length, 0);
+  assert.match(figure.children[0].textContent, /synthetic\.pdf/);
+});
+
+test('a rich parse-budget failure preserves the original-download icon and original bytes', async () => {
+  const page = browser({ previewLoader: async () => ({ mountPreview: async () => { throw new RangeError('synthetic parse budget'); } }) });
+  const socket = page.join(), fileId = '7'.repeat(64), bytes = Buffer.from('original bytes beyond synthetic parse budget');
+  socket.receive({ type: 'data', payload: { type: 'snapshot', revision: 1, status: 'idle', capabilities: ['file-original'],
+    items: [{ ...prompt, files: [{ id: fileId, name: 'budget.pdf', kind: 'pdf' }] }] } });
+  const figure = nodesByClass(page.elements.messages, 'message-file')[0], download = nodesByClass(figure, 'file-download')[0];
+  figure.children[0].trigger('click');
+  socket.receive({ type: 'data', payload: { type: 'file-chunk', fileId, representation: 'original', mime: 'application/octet-stream', index: 0, total: 1, data: bytes.toString('base64') } });
+  for (let n = 0; n < 8; n++) await Promise.resolve();
+  assert.match(figure.textContent, /超过预览预算/); assert.equal(download.hidden, false);
+  figure.children[0].trigger('click'); assert.equal(download.hidden, false, 'failed preview retains a download affordance after closing');
+  const requests = socket.sent.filter(message => message.type === 'file-request').length;
+  download.trigger('click');
+  assert.deepEqual(Buffer.from(await page.urls.created.at(-1).blob.arrayBuffer()), bytes);
+  assert.equal(socket.sent.filter(message => message.type === 'file-request').length, requests);
+});
+
+test('a rich preview interrupted before its module loads can be rebuilt on reconnection', async () => {
+  let loaded, mounted = 0, disposed = 0;
+  const module = new Promise(resolve => { loaded = resolve; });
+  const page = browser({ previewLoader: () => module }), socket = page.join(), fileId = 'd'.repeat(64);
+  const item = { ...prompt, files: [{ id: fileId, name: 'example.pdf', kind: 'pdf' }] };
+  const update = revision => socket.receive({ type: 'data', payload: { type: 'snapshot', revision, status: 'idle', items: [item], capabilities: ['file-original'] } });
+  update(1); page.elements.messages.children[0].children[2].children[0].trigger('click');
+  socket.receive({ type: 'data', payload: { type: 'file-chunk', fileId, representation: 'original', mime: 'application/octet-stream', total: 1, index: 0, data: 'cGRm' } });
+  socket.receive({ type: 'offline' });
+  loaded({ mountPreview: async ({ container }) => { mounted++; container.textContent = '已渲染'; return { dispose() { disposed++; } }; } });
+  for (let n = 0; n < 8; n++) await Promise.resolve(); assert.equal(mounted, 0);
+  update(2); for (let n = 0; n < 8; n++) await Promise.resolve();
+  assert.equal(mounted, 1); assert.match(page.elements.messages.textContent, /已渲染/);
+  socket.receive({ type: 'revoked' }); assert.equal(disposed, 1);
+});
+
+test('long user messages fold at twenty lines and retain the user choice through redraw', () => {
+  const page = browser({ markdown: true }), socket = page.join();
+  const item = { ...prompt, text: Array.from({ length: 35 }, (_, i) => `${i + 1}. 第 ${i + 1} 项合成需求内容`).join('\n') };
+  snapshot(socket, 1, [item]);
+  let text = page.elements.messages.children[0].children[1];
+  assert.equal(text.dataset.collapsed, 'true');
+  let toggle = nodesByClass(text, 'message-fold-toggle')[0];
+  assert.equal(toggle['aria-expanded'], 'false');
+  assert.match(nodesByClass(text, 'message-body')[0].textContent, /第 35 项合成需求内容/);
+  toggle.trigger('click'); assert.equal(text.dataset.collapsed, 'false');
+  snapshot(socket, 2, [item]); text = page.elements.messages.children[0].children[1];
+  assert.equal(text.dataset.collapsed, 'false');
+  toggle = nodesByClass(text, 'message-fold-toggle')[0]; toggle.trigger('click');
+  assert.equal(text.dataset.collapsed, 'true');
+  snapshot(socket, 3, []); snapshot(socket, 4, [item]);
+  assert.equal(page.elements.messages.children[0].children[1].dataset.collapsed, 'true');
+  socket.receive({ type: 'revoked' }); assert.equal(page.elements.messages.children.length, 0);
+});
+
+test('completed work folds only known commentary and tools while final, unknown text, plans and diffs stay visible', () => {
+  const page = browser({ markdown: true }), socket = page.join(), turnId = 'a'.repeat(64), activityId = 'b'.repeat(64);
+  const meta = { turnId, turnStatus: 'completed', turnDurationMs: 478000 };
+  const items = [prompt,
+    { id: 'work-1', role: 'assistant', phase: 'commentary', text: '合成过程说明', ...meta },
+    { id: 'tool-1', role: 'activity', kind: 'command', status: 'completed', text: '合成命令', detailId: activityId, ...meta },
+    { id: 'final', role: 'assistant', phase: 'final_answer', text: '最终结果必须始终显示', ...meta },
+    { id: 'diff', role: 'activity', kind: 'diff', text: '文件变更', detailId: 'c'.repeat(64), ...meta },
+    { id: 'plan', role: 'activity', kind: 'plan', text: '执行计划', detailId: 'd'.repeat(64), ...meta },
+    { id: 'legacy', role: 'assistant', text: '未知阶段的正文继续显示', ...meta }];
+  const update = revision => socket.receive({ type: 'data', payload: { type: 'snapshot', revision, status: 'idle', capabilities: ['activity-details'], items } });
+  update(1);
+  const group = nodesByClass(page.elements.messages, 'work-group')[0];
+  assert.equal(group.children[0]['aria-expanded'], 'false'); assert.equal(group.children[1].hidden, true);
+  assert.match(group.children[0].textContent, /用时 7m 58s/);
+  assert.doesNotMatch(page.elements.messages.textContent, /合成过程说明/);
+  assert.match(page.elements.messages.textContent, /最终结果必须始终显示/);
+  assert.match(page.elements.messages.textContent, /未知阶段的正文继续显示/);
+  assert.equal(nodesByClass(page.elements.messages, 'activity-card').length, 2);
+  assert.equal(socket.sent.some(m => m.type === 'activity-request'), false);
+  group.children[0].trigger('click');
+  assert.equal(group.children[1].hidden, false);
+  assert.match(group.children[1].textContent, /合成过程说明/);
+  assert.equal(socket.sent.some(m => m.type === 'activity-request'), false);
+  nodesByClass(group, 'activity-summary')[0].trigger('click');
+  assert.deepEqual(socket.sent.at(-1), { type: 'activity-request', activityId });
+  update(2); assert.equal(nodesByClass(page.elements.messages, 'work-group')[0].children[0]['aria-expanded'], 'true');
+});
+
+test('running work is visible, completion folds untouched work and manual disclosure remains stable', () => {
+  const page = browser(), socket = page.join(), turnId = 'e'.repeat(64);
+  const item = { id: 'work', role: 'assistant', phase: 'commentary', text: '正在处理合成任务', turnId };
+  const update = (revision, status) => snapshot(socket, revision, [{ ...item, turnStatus: status === 'running' ? 'running' : 'completed' }], status);
+  update(1, 'running'); let group = nodesByClass(page.elements.messages, 'work-group')[0];
+  assert.equal(group.children[0]['aria-expanded'], 'true');
+  update(2, 'idle'); group = nodesByClass(page.elements.messages, 'work-group')[0];
+  assert.equal(group.children[0]['aria-expanded'], 'false');
+  group.children[0].trigger('click'); update(3, 'idle');
+  assert.equal(nodesByClass(page.elements.messages, 'work-group')[0].children[0]['aria-expanded'], 'true');
+  socket.receive({ type: 'revoked' }); assert.equal(page.elements.messages.children.length, 0);
+  group.children[0].trigger('click'); assert.equal(page.elements.messages.children.length, 0);
+});
+
+test('commentary artifacts stay reachable outside folded work and user markdown grants no new file reads', () => {
+  const page = browser({ markdown: true }), socket = page.join();
+  const items = [{ ...prompt, text: '**用户排版**\n\n[普通路径](/synthetic/unauthorized.pdf)' },
+    { id: 'artifact', role: 'assistant', phase: 'commentary', text: '[合成报告](/synthetic/report.pdf)', turnId: 'a'.repeat(64), turnStatus: 'completed',
+      files: [{ id: 'f'.repeat(64), name: 'report.pdf', kind: 'pdf', index: 0, syntax: 'link' }] }];
+  socket.receive({ type: 'data', payload: { type: 'snapshot', revision: 1, status: 'idle', capabilities: ['file-original'], items } });
+  assert.equal(nodesByClass(page.elements.messages, 'work-group').length, 0);
+  assert.equal(nodesByClass(page.elements.messages, 'message-file').length, 1);
+  assert.equal(socket.sent.some(m => m.type === 'file-request'), false);
+  const walk = node => [node, ...node.children.flatMap(walk)];
+  assert.ok(walk(page.elements.messages.children[0]).some(node => node.tag === 'strong' && node.textContent === '用户排版'));
+});
+
+test('one turn keeps one disclosure across questions, final replies and activity cards without moving dialogue', () => {
+  const page = browser({ markdown: true }), socket = page.join();
+  const meta = { turnId: 'a'.repeat(64), turnStatus: 'completed', turnDurationMs: 478999 };
+  const items = [
+    { id: 'work-before', role: 'assistant', phase: 'commentary', text: '问题之前的合成过程', ...meta },
+    { id: 'question', role: 'assistant', phase: 'final_answer', text: '请选择合成方案', ...meta },
+    { ...prompt, id: 'answer', text: '方案一', ...meta },
+    { id: 'work-after', role: 'assistant', phase: 'commentary', text: '答案之后的合成过程', ...meta },
+    { id: 'plan', role: 'activity', kind: 'plan', text: '计划', detailId: 'b'.repeat(64), ...meta },
+    { id: 'work-last', role: 'activity', kind: 'command', text: '合成检查', detailId: 'c'.repeat(64), ...meta },
+    { id: 'final', role: 'assistant', phase: 'final_answer', text: '合成最终结果', ...meta },
+  ];
+  const update = revision => socket.receive({ type: 'data', payload: { type: 'snapshot', revision, status: 'idle', capabilities: ['activity-details'], items } });
+  update(1);
+  let summaries = nodesByClass(page.elements.messages, 'work-summary'); assert.equal(summaries.length, 1);
+  assert.match(summaries[0].textContent, /7m 58s/); assert.doesNotMatch(summaries[0].textContent, /59s/);
+  assert.match(page.elements.messages.textContent, /请选择合成方案.*方案一.*计划.*合成最终结果/s);
+  assert.doesNotMatch(page.elements.messages.textContent, /问题之前的合成过程/);
+  assert.match(page.elements.messages.textContent, /答案之后的合成过程/, 'the reply to a mid-turn user answer remains visible beside that answer');
+  summaries[0].trigger('click');
+  const work = nodesByClass(page.elements.messages, 'work-content');
+  assert.equal(work.length, 2); assert.ok(work.every(part => !part.hidden));
+  assert.match(page.elements.messages.textContent, /问题之前.*请选择合成方案.*方案一.*答案之后.*计划.*合成检查.*合成最终结果/s);
+  assert.equal(socket.sent.some(message => message.type === 'activity-request'), false);
+  update(2); summaries = nodesByClass(page.elements.messages, 'work-summary');
+  assert.equal(summaries.length, 1); assert.equal(summaries[0]['aria-expanded'], 'true');
+});
+
+test('structured question replies show a compact question and literal answer', () => {
+  const page = browser({ markdown: true }), socket = page.join(), sentBefore = socket.sent.length;
+  snapshot(socket, 1, [{ ...prompt, text: '合成答案', presentation: { kind: 'question_reply',
+    replies: [{ question: '请选择合成工作台的方案', answer: '合成答案 <script>literal</script>' }] } }]);
+  assert.equal(nodesByClass(page.elements.messages, 'question-reply').length, 1);
+  assert.equal(nodesByClass(page.elements.messages, 'question-reply-question')[0].textContent, '请选择合成工作台的方案');
+  assert.equal(nodesByClass(page.elements.messages, 'question-reply-answer')[0].textContent, '合成答案 <script>literal</script>');
+  assert.equal(socket.sent.length, sentBefore, 'presentation never sends a tool response or proposal');
+});
+
+test('executing a plan shows its separate read-only preview and keeps the user confirmation short', () => {
+  const page = browser({ markdown: true }), socket = page.join(), sentBefore = socket.sent.length;
+  const item = { ...prompt, text: '是的，执行此计划', presentation: { kind: 'plan_execution', plan: '# 合成实施方案\n\n- 先检查\n- 再验证' } };
+  snapshot(socket, 1, [item]);
+  let card = nodesByClass(page.elements.messages, 'plan-execution-card')[0];
+  assert.match(card.textContent, /合成实施方案/); assert.equal(card.dataset.expanded, 'false');
+  const user = nodesByClass(page.elements.messages, 'message-user')[0];
+  assert.equal(nodesByClass(user, 'message-body')[0].textContent, '是的，执行此计划');
+  assert.doesNotMatch(user.textContent, /PLEASE IMPLEMENT|先检查/);
+  nodesByClass(card, 'plan-card-toggle')[0].trigger('click'); snapshot(socket, 2, [item]);
+  card = nodesByClass(page.elements.messages, 'plan-execution-card')[0]; assert.equal(card.dataset.expanded, 'true');
+  assert.equal(socket.sent.length, sentBefore);
+});
+
+test('user attachment display only suppresses backed image tokens and never authorizes text paths', () => {
+  const page = browser({ markdown: true }), socket = page.join();
+  snapshot(socket, 1, [{ ...prompt, text: '![]()\n\n![保留的未授权说明](/synthetic/not-authorized.png)\n\n`![]()`',
+    attachmentImageIndices: [0], images: [{ id: 'd'.repeat(64), name: 'backed.png' }] }]);
+  const body = nodesByClass(page.elements.messages, 'message-body')[0];
+  assert.doesNotMatch(body.textContent, /未加载/); assert.match(body.textContent, /保留的未授权说明/); assert.match(body.textContent, /!\[\]\(\)/);
+  assert.equal(socket.sent.filter(message => message.type === 'image-request').length, 1, 'only the structured attachment is read');
+});
+
+test('native times and ChatGPT provenance render without inventing an author or leaking a source handle', () => {
+  const page = browser(), socket = page.join(), now = Date.now();
+  snapshot(socket, 1, [{ ...prompt, id: 'external', text: '合成跨聊天输入', createdAt: now, source: { kind: 'chatgpt' } },
+    { ...prompt, id: 'another', createdAt: now + 1000 }]);
+  assert.equal(nodesByClass(page.elements.messages, 'conversation-day').length, 1);
+  assert.match(nodesByClass(page.elements.messages, 'conversation-day')[0].textContent, /今天 \d\d:\d\d/);
+  assert.equal(nodesByClass(page.elements.messages, 'message-source')[0].textContent, '由 ChatGPT 从另一个聊天发送');
+  assert.equal(nodesByClass(page.elements.messages, 'message-timestamp').length, 2);
+  assert.equal(nodesByClass(page.elements.messages, 'message-author-unknown').length, 2);
+  assert.equal(nodesByClass(page.elements.messages, 'message-host').length, 0);
+});
+
+test('ordinary Markdown image links keep their label and are lazy image references rather than plain local anchors', () => {
+  const page = browser({ markdown: true }), socket = page.join(), imageId = 'c'.repeat(64);
+  snapshot(socket, 1, [{ ...reply('合成结果：[截图](/synthetic/preview.png)，后续正文。'),
+    images: [{ id: imageId, name: 'preview.png', label: '截图', syntax: 'link', linkIndex: 0 }] }]);
+  assert.equal(socket.sent.some(message => message.type === 'image-request'), false);
+  const link = nodesByClass(page.elements.messages, 'file-link')[0]; assert.match(link.textContent, /截图/);
+  assert.match(page.elements.messages.textContent, /合成结果：.*截图.*，后续正文。/s);
+  link.trigger('click'); assert.deepEqual(socket.sent.at(-1), { type: 'image-request', imageId });
+});
+
+test('turn metadata on the first retained message controls sparse work items and never hides a direct reply', () => {
+  const page = browser(), socket = page.join(), turnId = 'b'.repeat(64);
+  const items = [
+    { ...prompt, id: 'opening', turnId, turnStatus: 'completed', turnDurationMs: 753999 },
+    { id: 'earlier-work', role: 'assistant', phase: 'commentary', text: '较早的执行说明', turnId },
+    { id: 'answer', role: 'user', text: '已准备好', presentation: { kind: 'question_reply', replies: [{ question: '准备好了吗？', answer: '已准备好' }] }, turnId },
+    { id: 'continuation', role: 'assistant', phase: 'commentary', text: '已收到确认，继续检查结果。', turnId },
+    { id: 'tool', role: 'activity', kind: 'command', text: '合成检查', detailId: 'c'.repeat(64), turnId },
+    { id: 'summary', role: 'activity', kind: 'diff', text: '已编辑 7 个文件', detailId: 'd'.repeat(64), turnId },
+  ];
+  socket.receive({ type: 'data', payload: { type: 'snapshot', revision: 1, status: 'idle', capabilities: ['activity-details'], items } });
+  const toggles = nodesByClass(page.elements.messages, 'work-summary'); assert.equal(toggles.length, 1);
+  assert.equal(toggles[0]['aria-expanded'], 'false'); assert.match(toggles[0].textContent, /12m 33s/);
+  assert.doesNotMatch(page.elements.messages.textContent, /较早的执行说明/);
+  assert.match(page.elements.messages.textContent, /已准备好.*已收到确认，继续检查结果。.*已编辑 7 个文件/s);
+  assert.equal(socket.sent.some(m => m.type === 'activity-request'), false);
+});
+
+test('cross-chat delivery intent remains a user message and omitted activity counts are explicit', () => {
+  const page = browser(), socket = page.join();
+  socket.receive({ type: 'data', payload: { type: 'snapshot', revision: 1, status: 'idle', historyTruncated: true, omittedActivities: 14,
+    items: [{ ...prompt, text: '合成审查输入', source: { kind: 'cross_chat' } }, reply('合成审查结果')] } });
+  assert.equal(nodesByClass(page.elements.messages, 'message-user').length, 1);
+  assert.equal(nodesByClass(page.elements.messages, 'message-source')[0].textContent, '从另一个聊天发送');
+  assert.equal(page.elements['history-note'].hidden, false);
+  assert.match(page.elements['history-note'].textContent, /14 条较早活动/);
+  assert.match(page.elements.messages.textContent, /合成审查输入.*合成审查结果/s);
 });

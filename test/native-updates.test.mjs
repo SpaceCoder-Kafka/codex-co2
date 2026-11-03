@@ -189,7 +189,7 @@ print("native update driver passed")
 `);
     const executable = path.join(temporary, 'fixture');
     const frameworks = path.dirname(framework);
-    execFileSync('/usr/bin/swiftc', ['-F', frameworks, '-framework', 'Sparkle', '-Xlinker', '-rpath', '-Xlinker', frameworks, sourceFile, script, '-o', executable], { encoding: 'utf8', timeout: 30000 });
+    execFileSync('/usr/bin/swiftc', ['-F', frameworks, '-framework', 'Sparkle', '-Xlinker', '-rpath', '-Xlinker', frameworks, sourceFile, script, '-o', executable], { encoding: 'utf8', timeout: 120000 });
     assert.equal(execFileSync(executable, [app], { encoding: 'utf8', timeout: 30000, env: { ...process.env, HOME: temporary } }).trim(), 'native update driver passed');
   } finally { await fs.rm(temporary, { recursive: true, force: true }); }
 });

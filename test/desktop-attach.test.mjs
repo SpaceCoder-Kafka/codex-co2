@@ -11,6 +11,7 @@ import { SharedRoom } from '../lib/host.mjs';
 import { startRelay } from '../lib/relay.mjs';
 import WebSocket from 'ws';
 import { setTimeout as delay } from 'node:timers/promises';
+import { activityItem, activityDetail } from '../lib/thread-activities.mjs';
 
 const THREAD = '11111111-1111-4111-8111-111111111111';
 const OTHER = '22222222-2222-4222-8222-222222222222';
@@ -166,7 +167,7 @@ test('cancellation, catalog removal and URL-open failure stop automatic loading 
   assert.equal(f.requests.some(r => r.method === 'thread-follower-start-turn'), false);
 });
 
-test('projects only text; live patches reach ScopedThread and cross-thread/owner/recipient events are ignored', async t => {
+test('projects text and rejects malformed activity; live patches preserve thread/owner/recipient scope', async t => {
   const f = await fixture(t), rpc = await DesktopRpcClient.connect(f.endpoint);
   const scoped = new ScopedThread({ rpc, threadId: THREAD }); t.after(() => { scoped.close(); rpc.close(); });
   await scoped.start();
@@ -187,11 +188,270 @@ test('projects only text; live patches reach ScopedThread and cross-thread/owner
   });
 });
 
+test('native activity snapshots, completion patches and deletion retain display fields without leaking capabilities', async t => {
+  const f = await fixture(t), native = state();
+  const turn = native.turnHistory.history.entitiesByKey['turn:1'];
+  turn.status = 'inProgress';
+  turn.items.push({ id: 'command-valid', type: 'commandExecution', command: 'synthetic check', status: 'inProgress',
+    aggregatedOutput: 'initial output', cwd: '/synthetic/project', terminalId: 'private-terminal', arguments: { secret: 'private-args' } },
+  { id: 'tool-valid', type: 'mcpToolCall', server: 'fixture', tool: 'inspect', status: 'completed',
+    result: { content: [{ type: 'text', text: 'tool output' }], _meta: { token: 'private-token' } }, appContext: { resourceUri: 'private-resource' } },
+  { id: 'steps-valid', type: 'todo-list', plan: [{ step: 'Verify', status: 'in_progress' }] });
+  f.malformed = native;
+  const rpc = await DesktopRpcClient.connect(f.endpoint); t.after(() => rpc.close());
+  const first = (await rpc.request('thread/read', { threadId: THREAD })).thread;
+  const command = first.turns[0].items.find(item => item.id === 'command-valid');
+  assert.equal(command.status, 'running');
+  assert.ok(!JSON.stringify(first).includes('private-'));
+  const before = activityItem(command, 'synthetic-room');
+  const completed = once(rpc, 'state');
+  const itemPath = ['turnHistory', 'history', 'entitiesByKey', 'turn:1', 'items'];
+  const commandIndex = turn.items.findIndex(item => item.id === 'command-valid');
+  f.broadcast(f.lastSocket(), THREAD, { type: 'patches', baseRevision: rpc.revision, revision: rpc.revision + 1, patches: [
+    { op: 'replace', path: [...itemPath, commandIndex, 'status'], value: 'completed' },
+    { op: 'replace', path: [...itemPath, commandIndex, 'aggregatedOutput'], value: 'final output' },
+    { op: 'add', path: ['turnHistory', 'history', 'entitiesByKey', 'turn:1', 'diff'], value: '-before\n+after' },
+  ] });
+  await completed;
+  const after = activityItem(rpc.thread.turns[0].items.find(item => item.id === command.id), 'synthetic-room');
+  assert.equal(after.status, 'completed'); assert.notEqual(after.detailId, before.detailId);
+  assert.equal(JSON.parse(activityDetail(after).bytes).text, 'final output');
+  assert.ok(rpc.thread.turns[0].items.some(item => item.type === 'fileChange'));
+  const deleted = once(rpc, 'state');
+  f.broadcast(f.lastSocket(), THREAD, { type: 'patches', baseRevision: rpc.revision, revision: rpc.revision + 1, patches: [
+    { op: 'remove', path: [...itemPath, commandIndex] },
+    { op: 'remove', path: ['turnHistory', 'history', 'entitiesByKey', 'turn:1', 'diff'] },
+  ] });
+  await deleted;
+  assert.equal(rpc.thread.turns[0].items.some(item => item.id === command.id), false);
+  assert.equal(rpc.thread.turns[0].items.some(item => item.type === 'fileChange'), false);
+  assert.ok(f.requests.every(request => ['initialize', 'thread-owner-discovery', 'thread-stream-following-changed'].includes(request.method)));
+});
+
 test('native turns with no user input do not create a phantom empty human message', () => {
   const native = state();
   native.turnHistory.history.entitiesByKey['turn:1'].params.input = [];
   const projected = projectDesktopThread(native, THREAD);
   assert.deepEqual(projected.turns[0].items.map(i => i.type), ['agentMessage']);
+});
+
+test('both Desktop histories preserve cross-chat steering, opening input and safe native user presentation', () => {
+  for (const kind of ['legacy', 'canonical']) {
+    const native = state(), turn = native.turnHistory.history.entitiesByKey['turn:1'];
+    turn.turnStartedAtMs = 1793660000000; turn.durationMs = 56999.9;
+    const reply = '<send_user_message_question_reply>\n' + JSON.stringify([{ questionItemId: 'private-call-id', question: '验收范围？', answer: '本机浏览器' }]) + '\n</send_user_message_question_reply>';
+    turn.items.push({ id: 'cross-chat', type: 'steeringUserMessage', input: [{ type: 'text', text: reply }],
+      clientUserMessageId: 'chatgpt-messaging:private-chat-id:private-message-id', restoreMessage: { createdAt: 1793660000123,
+        context: { mcpAppModelContextAttachments: [{ token: 'private-token' }] } } },
+    { id: 'execute-plan', type: 'userMessage', content: [{ type: 'text', text: 'PLEASE IMPLEMENT THIS PLAN:\n# fallback plan' }] },
+    { id: 'native-plan', type: 'planImplementation', planContent: '# Native preferred plan', isCompleted: true, turnId: 'private-turn-handle' });
+    if (kind === 'legacy') { native.turns = [turn]; native.turnHistory = { kind: 'legacy' }; }
+    const projected = projectDesktopThread(native, THREAD).turns[0];
+    assert.equal(projected.durationMs, 56999.9, 'duration stays native milliseconds without rounding');
+    const users = projected.items.filter(item => item.type === 'userMessage');
+    assert.deepEqual(users.map(item => item.id), ['input:1', 'cross-chat', 'execute-plan']);
+    assert.equal(users[0].createdAt, turn.turnStartedAtMs);
+    assert.deepEqual(JSON.parse(JSON.stringify(users[1])), { id: 'cross-chat', type: 'userMessage', content: [{ type: 'text', text: '本机浏览器' }], createdAt: 1793660000123,
+      source: { kind: 'chatgpt' }, presentation: { kind: 'question_reply', replies: [{ question: '验收范围？', answer: '本机浏览器' }] } });
+    assert.deepEqual(users[2].presentation, { kind: 'plan_execution', plan: '# Native preferred plan' });
+    assert.equal(users[2].content[0].text, '是的，执行此计划');
+    assert.ok(!JSON.stringify(projected).includes('private-'));
+  }
+});
+
+test('a persisted native user replaces its steering entry without leaking external source correlation', () => {
+  const native = state(), turn = native.turnHistory.history.entitiesByKey['turn:1'];
+  const input = [{ type: 'text', text: '跨聊天补充' }];
+  turn.items = [{ id: 'steering', type: 'steeringUserMessage', input,
+    clientUserMessageId: 'chatgpt-messaging:private-room', serverUserMessageId: 'persisted', restoreMessage: { createdAt: 1793660000123 } },
+  { id: 'persisted', type: 'userMessage', content: input, clientId: 'chatgpt-messaging:private-room' }];
+  const result = projectDesktopThread(native, THREAD).turns[0].items;
+  assert.deepEqual(result.filter(item => item.type === 'userMessage').map(item => item.id), ['input:1', 'persisted']);
+  assert.deepEqual(result.at(-1).source, { kind: 'chatgpt' }); assert.equal(result.at(-1).createdAt, 1793660000123);
+  assert.ok(!JSON.stringify(result).includes('private-room'));
+});
+
+test('canonical projection merges the Desktop local tail without reordering loaded history or losing its assistant, steering and diff', () => {
+  const native = state();
+  const old = native.turnHistory.history.entitiesByKey['turn:1'];
+  old.items = [{ id: 'old-answer', type: 'agentMessage', phase: 'commentary', text: '已载历史' }];
+  native.turnHistory.history.islands[0].entries.unshift({ value: 'older' });
+  native.turnHistory.history.entitiesByKey.older = { turnId: 'older-turn', status: 'completed', params: { input: [] },
+    items: [{ id: 'older-answer', type: 'agentMessage', text: '更早历史' }] };
+  native.turns = [{ ...old, durationMs: 1234.5, items: [...old.items,
+    { id: 'tail-user', type: 'steeringUserMessage', input: [{ type: 'text', text: '已解锁' }], restoreMessage: { createdAt: 1793660000123 } },
+    { id: 'tail-answer', type: 'agentMessage', phase: 'commentary', text: '解锁后的完整说明' },
+    { id: 'tail-files', type: 'fileChange', status: 'completed', changes: Array.from({ length: 7 }, (_, index) => ({ path: `/synthetic/file-${index}`, kind: 'update', diff: '-old\n+new' })) }],
+    diff: 'diff --git a/tail.mjs b/tail.mjs\n--- a/tail.mjs\n+++ b/tail.mjs\n-old\n+new\n' }];
+  const result = projectDesktopThread(native, THREAD);
+  assert.deepEqual(result.turns.map(turn => turn.id), ['older-turn', TURN]);
+  const merged = result.turns[1];
+  assert.equal(merged.durationMs, 1234.5);
+  assert.ok(merged.items.some(item => item.id === 'tail-user' && item.content[0].text === '已解锁'));
+  assert.ok(merged.items.some(item => item.id === 'tail-answer' && item.text === '解锁后的完整说明'));
+  assert.equal(merged.items.filter(item => item.type === 'fileChange').length, 1);
+  assert.equal(activityItem(merged.items.at(-1), 'synthetic').summary.fileCount, 8);
+  native.turns = [];
+  const rolledBack = projectDesktopThread(native, THREAD);
+  assert.deepEqual(rolledBack.turns.map(turn => turn.id), ['older-turn', TURN]);
+  assert.ok(!JSON.stringify(rolledBack).includes('tail-answer')); assert.equal(rolledBack.turns[1].items.some(item => item.type === 'fileChange'), false);
+});
+
+test('canonical merge follows native pagination, local steering and terminal assistant precedence', () => {
+  const native = state(), history = native.turnHistory.history.entitiesByKey['turn:1'];
+  history.params.input = []; history.status = 'completed'; history.durationMs = 4500;
+  history.itemsPagination = { hasLoadedOldest: false };
+  history.items = [{ id: 'first', type: 'agentMessage', text: '历史分页正文', phase: 'commentary' },
+    { id: 'shared', type: 'agentMessage', text: '分页已缓存版本', phase: 'commentary' }];
+  const overlay = { ...history, status: 'inProgress', durationMs: 999, itemsPagination: undefined,
+    items: [{ id: 'shared', type: 'agentMessage', text: '尾部同ID版本', phase: 'commentary' },
+      { id: 'tail', type: 'agentMessage', text: '尾部新增', phase: 'final_answer' }] };
+  native.turns = [overlay];
+  let merged = projectDesktopThread(native, THREAD).turns[0];
+  assert.equal(merged.status, 'completed'); assert.equal(merged.durationMs, 4500);
+  assert.deepEqual(merged.items.filter(item => item.type === 'agentMessage').map(item => item.text), ['历史分页正文', '分页已缓存版本', '尾部新增']);
+  delete history.itemsPagination; history.items.unshift({ id: 'steering', type: 'steeringUserMessage', input: [{ type: 'text', text: '中途输入' }] });
+  merged = projectDesktopThread(native, THREAD).turns[0];
+  assert.ok(merged.items.some(item => item.type === 'userMessage' && item.content[0].text === '中途输入'));
+  assert.equal(merged.items.find(item => item.id === 'shared').text, '尾部同ID版本', 'native steering merge refreshes matching assistant text');
+  history.items = [{ id: 'first', type: 'agentMessage', text: '保留历史' }, { id: 'older-tool', type: 'commandExecution', command: 'fixture', status: 'completed' }];
+  overlay.items = [{ id: 'short-final', type: 'agentMessage', phase: 'final_answer', text: '短尾部最终回复' }];
+  merged = projectDesktopThread(native, THREAD).turns[0];
+  assert.deepEqual(merged.items.map(item => item.id), ['first', 'older-tool', 'short-final']);
+  overlay.items = [{ id: 'replacement', type: 'agentMessage', text: '替换历史' }, { id: 'new-last', type: 'agentMessage', text: '替换终点' }];
+  merged = projectDesktopThread(native, THREAD).turns[0];
+  assert.deepEqual(merged.items.map(item => item.id), ['replacement', 'new-last'], 'a complete equal-length native overlay can replace and remove prior items');
+});
+
+test('native local turns without a turn ID remain visible with stable display-only keys and safe ChatGPT provenance', () => {
+  for (const kind of ['legacy', 'canonical']) {
+    const native = state(), local = { turnId: null, status: 'completed', params: { input: [] }, items: [
+      { id: 'local-user', type: 'steeringUserMessage', input: [{ type: 'text', text: '跨聊天审查输入' }],
+        messageMetadata: { aeon: { version: 1, sourceChannel: 'chatgpt', sourceId: 'private-source', threadId: 'private-chat' } },
+        restoreMessage: { createdAt: 1793660000123 } }] };
+    if (kind === 'canonical') {
+      native.turnHistory.history.islands[0].entries.push({ value: 'local-entry' });
+      native.turnHistory.history.entitiesByKey['local-entry'] = local;
+    } else { native.turns = [native.turnHistory.history.entitiesByKey['turn:1'], local]; native.turnHistory = { kind: 'legacy' }; }
+    const projected = projectDesktopThread(native, THREAD), display = projected.turns.at(-1);
+    assert.match(display.id, /^co2:local-turn:[a-f0-9]{64}$/);
+    assert.equal(display.items[0].type, 'userMessage'); assert.equal(display.items[0].content[0].text, '跨聊天审查输入');
+    assert.deepEqual(display.items[0].source, { kind: 'chatgpt' });
+    local.items.push({ id: 'local-answer', type: 'agentMessage', text: '接续说明' });
+    assert.equal(projectDesktopThread(native, THREAD).turns.at(-1).id, display.id, 'later content does not replace the local grouping key');
+    assert.ok(!JSON.stringify(projected).includes('private-'));
+    if (kind === 'canonical') native.turnHistory.history.islands[0].entries.pop(); else native.turns.pop();
+    assert.ok(!projectDesktopThread(native, THREAD).turns.some(turn => turn.id === display.id), 'history removal revokes the display turn');
+  }
+});
+
+test('both native histories display only the instruction delivered by exact delegation output and never grant source-thread or file scope', () => {
+  for (const kind of ['legacy', 'canonical']) {
+    const native = state(), turn = native.turnHistory.history.entitiesByKey['turn:1'];
+    turn.items.push({ id: 'delivered-review', type: 'functionCallOutput', namespace: 'codex_app', name: 'send_message_to_thread',
+      output: '<codex_delegation><source_thread_id>private-origin-thread</source_thread_id><input>审查当前改动 [测试文件](/synthetic/report.pdf)</input></codex_delegation>',
+      arguments: { context: 'private-context' }, callId: 'private-call', executionHandle: 'private-execution',
+      messageMetadata: { aeon: { version: 1, sourceChannel: 'chatgpt', sourceId: 'private-source', threadId: 'private-thread' } } });
+    if (kind === 'legacy') { native.turns = [turn]; native.turnHistory = { kind: 'legacy' }; }
+    const result = projectDesktopThread(native, THREAD), delivered = result.turns[0].items.find(item => item.id === 'delivered-review');
+    assert.deepEqual(delivered, { id: 'delivered-review', type: 'userMessage', content: [{ type: 'text', text: '审查当前改动 [测试文件](/synthetic/report.pdf)' }], source: { kind: 'chatgpt' } });
+    assert.ok(!JSON.stringify(result).includes('private-')); assert.ok(!JSON.stringify(result).includes('executionHandle'));
+    for (const output of ['```xml\n' + turn.items.at(-1).output + '\n```', '<codex_delegation>partial',
+      turn.items.at(-1).output.replace('</input>', '<extra>private-context</extra></input>')]) {
+      turn.items.at(-1).output = output;
+      assert.equal(projectDesktopThread(native, THREAD).turns[0].items.some(item => item.id === 'delivered-review'), false);
+    }
+  }
+});
+
+test('native overlay and local-turn patches replace and roll back their exact projection without stale local execution handles', async t => {
+  const f = await fixture(t), native = state(); f.malformed = native;
+  const rpc = await DesktopRpcClient.connect(f.endpoint), scoped = new ScopedThread({ rpc, threadId: THREAD });
+  t.after(() => { scoped.close(); rpc.close(); }); await scoped.start();
+  const waitFor = condition => new Promise((resolve, reject) => {
+    const timer = setTimeout(() => { scoped.off('snapshot', seen); reject(new Error('Overlay projection refresh timed out')); }, 2000);
+    const seen = value => { if (condition(value)) { clearTimeout(timer); scoped.off('snapshot', seen); resolve(value); } };
+    scoped.on('snapshot', seen);
+  });
+  const patch = patches => f.broadcast(f.lastSocket(), THREAD, { type: 'patches', baseRevision: rpc.revision, revision: rpc.revision + 1, patches });
+  const old = native.turnHistory.history.entitiesByKey['turn:1'];
+  const overlay = { ...old, items: [...old.items, { id: 'new-final', type: 'agentMessage', text: 'overlay final', phase: 'final_answer' }], diff: '-one\n+two' };
+  let changed = waitFor(value => value.items.some(item => item.text === 'overlay final'));
+  patch([{ op: 'replace', path: ['turns'], value: [overlay] }]); await changed;
+  assert.ok(scoped.snapshot.items.some(item => item.text === '既有回复')); assert.ok(scoped.snapshot.items.some(item => item.kind === 'diff'));
+  const oldDetail = scoped.snapshot.items.find(item => item.kind === 'diff').detailId;
+  changed = waitFor(value => !value.items.some(item => item.text === 'overlay final'));
+  patch([{ op: 'replace', path: ['turns'], value: [] }]); await changed;
+  assert.ok(scoped.snapshot.items.some(item => item.text === '既有回复')); assert.equal(scoped.hasActivity(oldDetail), false);
+  const local = { turnId: null, status: 'completed', params: { input: [] }, items: [{ id: 'local-delivery', type: 'functionCallOutput', namespace: 'codex_app', name: 'send_message_to_thread',
+    output: '<codex_delegation><source_thread_id>private-source</source_thread_id><input>当前会话的审查输入</input></codex_delegation>' }] };
+  changed = waitFor(value => value.items.some(item => item.text === '当前会话的审查输入'));
+  patch([{ op: 'add', path: ['turnHistory', 'history', 'entitiesByKey', 'local-entry'], value: local },
+    { op: 'add', path: ['turnHistory', 'history', 'islands', 0, 'entries', 1], value: { value: 'local-entry' } }]); await changed;
+  const visible = scoped.snapshot.items.find(item => item.text === '当前会话的审查输入');
+  assert.equal(visible.role, 'user'); assert.deepEqual(visible.source, { kind: 'cross_chat' }); assert.match(visible.turnId, /^[a-f0-9]{64}$/);
+  assert.ok(!JSON.stringify(scoped.snapshot).includes('private-source'));
+  changed = waitFor(value => !value.items.some(item => item.text === '当前会话的审查输入'));
+  patch([{ op: 'remove', path: ['turnHistory', 'history', 'islands', 0, 'entries', 1] }]); await changed;
+  assert.ok(f.requests.every(request => ['initialize', 'thread-owner-discovery', 'thread-stream-following-changed'].includes(request.method)), 'local presentation IDs never become execution requests');
+});
+
+test('legacy and canonical Desktop history preserve only known assistant phases and valid native turn durations', () => {
+  for (const kind of ['legacy', 'canonical']) {
+    const native = state();
+    const turn = native.turnHistory.history.entitiesByKey['turn:1'];
+    turn.durationMs = 5432;
+    turn.items = [{ id: 'work', type: 'agentMessage', text: 'Working', phase: 'commentary', reasoning: 'private-reasoning' },
+      { id: 'final', type: 'agentMessage', text: 'Done', phase: 'final_answer' },
+      { id: 'unknown', type: 'agentMessage', text: 'Visible', phase: 'private-phase', channel: 'analysis' }];
+    if (kind === 'legacy') { native.turns = [turn]; native.turnHistory = { kind: 'legacy' }; }
+    const result = projectDesktopThread(native, THREAD).turns[0];
+    assert.equal(result.durationMs, 5432);
+    assert.deepEqual(result.items.filter(item => item.type === 'agentMessage').map(item => item.phase), ['commentary', 'final_answer', undefined]);
+    assert.ok(!JSON.stringify(result).includes('private-'));
+    for (const invalid of [-1, Infinity, '1000', 7 * 24 * 60 * 60 * 1000 + 1]) {
+      turn.durationMs = invalid;
+      assert.equal(projectDesktopThread(native, THREAD).turns[0].durationMs, undefined);
+    }
+  }
+});
+
+test('Desktop completion patches refresh grouping state and phase without retaining metadata after turn deletion', async t => {
+  const f = await fixture(t), native = state();
+  const turn = native.turnHistory.history.entitiesByKey['turn:1'];
+  turn.status = 'inProgress'; turn.items[0].phase = 'commentary';
+  f.malformed = native;
+  const rpc = await DesktopRpcClient.connect(f.endpoint); t.after(() => rpc.close());
+  const scoped = new ScopedThread({ rpc, threadId: THREAD }); t.after(() => scoped.close());
+  await scoped.start();
+  const first = scoped.snapshot.items.find(item => item.role === 'assistant');
+  assert.equal(first.phase, 'commentary');
+  const anchorFor = (value, turnId) => value.items.find(item => item.turnId === turnId && item.turnStatus !== undefined);
+  assert.equal(anchorFor(scoped.snapshot, first.turnId).turnStatus, 'running');
+  const waitFor = condition => new Promise((resolve, reject) => {
+    const timer = setTimeout(() => { scoped.off('snapshot', seen); reject(new Error('Synthetic presentation refresh timed out')); }, 2000);
+    const seen = value => { if (condition(value)) { clearTimeout(timer); scoped.off('snapshot', seen); resolve(value); } };
+    scoped.on('snapshot', seen);
+  });
+  const completed = waitFor(value => value.items.some(item => item.phase === 'final_answer' && item.turnId === first.turnId)
+    && anchorFor(value, first.turnId)?.turnStatus === 'completed');
+  const base = ['turnHistory', 'history', 'entitiesByKey', 'turn:1'];
+  f.broadcast(f.lastSocket(), THREAD, { type: 'patches', baseRevision: rpc.revision, revision: rpc.revision + 1, patches: [
+    { op: 'replace', path: [...base, 'status'], value: 'completed' },
+    { op: 'add', path: [...base, 'durationMs'], value: 4567 },
+    { op: 'replace', path: [...base, 'items', 0, 'phase'], value: 'final_answer' },
+  ] });
+  const result = await completed;
+  assert.ok(result.items.every(item => item.turnId === first.turnId));
+  const anchor = anchorFor(result, first.turnId);
+  assert.equal(anchor.turnStatus, 'completed'); assert.equal(anchor.turnDurationMs, 4567);
+  assert.equal(result.items.filter(item => item.turnStatus !== undefined).length, 1);
+  assert.ok(result.items.filter(item => item !== anchor).every(item => item.turnDurationMs === undefined));
+  const deleted = waitFor(value => value.items.length === 0);
+  f.broadcast(f.lastSocket(), THREAD, { type: 'patches', baseRevision: rpc.revision, revision: rpc.revision + 1,
+    patches: [{ op: 'remove', path: ['turnHistory', 'history', 'islands', 0, 'entries', 0] }] });
+  await deleted;
+  assert.equal(scoped._turnPresentation.size, 0);
 });
 
 test('Desktop author evidence survives input persistence, repeated text and late history without pinning turn state', async t => {

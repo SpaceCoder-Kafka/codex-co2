@@ -15,7 +15,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/SpaceCoder-Kafka/codex-co2/releases/tag/v0.2.0"><img src="https://img.shields.io/badge/release-v0.2.0-2563eb" alt="Release v0.2.0"></a>
+  <a href="CHANGELOG.md#030"><img src="https://img.shields.io/badge/source-v0.3.0-2563eb" alt="Source v0.3.0"></a>
   <img src="https://img.shields.io/badge/host-macOS%2014%2B%20%C2%B7%20Universal-555555" alt="Host: macOS 14+ Universal">
   <img src="https://img.shields.io/badge/guest-browser-2563eb" alt="Guest: browser">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-22c55e" alt="License: MIT"></a>
@@ -70,7 +70,7 @@ https://github.com/user-attachments/assets/743766be-3549-4928-9f1e-d720314f8989
 
 ## Install Codex Co²
 
-Version **0.1.0** establishes the original Build 17 feature baseline; **0.2.0** adds the subsequent local improvements, including cross-platform packages, invitation recovery and the macOS background service. See the [changelog](CHANGELOG.md) for release highlights.
+The current source version is **0.3.0**, adding common artifact previews, rich text, read-only activity cards and more complete conversation display. See the [changelog](CHANGELOG.md) for details. The download links below continue to point to the published **0.2.0** release until 0.3.0 is published.
 
 The host attaches to your **already running official Codex Desktop**, keeping its existing Agent, login and tool approval settings. Guests use a browser with JavaScript and WebSocket support. Public sharing requires access to the generated public address; explicit intranet sharing requires access to the selected private network.
 
@@ -168,7 +168,9 @@ A public Quick Tunnel can stay alive while its background service keeps running,
 
 ## What sharing grants
 
-- Admission grants access to the selected conversation's projected history and future messages, including history from before sharing. Long histories may be truncated. Supported user images, MP4 and text attachments can be viewed. Images in assistant Markdown replies appear in place and can be enlarged: absolute local PNG, JPEG and WebP files (up to 8 MiB each) use the admitted room connection; HTTP(S) images load directly in the guest browser without a referrer. Not all Desktop content is projected.
+- Admission grants access to the selected conversation's projected history and future messages, including history from before sharing. Long histories may be truncated. Source builds also show read-only tool results, command status and output, Diffs and plans. Desktop does not guarantee live, character-by-character terminal output or in-progress Diffs; the page displays the updates and final results supplied by Desktop.
+- Source builds preview and download supported user attachments and files explicitly linked in assistant replies: MP4; MP3, WAV, M4A, OGG and FLAC audio; PDF; CSV/TSV and XLSX tables; Markdown, DOCX, PPTX and common text or code files. Markdown supports formulas, Mermaid diagrams and code highlighting. Office previews prioritize readable text, tables, images and common layouts; unsupported complex content is marked, and the original file remains available to download. Previews are read only. Images are limited to 8 MiB each, other original files to 32 MiB, and text or CSV/TSV previews to 1 MiB. Browser media codec support still applies. These source changes do not describe a newly published installation package.
+- Images in assistant Markdown replies appear in place and can be enlarged: absolute local PNG, JPEG and WebP files use the admitted room connection; HTTP(S) images load directly in the guest browser without a referrer. A plain path in a message does not grant file access. Not all Desktop content or plugin interactions are projected.
 - Guest messages enter the **same Agent**, using the conversation's existing tools, sandbox, permissions and billing or usage allowance. This is not a separate execution sandbox. Invite people you trust.
 - Only the local host can change message approval. Changes affect new messages; already pending messages still need a decision. **Native tool approvals remain in official Desktop**; message approval does not replace them.
 - The authenticated local manager reads IDs, titles, update times and project paths from the Desktop index. That catalog is not sent to guests or the relay. Selected content is read through Desktop IPC; the app does not copy default credentials or conversation files.

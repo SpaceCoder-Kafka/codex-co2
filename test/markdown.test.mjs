@@ -58,3 +58,33 @@ test('image callback binds previews to parsed image positions while keeping code
   assert.equal(all(node, 'code')[0].textContent, '![代码](/code.png)');
   assert.match(node.textContent, /之前.*之后/s);
 });
+
+test('file callback binds real links and media without duplicate labels or code-example scope', () => {
+  const node = new Node('div'), calls = [];
+  window.renderMarkdown(node, '[web](https://example.invalid) [结果](/synthetic/out.pdf) ![声音](/synthetic/voice.wav) `[/example](/synthetic/code.pdf)`', {
+    renderFile(parent, index, syntax) {
+      calls.push({ index, syntax });
+      if (syntax === 'link' && index === 0) return false;
+      const card = new Node('button'); card.textContent = '产物'; parent.append(card); return true;
+    },
+  });
+  assert.deepEqual(calls, [{ index: 0, syntax: 'link' }, { index: 1, syntax: 'link' }, { index: 0, syntax: 'image' }]);
+  assert.equal(all(node, 'button').length, 2); assert.ok(!node.textContent.includes('结果')); assert.match(node.textContent, /code.pdf/);
+});
+
+test('math, Mermaid and language fences expose only inert enhancement targets and preserve incomplete source', () => {
+  const node = render('$x^2$\n\n$$\nx+y\n$$\n\n```mermaid\ngraph TD; A-->B\n```\n\n```js\nconst x=1\n```');
+  const nodes = tag => all(node, tag);
+  assert.ok(nodes('span').some(n => Object.hasOwn(n.attrs, 'data-math')));
+  assert.ok(nodes('div').some(n => n.attrs['data-display'] === 'true'));
+  assert.ok(nodes('pre').some(n => Object.hasOwn(n.attrs, 'data-mermaid')));
+  assert.ok(nodes('code').some(n => n.className === 'language-js'));
+  assert.equal(render('$unfinished').textContent, '$unfinished');
+  assert.equal(all(node, 'script').length, 0);
+});
+
+test('an unfinished Mermaid fence stays literal until its closing fence arrives', () => {
+  const source = '```mermaid\ngraph TD; A-->B';
+  assert.equal(all(render(source), 'pre').some(node => Object.hasOwn(node.attrs, 'data-mermaid')), false);
+  assert.equal(all(render(source + '\n```'), 'pre').some(node => Object.hasOwn(node.attrs, 'data-mermaid')), true);
+});

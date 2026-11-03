@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.3.0
+
+[中文版 →](https://github.com/SpaceCoder-Kafka/codex-co2/blob/main/docs/release-notes/v0.3.0-zh.md)
+
+**New Features**
+
+1. **More artifact previews**: View assistant file outputs and attachments as audio, PDF, CSV/TSV, XLSX, Markdown, DOCX and PPTX, and download their original bytes. Office previews show common text, tables and embedded images with clear fallbacks for complex content.
+2. **Rich text rendering**: Read formulas, Mermaid diagrams and highlighted code with source-view controls and self-hosted preview resources.
+3. **Read-only activity cards**: Expand tool results, command output, file changes and plans supplied by Desktop IPC. Native approvals remain with the host; available states and results depend on Desktop's interface.
+4. **Desktop-style conversation layout**: Read black sender bubbles, expandable long messages and compact activity summaries. Completed work folds separately from final replies, and explicit disclosure choices survive live updates.
+
+**Bug Fixes**
+
+1. **Conversation completeness**: Restore user instructions explicitly delivered from another chat and local Desktop history overlays. Keep direct replies to mid-turn answers visible; prioritize change and plan cards within the snapshot budget and show when older activity rows are omitted. Large histories no longer exhaust preview entry bookkeeping and leave blank cards.
+2. **Native conversation presentation**: Read question replies and plan confirmations without protocol envelopes, retain messages sent during a run, and use one disclosure per turn. File links keep their labels and inline positions; change summaries merge by turn and use project-relative paths. Native timestamps and ChatGPT provenance appear when available.
+
 ## 0.2.0
 
 [中文版 →](https://github.com/SpaceCoder-Kafka/codex-co2/blob/main/docs/release-notes/v0.2.0-zh.md)

@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { publicSource } from './public-source.mjs';
+import { readWebAssets } from '../lib/web-assets.mjs';
 import { WINDOWS, fileInventory, peArchitecture, sha256 } from './windows-distribution.mjs';
 
 const app = path.resolve(process.argv[2] ?? 'dist/windows/CodexCo2');
@@ -41,9 +42,24 @@ const goNotices = JSON.parse(await fs.readFile(path.join(resources, 'Licenses/cl
 if (!goNotices.modules?.length || !Object.keys(goNotices.files ?? {}).length) throw new Error('Missing embedded Go module notices');
 for (const [name, digest] of Object.entries(goNotices.files))
   if (files[`resources/Licenses/cloudflared-modules/${name}`] !== digest) throw new Error(`Embedded Go notice digest mismatch: ${name}`);
+const generatedWebFiles = new Set();
+if (Object.hasOwn(manifest.source.files, 'lib/web-assets.mjs')) {
+  const publicDir = await fs.realpath(path.join(resources, 'service/public'));
+  const assets = await readWebAssets(publicDir, true);
+  const assetManifest = JSON.parse(await fs.readFile(path.join(publicDir, 'vendor/asset-manifest.json'), 'utf8'));
+  const required = ['/vendor/previews.mjs', '/vendor/office.worker.mjs', '/vendor/xlsx.worker.mjs', '/vendor/rich-render.js', '/vendor/pdf.worker.mjs', '/rich-render.html'];
+  if (required.some(url => !Object.hasOwn(assets, url)) || !/^[a-f0-9]{64}$/.test(assetManifest.sourceSHA256 ?? '')
+      || Object.keys(assetManifest.files).sort().join('\0') !== Object.keys(assets).sort().join('\0')) throw new Error('Incomplete preview resource manifest');
+  for (const [url, [file]] of Object.entries(assets)) {
+    if (path.relative(publicDir, file).split(path.sep).join('/') !== url.slice(1)) throw new Error('Preview resource URL/path mismatch');
+    generatedWebFiles.add('resources/service/public/' + url.slice(1));
+  }
+  generatedWebFiles.add('resources/service/public/vendor/asset-manifest.json');
+}
 for (const [relative, digest] of Object.entries(files).filter(([name]) => /^resources\/service\/(lib|owner|public)\//.test(name))) {
   const name = relative === 'resources/service/owner/app-icon.png' ? 'macos/AppIcon.png' : relative.slice('resources/service/'.length);
-  if (manifest.source.files[name] !== digest) throw new Error(`Unreviewed Windows service source: ${name}`);
+  if (Object.hasOwn(manifest.source.files, name)
+      ? manifest.source.files[name] !== digest : !generatedWebFiles.has(relative)) throw new Error(`Unreviewed Windows service source: ${name}`);
 }
 if (process.argv[3] && (await publicSource(path.resolve(process.argv[3]))).sha256 !== manifest.source.sha256) throw new Error('Bundle does not match public source');
 let nativeChecks = false;

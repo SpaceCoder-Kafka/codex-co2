@@ -206,12 +206,12 @@ stream_max_retries = 0
     }
   });
 
-  await t.test('other-thread events, tool output and metadata stay out of guest transport', async () => {
+  await t.test('other-thread events and metadata stay out; selected tool bodies require a detail request', async () => {
     // Exercise defensive filtering even if a future app-server broadcasts broadly.
     room.rpc.emit('notification', { method: 'item/started', params: { threadId: other.threadId, turnId: other.turnId,
       item: { id: 'foreign-item', type: 'agentMessage', text: 'SECRET_FOREIGN_EVENT' } } });
     room.rpc.emit('notification', { method: 'item/started', params: { threadId: selected.threadId, turnId: selected.turnId,
-      item: { id: 'tool-item', type: 'commandExecution', aggregatedOutput: 'SECRET_TOOL_OUTPUT', command: 'SECRET_COMMAND' } } });
+      item: { id: 'tool-item', type: 'commandExecution', aggregatedOutput: 'SECRET_TOOL_OUTPUT', command: 'Synthetic selected-thread command' } } });
     room.rpc.emit('notification', { method: 'item/started', params: { threadId: selected.threadId, turnId: selected.turnId,
       item: { id: 'text-with-metadata', type: 'agentMessage', text: 'Safe visible text', cwd: 'SECRET_METADATA_PATH', reasoning: 'SECRET_REASONING' } } });
     await until(() => guest.peer.messages.some(message => message.type === 'data' && message.payload.items?.some(item => item.text === 'Safe visible text')), 'sanitized live message');

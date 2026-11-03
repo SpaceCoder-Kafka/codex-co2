@@ -1,0 +1,46 @@
+{
+  "binary@0.3.0": {
+    "integrity": "sha512-D4H1y5KYwpJgK8wk1Cue5LLPgmwHKYSChkbspQg5JtVuR5ulGckxfR62H3AE9UDkdMC8yyXlqYihuz3Aqg2XZg==",
+    "packageSHA256": "355ec61b56448e3d9ad74b286fa07e1b18bcbf153f45223b1a4f68d86bec891f",
+    "file": "third-party/binary-0.3.0-NOTICE.txt",
+    "sha256": "4ca59aa8924b7e721e23535b413e17afb818f93a4fe927dbabd470910f879ffb",
+    "sources": [
+      { "url": "https://registry.npmjs.org/binary/0.3.0", "sha256": "3ac278ec8b39ec0fb9b697ed49553dc8d118fe64d41f3edec0a8147e28be527e" },
+      { "url": "https://spdx.org/licenses/MIT.txt", "sha256": "c3b1b78bc8bd3ea13aa4bc9778442d16560270afa235006d816e5e88cef24db4" }
+    ]
+  },
+  "chainsaw@0.1.0": {
+    "integrity": "sha512-75kWfWt6MEKNC8xYXIdRpDehRYY/tNSgwKaJq+dbbDcxORuVrrQ+SEHoWsniVn9XPYfP4gmdWIeDk/4YNp1rNQ==",
+    "packageSHA256": "51910ad64abca4eb8c2c23abb2f713ba5220db89ed89c9fd198d27241a5a70ea",
+    "file": "third-party/chainsaw-0.1.0-NOTICE.txt",
+    "sha256": "44c940982c049fc99b20ab4ec1e90cd5c05efb0cb859d86c50d13c20d1f6ff85",
+    "sources": [
+      { "url": "https://registry.npmjs.org/chainsaw/0.1.0", "sha256": "a5e18c055a9dd8ca21d45bffc9f147c9b172882c4face9a2133705f39542a15d" },
+      { "url": "https://spdx.org/licenses/MIT.txt", "sha256": "c3b1b78bc8bd3ea13aa4bc9778442d16560270afa235006d816e5e88cef24db4" }
+    ]
+  },
+  "buffers@0.1.1": {
+    "integrity": "sha512-9q/rDEGSb/Qsvv2qvzIzdluL5k7AaJOTrw23z9reQthrbF7is4CtlT0DXyO1oei2DCp4uojjzQ7igaSHp1kAEQ==",
+    "packageSHA256": "7091616d3b687b0de9dfbc6a1f8ab61e01742a3ec87f977bef64d1f299e231b9",
+    "file": "third-party/buffers-0.1.1-NOTICE.txt",
+    "sha256": "f2511de8f67fcff97c3a97b7be9834b8cc833d31650f629ab72d2d7d14ca90ba",
+    "sources": [
+      { "url": "https://registry.npmjs.org/buffers/0.1.1", "sha256": "e42a7c058587a50fa7d026e9a00c57d8d366167ae9a6e412aa9cc7cd9b517f91" },
+      { "url": "https://github.com/bitpay/node-buffers/commit/1b745ee35d33eb166e15ef1866073a07c6d7de87.patch", "sha256": "a5ea74bde46ac18bf65a0cc19dcce820f76065fc67fe58282588a5c9891a8e9a" },
+      { "url": "https://raw.githubusercontent.com/bitpay/node-buffers/1b745ee35d33eb166e15ef1866073a07c6d7de87/index.js", "sha256": "97801e296ba5f3c32242f647e1daac5917e300367fed7935ab1e62f40adb1b8a" },
+      { "url": "https://raw.githubusercontent.com/bitpay/node-buffers/1b745ee35d33eb166e15ef1866073a07c6d7de87/package.json", "sha256": "eb42a43d5b685e6de2f2f4a5e18a70255be72349def7eedf504b912dd908913e" },
+      { "url": "https://spdx.org/licenses/MIT.txt", "sha256": "c3b1b78bc8bd3ea13aa4bc9778442d16560270afa235006d816e5e88cef24db4" }
+    ],
+    "codeFile": "index.js",
+    "codeSHA256": "97801e296ba5f3c32242f647e1daac5917e300367fed7935ab1e62f40adb1b8a"
+  },
+  "saxes@5.0.1": {
+    "integrity": "sha512-5LBh1Tls8c9xgGjw3QrMwETmTMVk0oFgvrFSvWx62llR2hcEInrKNZ2GZCCuuy2lvWrdl5jhbpeqc5hRYKFOcw==",
+    "packageSHA256": "5730864bc76e7b0e2072c87756c8e73f56e0ca840337fecdedcd3e35e1e191c2",
+    "file": "third-party/saxes-5.0.1-LICENSE.txt",
+    "sha256": "0fac2374380621b22e6b50451057721a9c52935b02d16d106a9f04897f061d0e",
+    "sources": [
+      { "url": "https://raw.githubusercontent.com/lddubeau/saxes/v5.0.1/LICENSE", "sha256": "0fac2374380621b22e6b50451057721a9c52935b02d16d106a9f04897f061d0e" }
+    ]
+  }
+}

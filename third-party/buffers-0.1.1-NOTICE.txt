@@ -1,0 +1,51 @@
+buffers@0.1.1: reviewed supplemental license declaration
+
+Published author metadata (verbatim JSON): "James Halliday <mail@substack.net> (http://substack.net)"
+Published license metadata: (not present)
+Published package.json SHA-256: 7091616d3b687b0de9dfbc6a1f8ab61e01742a3ec87f977bef64d1f299e231b9
+Published tarball: https://registry.npmjs.org/buffers/-/buffers-0.1.1.tgz
+Published integrity: sha512-9q/rDEGSb/Qsvv2qvzIzdluL5k7AaJOTrw23z9reQthrbF7is4CtlT0DXyO1oei2DCp4uojjzQ7igaSHp1kAEQ==
+Registry metadata source: https://registry.npmjs.org/buffers/0.1.1
+Registry metadata SHA-256: e42a7c058587a50fa7d026e9a00c57d8d366167ae9a6e412aa9cc7cd9b517f91
+
+The published package omits a license field and a full license file. Original author James Halliday's upstream commit 1b745ee35d33eb166e15ef1866073a07c6d7de87 declares MIT/X11 for the same 0.1.1 source. The original repository is unavailable; this exact original commit is preserved in the BitPay fork. No later fork copyright is substituted.
+
+Original commit: https://github.com/bitpay/node-buffers/commit/1b745ee35d33eb166e15ef1866073a07c6d7de87.patch
+Original commit patch SHA-256: a5ea74bde46ac18bf65a0cc19dcce820f76065fc67fe58282588a5c9891a8e9a
+Upstream source file: https://raw.githubusercontent.com/bitpay/node-buffers/1b745ee35d33eb166e15ef1866073a07c6d7de87/index.js
+Upstream source SHA-256: 97801e296ba5f3c32242f647e1daac5917e300367fed7935ab1e62f40adb1b8a
+The installed index.js has exactly the same SHA-256.
+Upstream package.json source: https://raw.githubusercontent.com/bitpay/node-buffers/1b745ee35d33eb166e15ef1866073a07c6d7de87/package.json
+Upstream package.json SHA-256: eb42a43d5b685e6de2f2f4a5e18a70255be72349def7eedf504b912dd908913e
+
+Verbatim upstream package.json:
+{
+    "name" : "buffers",
+    "description" : "Treat a collection of Buffers as a single contiguous partially mutable Buffer.",
+    "version" : "0.1.1",
+    "repository" : "http://github.com/substack/node-buffers.git",
+    "author" : "James Halliday <mail@substack.net> (http://substack.net)",
+    "main" : "./index",
+    "scripts" : {
+        "test" : "expresso"
+    },
+    "engines" : {
+        "node" : ">=0.2.0"
+    },
+    "license" : "MIT/X11"
+}
+
+Standard MIT terms are reproduced below from SPDX as an unmodified license template, in addition to the exact upstream declaration. The template's <year> and <copyright holders> placeholders are not assertions about this package. The upstream declaration remains MIT/X11.
+Standard terms source: https://spdx.org/licenses/MIT.txt
+Standard terms SHA-256: c3b1b78bc8bd3ea13aa4bc9778442d16560270afa235006d816e5e88cef24db4
+
+--- SPDX MIT license template (not an upstream copyright notice) ---
+MIT License
+
+Copyright (c) <year> <copyright holders>
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.

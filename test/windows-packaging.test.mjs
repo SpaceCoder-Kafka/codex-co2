@@ -4,8 +4,8 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import { fileURLToPath } from 'node:url';
-import { execFileSync } from 'node:child_process';
-import { WINDOWS, fileInventory, peArchitecture, windowsAssetName } from '../scripts/windows-distribution.mjs';
+import { execFileSync, spawnSync } from 'node:child_process';
+import { WINDOWS, fileInventory, peArchitecture, sha256, windowsAssetName } from '../scripts/windows-distribution.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const dotnet = process.env.CO2_BUILD_DOTNET ?? 'dotnet';
@@ -44,6 +44,61 @@ test('Windows bundle inventory detects payload changes, private files and links'
       await assert.rejects(fileInventory(dir), /symlink/);
     }
   } finally { await fs.rm(dir, { recursive: true, force: true }); }
+});
+
+test('Windows static bundle checks accept listed preview outputs but reject tampering and unlisted files', { skip: process.platform === 'win32' }, async t => {
+  // Fake PE headers exercise the cross-platform static checker only. On
+  // Windows the checker also executes real native binaries.
+  const app = await fs.mkdtemp(path.join(os.tmpdir(), 'co2-preview-bundle-'));
+  t.after(() => fs.rm(app, { recursive: true, force: true }));
+  const put = async (name, bytes) => { const file = path.join(app, name); await fs.mkdir(path.dirname(file), { recursive: true }); await fs.writeFile(file, bytes); };
+  const pe = Buffer.alloc(128); pe.write('MZ'); pe.writeUInt32LE(64, 60); pe.write('PE\0\0', 64); pe.writeUInt16LE(0x8664, 68);
+  for (const name of ['CodexCo2.exe', 'resources/runtime/node.exe', 'resources/runtime/cloudflared.exe', 'WebView2Loader.dll']) await put(name, pe);
+  const sourceFiles = {};
+  for (const name of ['lib/web-assets.mjs', 'public/images.js', 'public/rich-render.html']) {
+    const bytes = 'synthetic source: ' + name; await put('resources/service/' + name, bytes); sourceFiles[name] = sha256(bytes);
+  }
+  const assets = {}, assetFiles = {};
+  for (const name of ['vendor/previews.mjs', 'vendor/office.worker.mjs', 'vendor/xlsx.worker.mjs', 'vendor/rich-render.js', 'vendor/pdf.worker.mjs', 'rich-render.html']) {
+    const bytes = name === 'rich-render.html' ? 'synthetic source: public/rich-render.html' : 'synthetic generated: ' + name;
+    await put('resources/service/public/' + name, bytes); assets['/' + name] = name; assetFiles['/' + name] = sha256(bytes);
+  }
+  const assetManifest = { version: 1, sourceSHA256: 'a'.repeat(64), assets, files: assetFiles };
+  const saveAssets = () => put('resources/service/public/vendor/asset-manifest.json', JSON.stringify(assetManifest)); await saveAssets();
+  for (const name of ['LICENSE', 'THIRD_PARTY_NOTICES.md', 'ASSET_PROVENANCE.md', 'npm-NOTICES.txt', 'Node-LICENSE', 'cloudflared-LICENSE', 'NSIS-LICENSE.txt', 'cloudflared-modules/Go-LICENSE']) await put('resources/Licenses/' + name, 'synthetic notice');
+  const nuget = {
+    'microsoft.web.webview2': { version: WINDOWS.webView2SDK, notices: ['LICENSE.txt', 'NOTICE.txt'] },
+    'microsoft.netcore.app.runtime.win-x64': { version: WINDOWS.dotnetRuntime, notices: ['LICENSE.TXT', 'THIRD-PARTY-NOTICES.TXT'] },
+    'microsoft.windowsdesktop.app.runtime.win-x64': { version: WINDOWS.dotnetRuntime, notices: ['LICENSE'] },
+  };
+  const nugetMetadata = {};
+  for (const [name, entry] of Object.entries(nuget)) {
+    nugetMetadata[name] = { version: entry.version, sha512: WINDOWS.nugetArchiveSHA512[name] };
+    for (const notice of entry.notices) await put(`resources/Licenses/${name}/${notice}`, 'synthetic NuGet notice');
+  }
+  await put('resources/Licenses/cloudflared-modules/index.json', JSON.stringify({ modules: ['synthetic module'], files: { 'Go-LICENSE': sha256('synthetic notice') } }));
+  const manifest = { platform: 'win32', architecture: 'x64', minimumWindowsBuild: WINDOWS.minimumBuild, runtimeMode: 'desktop-attach', signed: false,
+    updater: { automatic: false }, webView2: { runtimeBundled: false, sdk: WINDOWS.webView2SDK },
+    versions: { node: WINDOWS.nodeVersion, cloudflared: WINDOWS.cloudflaredVersion, dotnet: WINDOWS.dotnetRuntime },
+    dependencies: { nodeArchiveSHA256: 'b'.repeat(64), cloudflaredSHA256: WINDOWS.cloudflaredSHA256, nuget: nugetMetadata },
+    source: { files: sourceFiles, sha256: sha256(JSON.stringify(sourceFiles)) } };
+  const saveBundle = async () => { manifest.files = await fileInventory(app); delete manifest.files['resources/manifest.json']; await put('resources/manifest.json', JSON.stringify(manifest)); };
+  const check = () => spawnSync(process.execPath, [path.join(root, 'scripts/check-windows-bundle.mjs'), app], { encoding: 'utf8', timeout: 10000 });
+  await saveBundle(); const accepted = check(); assert.equal(accepted.status, 0, accepted.stderr);
+
+  // Recompute the outer inventory to prove the generated-resource and raw
+  // source checks still reject changes independently of the outer digests.
+  await put('resources/service/public/vendor/previews.mjs', 'tampered'); await saveBundle();
+  assert.match(check().stderr, /Preview resource digest mismatch/);
+  await put('resources/service/public/vendor/previews.mjs', 'synthetic generated: vendor/previews.mjs');
+  await put('resources/service/public/vendor/unlisted.mjs', 'not reviewed'); await saveBundle();
+  assert.match(check().stderr, /Unreviewed Windows service source/);
+  await fs.rm(path.join(app, 'resources/service/public/vendor/unlisted.mjs'));
+  await put('resources/service/public/images.js', 'modified raw source'); await saveBundle();
+  assert.match(check().stderr, /Unreviewed Windows service source/);
+  await put('resources/service/public/images.js', 'synthetic source: public/images.js');
+  delete assetManifest.assets['/vendor/xlsx.worker.mjs']; delete assetManifest.files['/vendor/xlsx.worker.mjs']; await saveAssets(); await saveBundle();
+  assert.match(check().stderr, /Incomplete preview resource manifest/);
 });
 
 test('production Windows native bridge policies execute with synthetic URLs and message payloads', { skip: !dotnetAvailable, timeout: 120000 }, async () => {

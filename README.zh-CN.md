@@ -15,7 +15,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/SpaceCoder-Kafka/codex-co2/releases/tag/v0.2.0"><img src="https://img.shields.io/badge/release-v0.2.0-2563eb" alt="版本 v0.2.0"></a>
+  <a href="CHANGELOG.md#030"><img src="https://img.shields.io/badge/source-v0.3.0-2563eb" alt="源码版本 v0.3.0"></a>
   <img src="https://img.shields.io/badge/host-macOS%2014%2B%20%C2%B7%20Universal-555555" alt="分享者：macOS 14+，Universal">
   <img src="https://img.shields.io/badge/guest-browser-2563eb" alt="协作者：浏览器">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-22c55e" alt="许可：MIT"></a>
@@ -70,7 +70,7 @@ https://github.com/user-attachments/assets/b1c2f544-3684-432e-9e03-f32ac15b9370
 
 ## 安装 Codex Co²
 
-**0.1.0** 以原 Build 17 为功能基线；当前 **0.2.0** 包含后续本地改进，新增跨平台安装包、邀请恢复与 macOS 后台服务。[更新日志](docs/release-notes/v0.2.0-zh.md)介绍各版本的主要变化。
+当前源码版本为 **0.3.0**，新增常见产物预览、富文本、只读活动卡片，并补齐会话展示。详见 [0.3.0 更新说明](docs/release-notes/v0.3.0-zh.md)。0.3.0 发布前，下方下载入口仍指向已发布的 **0.2.0**。
 
 分享者接入**已经运行的官方 Codex Desktop**，继续使用原有 Agent、登录与工具审批设置。协作者使用支持 JavaScript 和 WebSocket 的浏览器。公网共享需要访问生成的公网地址；显式内网共享需要访问所选私有网络。
 
@@ -168,7 +168,9 @@ macOS 恢复记录开启时，内网恢复元数据与凭据哈希会保存在�
 
 ## 共享前需要知道
 
-- 分享包括所选会话投影出的历史与后续消息，不只限于生成邀请之后。长历史可能截断；受支持的用户图片、MP4 和文本附件也可查看。回复中的 Markdown 图片可在原位置显示并点击放大：绝对路径的本地 PNG、JPEG、WebP 图片（每张不超过 8 MiB）通过已准入的房间连接传输；HTTP(S) 图片由访客浏览器直接加载，不发送来源页面地址。不能完整展示所有 Desktop 内容。
+- 分享包括所选会话投影出的历史与后续消息，不只限于生成邀请之后。长历史会按容量截断。源码新增只读工具结果、命令状态与输出、Diff 和计划卡片。Desktop 不保证逐字终端输出及执行中的 Diff 实时广播，网页展示接口提供的更新和最终结果。
+- 源码支持预览并下载用户附件和助手回复中明确链接的产物：MP4；MP3、WAV、M4A、OGG、FLAC 音频；PDF；CSV/TSV、XLSX 表格；Markdown、DOCX、PPTX 及常见文本和代码文件。Markdown 支持公式、Mermaid 和代码高亮。Office 优先展示可读文字、表格、图片和常见版式，复杂内容显示降级提示，并提供原件下载。预览只读；图片每张最大 8 MiB，其他原件最大 32 MiB，文本及 CSV/TSV 预览最大 1 MiB。媒体播放受浏览器编码支持限制。本轮源码变更不代表已发布新的安装包。
+- 回复中的 Markdown 图片在原位置显示并可点击放大：绝对路径的本地 PNG、JPEG、WebP 图片通过已准入的房间连接传输；HTTP(S) 图片由访客浏览器直接加载，不发送来源页面地址。正文中的普通路径不授予文件读取权限，网页也不能完整复用所有 Desktop 内容和插件交互。
 - 协作者消息进入现有 Agent，沿用会话的工具、沙箱、权限及计费或额度。**共享不会新建执行沙箱**，请只邀请可信任的人。
 - 只有本机分享者能改变消息策略；只影响新消息，已有待审批消息仍需决定。原生工具审批继续在官方 Desktop 处理，消息审批不能替代工具审批。
 - 本机管理页只查询会话 ID、标题、更新时间和项目路径，目录不发给中继或协作者；所选正文经 Desktop IPC 读取，不复制默认认证或会话文件。

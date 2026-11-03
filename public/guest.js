@@ -54,7 +54,18 @@ let receivedSnapshot = false;
 let policyKnown = false;
 let requireApproval = true; // Until the host reports its policy (compatible with older hosts).
 let assistantTexts = new Map();
-const images = window.createThreadImages?.({ send, canRead: () => canPropose() });
+let contentCapabilities = [], markdownDisposers = [];
+const messageFolds = new Map(), workFolds = new Map();
+let fitMessageFolds = [], presentationSerial = 0;
+const images = window.createThreadImages?.({ send, canRead: () => canPropose(), capabilities: () => contentCapabilities });
+function clearRichText() { for (const dispose of markdownDisposers) dispose?.(); markdownDisposers = []; fitMessageFolds = []; }
+function enhanceRichText(node) {
+  if (!node.querySelector?.('[data-math], [data-mermaid], code[class]')) return;
+  let live = true, cleanup; markdownDisposers.push(() => { live = false; cleanup?.(); });
+  const load = window.co2PreviewLoader || (() => import('/vendor/previews.mjs'));
+  Promise.resolve().then(load).then(api => live && api.enhanceMarkdown(node, { isCurrent: () => live && canPropose() }))
+    .then(result => { cleanup = typeof result === 'function' ? result : result?.dispose; if (!live) cleanup?.(); }).catch(() => {});
+}
 const taskNotifications = window.createTaskNotifications?.({
   canReceive: () => canPropose(),
   onView: () => { closeCollaboration(false); viewLatestReply(); ui.conversation.focus(); },
@@ -283,7 +294,7 @@ function disconnect(message) {
   connecting = false;
   admitted = false;
   hostOnline = false;
-  images?.pause();
+  images?.pause(); clearRichText();
   ui['agent-status'].hidden = true;
   ui['sync-label'].textContent = receivedSnapshot ? '已暂停 · 显示上次同步内容' : '尚未同步';
   setStatus('连接已断开', 'warning');
@@ -307,8 +318,9 @@ function setTerminal(message, label, { preserveIdentity = false } = {}) {
   roomId = '';
   detachSocket();
   ui.messages.replaceChildren();
-  images?.clear();
+  images?.clear(); clearRichText(); contentCapabilities = [];
   assistantTexts.clear();
+  messageFolds.clear(); workFolds.clear();
   ui['new-replies-button'].hidden = true;
   ui['empty-state'].hidden = false;
   ui['thread-title'].textContent = '会话访问已结束';
@@ -336,13 +348,228 @@ function useRecoveredInvitation(next, request) {
   lastRevision = null; receivedSnapshot = false; policyKnown = false; requireApproval = true;
   reconnectAttempts = 0;
   // A new grant starts a fresh conversation connection, never a replay queue.
-  proposals.clear(); renderProposals(); ui.messages.replaceChildren(); images?.clear(); assistantTexts.clear();
+  proposals.clear(); renderProposals(); ui.messages.replaceChildren(); images?.clear(); clearRichText(); contentCapabilities = []; assistantTexts.clear(); messageFolds.clear(); workFolds.clear();
   ui['proposal-text'].value = ''; saveDraft(); resizeComposer();
   ui['proposal-feedback'].textContent = ''; ui['history-note'].hidden = true; ui['new-replies-button'].hidden = true;
   ui['empty-state'].hidden = false; ui['thread-title'].textContent = '共享会话';
   ui['display-name'].value = displayName; ui['recovery-input'].value = '';
   emptyState('邀请已更新', '正在连接，完成准入和同步后即可协作。');
   connect();
+}
+
+function userMessageBody(text, item) {
+  let body;
+  if (item.presentation?.kind === 'question_reply' && Array.isArray(item.presentation.replies)) {
+    body = document.createElement('div'); body.className = 'message-body question-replies';
+    for (const reply of item.presentation.replies.slice(0, 64)) {
+      if (typeof reply?.question !== 'string' || typeof reply?.answer !== 'string') continue;
+      const pair = document.createElement('div'); pair.className = 'question-reply';
+      const question = document.createElement('div'); question.className = 'question-reply-question';
+      question.textContent = reply.question; question.title = reply.question;
+      const answer = document.createElement('div'); answer.className = 'question-reply-answer'; answer.textContent = reply.answer;
+      pair.append(question, answer); body.append(pair);
+    }
+    if (!body.children.length) body = null;
+  }
+  if (!body) {
+    body = document.createElement('div'); body.className = 'message-body';
+    if (window.renderMarkdown) {
+      body.className += ' markdown';
+      // Structured attachments already appear above the bubble. Suppress only
+      // duplicate Markdown placeholders; user text never grants a file read.
+      window.renderMarkdown(body, item.text, { renderImage: (_parent, index) => item.attachmentImageIndices?.includes(index) === true });
+    } else body.textContent = item.text;
+  }
+  body.id = `message-body-${++presentationSerial}`;
+  text.append(body);
+  if (item.text.length < 300 && item.text.split('\n').length <= 20) return;
+  const ellipsis = document.createElement('div'); ellipsis.className = 'message-ellipsis'; ellipsis.textContent = '…';
+  const toggle = document.createElement('button'); toggle.type = 'button'; toggle.className = 'message-fold-toggle';
+  toggle.setAttribute('aria-controls', body.id);
+  text.append(ellipsis, toggle);
+  let collapsible = false;
+  const draw = () => {
+    const expanded = messageFolds.get(item.id) === true;
+    text.dataset.collapsed = String(collapsible && !expanded);
+    ellipsis.hidden = !collapsible || expanded; toggle.hidden = !collapsible;
+    toggle.textContent = expanded ? '收起 ⌃' : '显示更多 ⌄';
+    toggle.setAttribute('aria-expanded', String(expanded || !collapsible));
+  };
+  const fit = () => {
+    const lineHeight = parseFloat(window.getComputedStyle?.(body).lineHeight) || 27.2;
+    let height = lineHeight * 20;
+    collapsible = typeof body.getBoundingClientRect === 'function'
+      ? body.scrollHeight > height + 1 : item.text.split('\n').length > 20 || item.text.length > 1600;
+    if (collapsible && body.getBoundingClientRect) {
+      const top = body.getBoundingClientRect().top;
+      // Keep a code block crossing the fold boundary intact.
+      for (const code of body.querySelectorAll('pre')) {
+        const box = code.getBoundingClientRect(), start = box.top - top, end = box.bottom - top;
+        if (start < height && end > height) { height = end; break; }
+      }
+      // End at a complete visible line rather than slicing a glyph or list row.
+      if (document.createTreeWalker && document.createRange) {
+        const walker = document.createTreeWalker(body, 4), range = document.createRange();
+        let node, bottom = 0, count = 0;
+        while ((node = walker.nextNode()) && count++ < 1000) {
+          range.selectNodeContents(node);
+          for (const box of range.getClientRects()) if (box.height && box.bottom - top <= height + .5) bottom = Math.max(bottom, box.bottom - top);
+        }
+        if (bottom > 0) height = Math.ceil(bottom);
+      }
+    }
+    body.style.setProperty('--message-fold-height', `${height}px`); draw();
+  };
+  toggle.addEventListener('click', () => { messageFolds.set(item.id, messageFolds.get(item.id) !== true); draw(); });
+  fitMessageFolds.push(fit); fit();
+}
+
+function planExecutionPreview(item, parent) {
+  const plan = item.presentation?.kind === 'plan_execution' && item.presentation.plan;
+  if (typeof plan !== 'string' || !plan.trim()) return;
+  const card = document.createElement('section'); card.className = 'plan-execution-card';
+  card.setAttribute('aria-label', '执行的计划');
+  const caption = document.createElement('div'); caption.className = 'plan-card-caption'; caption.textContent = '☼  计划';
+  const body = document.createElement('div'); body.className = 'plan-card-body markdown'; body.id = `plan-body-${++presentationSerial}`;
+  if (window.renderMarkdown) window.renderMarkdown(body, plan); else body.textContent = plan;
+  const toggle = document.createElement('button'); toggle.type = 'button'; toggle.className = 'plan-card-toggle';
+  toggle.setAttribute('aria-controls', body.id);
+  const key = `plan:${item.id}`;
+  const draw = () => { const expanded = messageFolds.get(key) === true; card.dataset.expanded = String(expanded);
+    toggle.setAttribute('aria-expanded', String(expanded)); toggle.textContent = expanded ? '收起计划 ⌃' : '展开计划 ⌄'; };
+  toggle.addEventListener('click', () => { messageFolds.set(key, messageFolds.get(key) !== true); draw(); });
+  draw(); card.append(caption, body, toggle); parent.append(card);
+}
+
+function messageTime(item) {
+  return Number.isFinite(item.createdAt) && item.createdAt >= 946684800000 && item.createdAt <= Date.now() + 86400000
+    ? new Date(item.createdAt) : null;
+}
+
+function appendDaySeparator(item, parent, previousDay) {
+  const time = messageTime(item);
+  if (!time) return previousDay;
+  const day = `${time.getFullYear()}-${time.getMonth()}-${time.getDate()}`;
+  if (day === previousDay) return day;
+  const today = new Date(), yesterday = new Date(); yesterday.setDate(today.getDate() - 1);
+  const sameDay = value => value.getFullYear() === time.getFullYear() && value.getMonth() === time.getMonth() && value.getDate() === time.getDate();
+  const date = sameDay(today) ? '今天' : sameDay(yesterday) ? '昨天' : `${time.getFullYear()}/${time.getMonth() + 1}/${time.getDate()}`;
+  const label = document.createElement('div'); label.className = 'conversation-day';
+  label.textContent = `${date} ${String(time.getHours()).padStart(2, '0')}:${String(time.getMinutes()).padStart(2, '0')}`;
+  parent.append(label); return day;
+}
+
+function renderMessage(item, parent) {
+  const article = document.createElement('article');
+  article.dataset.messageId = item.id;
+  if (item.role === 'activity') {
+    article.className = 'message message-activity'; article.dataset.kind = item.kind;
+    if (contentCapabilities.includes('activity-details')) images?.render([{ id: item.detailId, name: item.text, kind: 'activity', activityKind: item.kind, status: item.status, summary: item.summary, preview: item.preview }], article);
+    parent.append(article); return;
+  }
+  const author = item.author;
+  if (item.role === 'user') planExecutionPreview(item, parent);
+  const kind = item.role === 'user' && ['host', 'guest'].includes(author?.kind) ? author.kind : 'unknown';
+  article.className = `message message-${item.role} message-${kind}`;
+  if (item.phase === 'commentary' || item.phase === 'final_answer') article.dataset.phase = item.phase;
+  const label = document.createElement('div'); label.className = 'message-author';
+  if (item.role === 'user' && kind === 'unknown') label.className += ' message-author-unknown';
+  const name = typeof author?.name === 'string' ? [...author.name].slice(0, 40).join('') : '';
+  label.textContent = item.role === 'assistant' ? 'Codex'
+    : name && kind !== 'unknown' ? `${name} · ${kind === 'host' ? '分享者' : '协作者'}`
+    : name === '作者待确认' ? name : '历史消息 · 作者未知';
+  const text = document.createElement('div'); text.className = 'message-text';
+  if (item.role === 'user') userMessageBody(text, item);
+  else if (window.renderMarkdown) {
+    text.className += ' markdown';
+    window.renderMarkdown(text, item.text, { renderImage(parent, index) {
+      const ref = item.images?.find(image => image.syntax !== 'link' && image.index === index);
+      if (!images || !ref) return false;
+      return images.render([ref], parent, { inline: true }) > 0;
+    }, renderFile(parent, index, syntax) {
+      const image = syntax === 'link' && item.images?.find(image => image.syntax === 'link' && image.linkIndex === index);
+      if (image) return !!images?.render([image], parent, { inline: true, link: true });
+      const ref = item.files?.find(file => file.index === index && file.syntax === syntax);
+      return !!(images && ref && images.render([ref], parent, { inline: true }));
+    } });
+    enhanceRichText(text);
+  } else text.textContent = item.text;
+  article.append(label, text);
+  if (item.role === 'user' && ['chatgpt', 'cross_chat'].includes(item.source?.kind)) {
+    const source = document.createElement('div'); source.className = 'message-source';
+    source.textContent = item.source.kind === 'chatgpt' ? '由 ChatGPT 从另一个聊天发送' : '从另一个聊天发送'; article.append(source);
+  }
+  const time = item.role === 'user' && messageTime(item);
+  if (time) { const timestamp = document.createElement('div'); timestamp.className = 'message-timestamp';
+    timestamp.textContent = `${String(time.getHours()).padStart(2, '0')}:${String(time.getMinutes()).padStart(2, '0')}`; article.append(timestamp); }
+  images?.render([...(item.role === 'assistant' && window.renderMarkdown ? [] : item.images ?? []), ...(item.files ?? []).filter(file => item.role !== 'assistant' || !window.renderMarkdown || file.syntax === undefined)], article);
+  parent.append(article);
+}
+
+function renderTranscript(items, parent) {
+  const turnMetadata = new Map(), seenWork = new Set(), pendingReplies = new Set(), responses = new Set();
+  for (const item of items) {
+    if (!/^[a-f0-9]{64}$/.test(item.turnId ?? '')) continue;
+    const metadata = turnMetadata.get(item.turnId) ?? {};
+    if (item.turnStatus) metadata.turnStatus = item.turnStatus;
+    if (Number.isFinite(item.turnDurationMs)) metadata.turnDurationMs = item.turnDurationMs;
+    turnMetadata.set(item.turnId, metadata);
+    if (item.role === 'user' && (seenWork.has(item.turnId) || item.presentation?.kind === 'question_reply'
+        || ['chatgpt', 'cross_chat'].includes(item.source?.kind))) pendingReplies.add(item.turnId);
+    if (item.role === 'assistant') {
+      // A response to an explicit mid-turn answer belongs beside that answer,
+      // even when the earlier execution history was collapsed.
+      if (pendingReplies.delete(item.turnId)) responses.add(item);
+      seenWork.add(item.turnId);
+    } else if (item.role === 'activity') seenWork.add(item.turnId);
+  }
+  const foldable = item => /^[a-f0-9]{64}$/.test(item.turnId ?? '') && (item.role === 'activity' && !['diff', 'plan'].includes(item.kind)
+    || item.role === 'assistant' && item.phase === 'commentary' && !responses.has(item) && !item.images?.length && !item.files?.length);
+  const groups = new Map();
+  for (const item of items) if (foldable(item)) {
+    let group = groups.get(item.turnId);
+    if (!group) { group = { items: [], segments: [], toggle: null }; groups.set(item.turnId, group); }
+    group.items.push(item);
+  }
+  let previousDay = null;
+  for (let index = 0; index < items.length;) {
+    const first = items[index];
+    previousDay = appendDaySeparator(first, parent, previousDay);
+    if (!foldable(first)) { renderMessage(first, parent); index++; continue; }
+    const group = groups.get(first.turnId), key = first.turnId;
+    const segment = [];
+    while (index < items.length && items[index].turnId === key && foldable(items[index])) segment.push(items[index++]);
+    const body = document.createElement('div'); body.className = 'work-content'; body.id = `work-content-${++presentationSerial}`;
+    group.segments.push({ body, items: segment, rendered: false });
+    if (!group.toggle) {
+      const metadata = turnMetadata.get(key) ?? {};
+      const running = metadata.turnStatus === 'running';
+      group.expanded = workFolds.has(key) ? workFolds.get(key) : running;
+      const section = document.createElement('section'); section.className = 'work-group'; section.dataset.running = String(running);
+      const toggle = document.createElement('button'); toggle.type = 'button'; toggle.className = 'work-summary'; group.toggle = toggle;
+      const duration = Number.isFinite(metadata.turnDurationMs) && metadata.turnDurationMs >= 0 ? metadata.turnDurationMs : undefined;
+      const seconds = duration === undefined ? null : Math.floor(duration / 1000);
+      const time = seconds === null ? '' : seconds >= 60 ? `${Math.floor(seconds / 60)}m ${seconds % 60}s` : `${seconds}s`;
+      toggle.textContent = running ? '活动' : time ? `用时 ${time}` : '执行过程';
+      if (!running && metadata.turnStatus === 'failed') toggle.textContent += ' · 失败';
+      else if (!running && metadata.turnStatus === 'interrupted') toggle.textContent += ' · 已中断';
+      const chevron = document.createElement('span'); chevron.className = 'work-chevron'; chevron.textContent = '›'; chevron.setAttribute('aria-hidden', 'true'); toggle.append(chevron);
+      group.draw = () => {
+        toggle.setAttribute('aria-expanded', String(!!group.expanded));
+        toggle.setAttribute('aria-controls', group.segments.map(part => part.body.id).join(' '));
+        for (const part of group.segments) {
+          part.body.hidden = !group.expanded;
+          if (group.expanded && !part.rendered) { part.rendered = true; for (const item of part.items) renderMessage(item, part.body); }
+        }
+      };
+      toggle.addEventListener('click', () => { group.expanded = !group.expanded; workFolds.set(key, group.expanded); group.draw(); images?.mounted(); });
+      section.append(toggle, body); parent.append(section);
+    } else { body.className += ' work-continuation'; parent.append(body); }
+    group.draw();
+  }
+  for (const key of workFolds.keys()) if (!groups.has(key)) workFolds.delete(key);
+  const messageIds = new Set(items.filter(item => item.role === 'user').map(item => item.id));
+  for (const id of messageFolds.keys()) if (!messageIds.has(id.startsWith('plan:') ? id.slice(5) : id)) messageFolds.delete(id);
 }
 
 function renderSnapshot(payload) {
@@ -352,46 +579,25 @@ function renderSnapshot(payload) {
     if (lastRevision !== null && payload.revision < lastRevision) return;
     lastRevision = payload.revision;
   }
+  clearRichText();
+  contentCapabilities = Array.isArray(payload.capabilities) ? payload.capabilities.filter(c => ['file-original', 'activity-details'].includes(c)) : [];
   const nearBottom = nearConversationBottom();
   const previousScrollTop = ui.conversation.scrollTop;
   const firstSnapshot = !receivedSnapshot;
-  const allItems = payload.items.filter((item) => item && ['user', 'assistant'].includes(item.role)
-    && typeof item.text === 'string');
+  const allItems = payload.items.filter((item) => item && ['user', 'assistant', 'activity'].includes(item.role)
+    && typeof item.text === 'string' && (item.role !== 'activity' || contentCapabilities.includes('activity-details')));
   const items = allItems.slice(-500);
   hostOnline = payload.status !== 'offline';
-  images?.retain(new Set(items.flatMap(item => [...(item.images ?? []), ...(item.files ?? [])].map(file => file.id))));
+  images?.retain(new Set(items.flatMap(item => [...(item.images ?? []), ...(item.files ?? []), ...(item.role === 'activity' ? [{ id: item.detailId }] : [])].map(file => file.id))));
   const nextAssistantTexts = new Map(items.filter(item => item.role === 'assistant')
     .map(item => [item.id, item.text]));
   const hasNewReply = !firstSnapshot && [...nextAssistantTexts].some(([id, text]) =>
     text.trim() && assistantTexts.get(id) !== text);
   assistantTexts = nextAssistantTexts;
   const content = document.createDocumentFragment();
-  for (const item of items) {
-    const article = document.createElement('article');
-    const author = item.author;
-    const kind = item.role === 'user' && ['host', 'guest'].includes(author?.kind) ? author.kind : 'unknown';
-    article.className = `message message-${item.role} message-${kind}`;
-    const label = document.createElement('div');
-    label.className = 'message-author';
-    const name = typeof author?.name === 'string' ? [...author.name].slice(0, 40).join('') : '';
-    label.textContent = item.role === 'assistant' ? 'Codex'
-      : name && kind !== 'unknown' ? `${name} · ${kind === 'host' ? '分享者' : '协作者'}`
-      : name === '作者待确认' ? name : '历史消息 · 作者未知';
-    const text = document.createElement('div');
-    text.className = 'message-text';
-    if (item.role === 'assistant' && window.renderMarkdown) {
-      text.className += ' markdown';
-      window.renderMarkdown(text, item.text, { renderImage(parent, index) {
-        const ref = item.images?.find(image => image.index === index);
-        if (!images || !ref) return false;
-        return images.render([ref], parent, { inline: true }) > 0;
-      } });
-    } else text.textContent = item.text;
-    article.append(label, text);
-    images?.render([...(item.role === 'assistant' && window.renderMarkdown ? [] : item.images ?? []), ...(item.files ?? [])], article);
-    content.append(article);
-  }
+  renderTranscript(items, content);
   ui.messages.replaceChildren(content);
+  for (const fit of fitMessageFolds) fit();
   images?.mounted();
   ui['empty-state'].hidden = items.length > 0;
   emptyState('已加入，等待第一条消息', '分享者的对话内容会同步到这里。你也可以先提交一条建议。');
@@ -400,7 +606,9 @@ function renderSnapshot(payload) {
   ui['history-note'].hidden = allItems.length <= 500 && payload.historyTruncated !== true;
   ui['history-note'].textContent = allItems.length > 500
     ? '当前展示最近 500 条文字消息，较早内容未包含在此视图中。'
-    : '当前仅展示最近的共享文字，较早或过长的内容可能已截断。';
+    : Number.isSafeInteger(payload.omittedActivities) && payload.omittedActivities > 0
+      ? `为优先展示聊天正文，${payload.omittedActivities} 条较早活动未包含在当前视图中。`
+      : '当前仅展示最近的共享文字，较早或过长的内容可能已截断。';
   receivedSnapshot = true;
   hostOnline = payload.status !== 'offline';
   ui['agent-status'].hidden = false;
@@ -535,7 +743,7 @@ function handleMessage(message) {
     case 'offline':
       taskNotifications?.reset();
       hostOnline = false;
-      images?.pause();
+      images?.pause(); clearRichText();
       setStatus('分享者离线', 'warning');
       notice('分享者当前离线，协作已暂停。建议不会在离线时发送或自动重发。', 'warning');
       ui['agent-status'].textContent = '分享者离线';
@@ -583,7 +791,7 @@ function handleMessage(message) {
         ui['recovery-note'].textContent = `身份有效至 ${new Date(payload.expiresAt).toLocaleString()}。`;
         refreshCollaboration();
       }
-      if (['image-chunk', 'image-unavailable', 'file-chunk', 'file-unavailable'].includes(payload.type)) images?.receive(payload);
+      if (['image-chunk', 'image-unavailable', 'file-chunk', 'file-unavailable', 'activity-chunk', 'activity-unavailable'].includes(payload.type)) images?.receive(payload);
       if (payload.type === 'snapshot') renderSnapshot(payload);
       if (payload.type === 'message-policy' && typeof payload.requireApproval === 'boolean') {
         requireApproval = payload.requireApproval;
@@ -611,7 +819,7 @@ function connect() {
   taskNotifications?.reset();
   cancelReconnect();
   detachSocket();
-  images?.clear();
+  images?.clear(); clearRichText(); contentCapabilities = [];
   admitted = false;
   hostOnline = false;
   connecting = true;
@@ -853,7 +1061,7 @@ if (invitationRecovery?.hasRequest) {
 }
 updateControls();
 resizeComposer();
-window.addEventListener('resize', resizeComposer);
+window.addEventListener('resize', () => { resizeComposer(); for (const fit of fitMessageFolds) fit(); });
 if (validInvitation && savedVisitor && displayName && !invitationRecovery?.hasRequest) connect();
 invitationRecovery?.start();
 
@@ -863,6 +1071,7 @@ if (window.visualViewport) {
     document.documentElement.style.setProperty('--viewport-height', `${window.visualViewport.height}px`);
     document.documentElement.style.setProperty('--viewport-top', `${window.visualViewport.offsetTop}px`);
     resizeComposer();
+    for (const fit of fitMessageFolds) fit();
   };
   window.visualViewport.addEventListener('resize', resizeViewport);
   window.visualViewport.addEventListener('scroll', resizeViewport);
