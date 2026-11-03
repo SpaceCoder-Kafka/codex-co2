@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.4.0
+
+[中文版 →](https://github.com/SpaceCoder-Kafka/codex-co2/blob/main/docs/release-notes/v0.4.0-zh.md)
+
+**New Features**
+
+1. **Guest file uploads**: Select, paste or drop files and send attachment-only messages through the existing admission and message-approval flow. Upload up to 8 files per message, 32 MiB per file and 64 MiB total through acknowledged chunks and private host storage. Images use native image input; other files use Desktop attachment references.
+2. **Desktop-style attachment composer**: Browse attachments in a horizontal strip above the text input. Supported images, videos, documents and text show local previews; other files show a type icon and filename. Removing, sending or disconnecting releases preview resources.
+3. **Document cards and legacy Office downloads**: Show common document attachments and standalone generated documents as compact file cards. Download original DOC, XLS and PPT files with a clear notice when browser preview is unavailable.
+
+**Bug Fixes**
+
+1. **Duplicate image attachments**: Hide a redundant file card when the same structured image is displayed. Image zoom and download remain available; unavailable images retain an original-file fallback. Video cards keep their existing behavior.
+2. **File presentation**: Keep filenames, format badges and link labels on document cards while preserving inline links in ordinary prose. A display label or matching filename never grants file access or suppresses an unrelated attachment.
+
+Audio understanding depends on Desktop and model support. Remote/cloud execution without host-file transfer remains unavailable. Native Desktop acceptance is still pending; synthetic transport and browser checks do not establish full file-type parity.
+
 ## 0.3.0
 
 [中文版 →](https://github.com/SpaceCoder-Kafka/codex-co2/blob/main/docs/release-notes/v0.3.0-zh.md)

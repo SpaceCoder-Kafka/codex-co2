@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { webcrypto } from 'node:crypto';
+import { createHash, webcrypto } from 'node:crypto';
 import fs from 'node:fs';
 import { test } from 'node:test';
 import vm from 'node:vm';
@@ -179,6 +179,89 @@ function offerInviteRecovery(page, reason = 'expired') {
   socket.receive({ type: 'recovery-status', status: 'recoverable', reason, recoveryExpiresAt: Date.now() + 7 * 86400000 });
   return socket;
 }
+
+function enableUploads(socket) {
+  socket.receive({ type: 'data', payload: { type: 'upload-policy', enabled: true, maxFileBytes: 32*1024*1024, maxAttachments: 8, chunkBytes: 30*1024 } });
+}
+function syntheticFile(name, data = 'synthetic file') { const file = new Blob([data]); file.name = name; return file; }
+async function finishBrowserUploads(page, socket) {
+  const seen = new Set(), indices = new Map();
+  for (let i=0; i<100; i++) {
+    await new Promise(resolve => setImmediate(resolve));
+    for (const message of socket.sent.filter(m => m.type.startsWith('upload-') && !seen.has(m))) {
+      seen.add(message);
+      if (message.type === 'upload-cancel') continue;
+      let index = indices.get(message.uploadId) ?? 0;
+      if (message.type === 'upload-chunk') index++;
+      indices.set(message.uploadId, index);
+      socket.receive({ type: 'data', payload: { type: 'upload-status', uploadId: message.uploadId, status: message.type === 'upload-finish' ? 'ready' : 'uploading', index } });
+    }
+    if (page.elements['compose-attachments'].children.every(row => row.textContent.includes('已上传'))) return;
+  }
+  throw new Error('Browser upload did not complete');
+}
+
+test('file picker uploads in acknowledged chunks, enables file-only input and submits opaque IDs exactly once', async () => {
+  const page = browser(), socket = page.join(); snapshot(socket, 1, [], 'idle');
+  assert.equal(page.elements['attach-button'].disabled, true); enableUploads(socket); assert.equal(page.elements['attach-button'].disabled, false);
+  page.elements['attachment-input'].files = [syntheticFile('<img>.txt', 'x'.repeat(31*1024)), syntheticFile('empty.txt', '')];
+  page.elements['attachment-input'].trigger('change'); assert.equal(page.elements['send-button'].disabled, true);
+  await finishBrowserUploads(page, socket);
+  assert.equal(page.elements['send-button'].disabled, false);
+  assert.equal(socket.sent.filter(m => m.type === 'upload-chunk').length, 2);
+  assert.equal(page.elements['compose-attachments'].children.length, 2);
+  page.elements['proposal-form'].trigger('submit');
+  const proposal = socket.sent.find(m => m.type === 'proposal'); assert.equal(proposal.text, ''); assert.equal(proposal.attachmentIds.length, 2);
+  assert.ok(proposal.attachmentIds.every(id => /^[a-f0-9-]{36}$/.test(id))); assert.equal('attachments' in proposal, false);
+  assert.equal(page.elements['compose-attachments'].children.length, 0);
+  page.elements['proposal-form'].trigger('submit'); assert.equal(socket.sent.filter(m => m.type === 'proposal').length, 1);
+  assert.match(page.elements.proposals.textContent, /<img>.txt/);
+});
+test('paste and drop add attachments; removing an upload cancels it without sending a prompt', async () => {
+  const page = browser(), socket = page.join(); snapshot(socket, 1, [], 'idle'); enableUploads(socket);
+  page.elements['proposal-text'].trigger('paste', { clipboardData: { files: [syntheticFile('paste.png')] } });
+  await finishBrowserUploads(page, socket);
+  page.elements['proposal-form'].trigger('drop', { dataTransfer: { files: [syntheticFile('drop.pdf')] } });
+  await finishBrowserUploads(page, socket);
+  const row = page.elements['compose-attachments'].children[0]; row.children.at(-1).click();
+  assert.equal(page.elements['compose-attachments'].children.length, 1); assert.ok(socket.sent.some(m => m.type === 'upload-cancel'));
+  assert.equal(socket.sent.some(m => m.type === 'proposal'), false);
+});
+test('upload failure, timeout and disconnect keep sends disabled without retrying or persisting file bytes', async () => {
+  for (const failure of ['disconnect', 'timeout', 'failed']) {
+    const page = browser(), socket = page.join(); snapshot(socket, 1, [], 'idle'); enableUploads(socket);
+    page.elements['attachment-input'].files = [syntheticFile('synthetic.txt')]; page.elements['attachment-input'].trigger('change');
+    const start = socket.sent.find(m => m.type === 'upload-start');
+    if (failure === 'disconnect') socket.close();
+    else if (failure === 'timeout') page.tick(30001);
+    else socket.receive({ type: 'data', payload: { type: 'upload-status', uploadId: start.uploadId, status: 'failed' } });
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(page.elements['send-button'].disabled, true); assert.match(page.elements['compose-attachments'].textContent, /上传失败/);
+    assert.equal(socket.sent.filter(m => m.type === 'upload-start').length, 1); assert.equal(socket.sent.some(m => m.type === 'proposal'), false);
+    assert.ok(![...page.storage.values(), ...page.persistentStorage.values()].join('').includes('synthetic.txt'));
+  }
+});
+
+test('composer thumbnails stay above text, use local media, and release every Blob URL on removal and send', async () => {
+  const page = browser(), socket = page.join(); snapshot(socket, 1, [], 'idle'); enableUploads(socket);
+  page.elements['attachment-input'].files = [syntheticFile('image.png'), syntheticFile('clip.mp4'), syntheticFile('unknown.bin')];
+  page.elements['attachment-input'].trigger('change'); await finishBrowserUploads(page, socket);
+  const rows = page.elements['compose-attachments'].children;
+  assert.deepEqual(rows.map(r => r.dataset.preview), ['image', 'video', 'none']);
+  assert.equal(rows[2].children[1].children[0].textContent, 'BIN'); assert.match(rows[2].textContent, /unknown.bin/);
+  assert.equal(page.urls.created.length, 2); rows[0].children.at(-1).click(); assert.equal(page.urls.revoked.length, 1);
+  page.elements['proposal-form'].trigger('submit'); assert.equal(page.urls.revoked.length, 2);
+  assert.ok(html.indexOf('id="compose-attachments"') < html.indexOf('class="compose-meta"'));
+});
+test('undecodable media and active SVG fall back to inert file cards without blocking upload', async () => {
+  const page = browser(), socket = page.join(); snapshot(socket, 1, [], 'idle'); enableUploads(socket);
+  page.elements['attachment-input'].files = [syntheticFile('broken.png'), syntheticFile('unsafe.svg', '<svg onload="alert(1)"/>')];
+  page.elements['attachment-input'].trigger('change'); await finishBrowserUploads(page, socket);
+  const rows = page.elements['compose-attachments'].children;
+  rows[0].children[0].children[0].trigger('error'); assert.equal(rows[0].dataset.preview, 'none');
+  assert.equal(rows[1].dataset.preview, 'none'); assert.equal(page.urls.created.length, 1);
+  assert.equal(page.elements['send-button'].disabled, false); socket.close(); assert.equal(page.urls.revoked.length, 1);
+});
 function requestInviteRecovery(page) {
   page.elements['invite-recovery-name'].value = '恢复申请者';
   page.elements['invite-recovery-form'].trigger('submit');
@@ -610,6 +693,24 @@ test('structured images request admitted room bytes once, survive redraw, enlarg
   socket.receive({ type: 'revoked' });
   assert.equal(dialog.open, false); assert.equal(nodesByClass(dialog, 'image-dialog-image')[0].src, undefined);
   assert.equal(page.elements.messages.children.length, 0);
+});
+
+test('a displayed image hides only its paired fallback card, while the image download and video card remain', async () => {
+  const page=browser(),socket=page.join(),imageId='a'.repeat(64), fileId='b'.repeat(64), otherId='c'.repeat(64), videoId='d'.repeat(64);
+  const item={...prompt,images:[{id:imageId,name:'same.png'}],files:[{id:fileId,name:'same.png',kind:'download',previewImageId:imageId},
+    {id:otherId,name:'same.png',kind:'download'},{id:videoId,name:'movie.mp4',kind:'video',previewImageId:imageId}]};
+  socket.receive({type:'data',payload:{type:'snapshot',revision:1,status:'idle',capabilities:['file-original'],items:[item]}});
+  let cards=nodesByClass(page.elements.messages,'attachment-file'); assert.equal(cards.length,3); assert.equal(cards[0].hidden,false);
+  const data='iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAEUlEQVR4nGP4z8DwH4QZYAwAR8oH+WdZbrcAAAAASUVORK5CYII=';
+  socket.receive({type:'data',payload:{type:'image-chunk',imageId,mime:'image/png',index:0,total:1,data}});
+  assert.equal(cards[0].hidden,true); assert.equal(cards[1].hidden,false); assert.equal(cards[2].hidden,false);
+  nodesByClass(page.elements.messages,'message-image')[0].children[0].click();
+  const dialog=nodesByClass(page.document.body,'image-dialog')[0],download=nodesByClass(dialog,'image-dialog-download')[0];
+  assert.equal(dialog.open,true);assert.equal(download.hidden,false);download.click();
+  assert.deepEqual(Buffer.from(await page.urls.created.at(-1).blob.arrayBuffer()),Buffer.from(data,'base64'));
+  snapshot(socket,2,[item],'idle');cards=nodesByClass(page.elements.messages,'attachment-file');assert.equal(cards[0].hidden,true);
+  const image=nodesByClass(page.elements.messages,'message-image')[0].children[0].children[0]; image.trigger('error');
+  assert.equal(cards[0].hidden,false,'a decoder failure must restore the original-file fallback');
 });
 
 test('unavailable images, unsafe MIME, unsolicited chunks and disconnect cannot create an image preview', () => {
@@ -1185,6 +1286,199 @@ test('new file capability requests exact originals, downloads bytes and preserve
   download.trigger('click');
   assert.deepEqual(Buffer.from(await page.urls.created.at(-1).blob.arrayBuffer()), bytes);
   socket.receive({ type: 'revoked' }); assert.equal(audio.paused, true); assert.equal(audio.src, undefined);
+});
+
+test('common structured document formats consistently show lazy file cards with filename and format', async t => {
+  for (const [extension, kind] of [
+    ['pdf', 'pdf'], ['doc', 'download'], ['docx', 'docx'], ['xls', 'download'], ['xlsx', 'xlsx'],
+    ['ppt', 'download'], ['pptx', 'pptx'], ['csv', 'table'], ['tsv', 'table'], ['md', 'markdown'],
+    ['markdown', 'markdown'], ['txt', 'text'], ['json', 'text'],
+  ]) await t.test(extension.toUpperCase(), async () => {
+    let mountedKind;
+    const page = browser({ previewLoader: async () => ({ mountPreview: async ({ container, kind: previewKind }) => {
+      mountedKind = previewKind; container.textContent = '合成文档预览'; return { dispose() {} };
+    } }) });
+    const socket = page.join(), fileId = createHash('sha256').update(extension).digest('hex');
+    const file = { id: fileId, name: `合成报告-${extension}.${extension}`, kind };
+    const item = { ...prompt, text: '阅读这份文档。', files: [file] };
+    socket.receive({ type: 'data', payload: { type: 'snapshot', revision: 1, status: 'idle', capabilities: ['file-original'], items: [item] } });
+    const user = nodesByClass(page.elements.messages, 'message-user')[0];
+    const card = nodesByClass(user, 'attachment-file')[0], bubble = nodesByClass(user, 'message-text')[0];
+    assert.ok(card); assert.ok(user.children.includes(card), 'attachment card belongs outside the text bubble');
+    assert.equal(bubble.contains(card), false); assert.equal(nodesByClass(user, 'file-chip').length, 0);
+    assert.equal(nodesByClass(card, 'attachment-file-format')[0].textContent, extension.toUpperCase());
+    assert.equal(nodesByClass(card, 'file-label')[0].textContent, file.name);
+    const button = nodesByClass(card, 'attachment-file-button')[0], panel = nodesByClass(card, 'file-preview-panel')[0];
+    const download = nodesByClass(card, 'file-download')[0];
+    assert.equal(button['aria-expanded'], 'false'); assert.equal(panel.hidden, true); assert.equal(download.hidden, true);
+    assert.equal(download.textContent, ''); assert.equal(socket.sent.some(message => message.type === 'file-request'), false);
+    button.trigger('click');
+    assert.equal(button['aria-expanded'], 'true'); assert.equal(panel.hidden, false);
+    if (kind === 'download') {
+      assert.match(card.textContent, /暂不支持网页预览/);
+      assert.equal(socket.sent.some(message => message.type === 'file-request'), false);
+      assert.equal(mountedKind, undefined);
+    } else {
+      assert.deepEqual(socket.sent.at(-1), { type: 'file-request', fileId, representation: 'original' });
+      socket.receive({ type: 'data', payload: { type: 'file-chunk', fileId, representation: 'original', mime: 'application/octet-stream', total: 1, index: 0, data: Buffer.from('synthetic preview bytes').toString('base64') } });
+      for (let n = 0; n < 8; n++) await Promise.resolve();
+      assert.equal(mountedKind, kind, 'opening the same card dispatches the format-specific preview');
+    }
+    assert.equal(download.hidden, false); assert.equal(download.textContent, '');
+    socket.receive({ type: 'revoked' });
+    const requests = socket.sent.length, blobs = page.urls.created.length;
+    button.trigger('click'); download.trigger('click');
+    assert.equal(socket.sent.length, requests); assert.equal(page.urls.created.length, blobs);
+  });
+});
+
+test('standalone assistant document outputs use file cards for common formats without loading bytes', async t => {
+  for (const [extension, kind] of [
+    ['pdf', 'pdf'], ['doc', 'download'], ['docx', 'docx'], ['xls', 'download'], ['xlsx', 'xlsx'],
+    ['ppt', 'download'], ['pptx', 'pptx'], ['csv', 'table'], ['tsv', 'table'], ['md', 'markdown'],
+    ['markdown', 'markdown'], ['txt', 'text'],
+  ]) await t.test(extension.toUpperCase(), () => {
+    const page = browser({ markdown: true }), socket = page.join();
+    const fileId = createHash('sha256').update('output-' + extension).digest('hex'), name = `合成产物.${extension}`;
+    const item = { ...reply(`已经完成。\n\n[下载合成产物](/synthetic/output.${extension})\n\n后续说明。`),
+      files: [{ id: fileId, name, kind, syntax: 'link', index: 0, label: '下载合成产物' }] };
+    socket.receive({ type: 'data', payload: { type: 'snapshot', revision: 1, status: 'idle', capabilities: ['file-original'], items: [item] } });
+    const card = nodesByClass(page.elements.messages, 'document-file')[0];
+    assert.ok(card); assert.equal(nodesByClass(page.elements.messages, 'document-file').length, 1);
+    assert.equal(nodesByClass(page.elements.messages, 'attachment-file').length, 0, 'assistant output uses its own card alignment');
+    assert.equal(nodesByClass(card, 'file-label')[0].textContent, name);
+    assert.equal(nodesByClass(card, 'attachment-file-format')[0].textContent, extension.toUpperCase());
+    assert.match(card.textContent, /下载合成产物/);
+    assert.match(page.elements.messages.textContent, /已经完成。.*合成产物.*后续说明。/s);
+    const button = nodesByClass(card, 'attachment-file-button')[0], download = nodesByClass(card, 'file-download')[0];
+    assert.equal(button['aria-expanded'], 'false'); assert.equal(download.hidden, true); assert.equal(download.textContent, '');
+    assert.equal(socket.sent.some(message => message.type === 'file-request'), false);
+    socket.receive({ type: 'revoked' }); const count = socket.sent.length;
+    button.trigger('click'); download.trigger('click'); assert.equal(socket.sent.length, count);
+  });
+});
+
+test('sentence, list, quote, heading and code citations retain inline document links rather than artifact cards', async t => {
+  for (const [name, source, extension, expectedLinks] of [
+    ['sentence', '请阅读[报告](/synthetic/report.docx)后继续。', 'docx', 1],
+    ['list', '- [报告](/synthetic/report.docx)', 'docx', 1],
+    ['quote', '> [报告](/synthetic/report.docx)', 'docx', 1],
+    ['heading', '# [报告](/synthetic/report.docx)', 'docx', 1],
+    ['multiple links', '[报告](/synthetic/report.docx) 与 [补充](/synthetic/extra.docx)', 'docx', 2],
+    ['code file', '[Bloc](/synthetic/report.dart)', 'dart', 1],
+    ['inline code example', '`[报告](/synthetic/report.docx)`', 'docx', 0],
+    ['fenced example', '```md\n[报告](/synthetic/report.docx)\n```', 'docx', 0],
+    ['math example', '$[报告](/synthetic/report.docx)$', 'docx', 0],
+  ]) await t.test(name, () => {
+    const page = browser({ markdown: true }), socket = page.join();
+    const files = Array.from({ length: Math.max(expectedLinks, 1) }, (_, index) => ({
+      id: createHash('sha256').update(name + index).digest('hex'), name: `report.${extension}`,
+      kind: extension === 'dart' ? 'text' : 'docx', syntax: 'link', index, label: index ? '补充' : extension === 'dart' ? 'Bloc' : '报告',
+    }));
+    socket.receive({ type: 'data', payload: { type: 'snapshot', revision: 1, status: 'idle', capabilities: ['file-original'], items: [{ ...reply(source), files }] } });
+    assert.equal(nodesByClass(page.elements.messages, 'document-file').length, 0);
+    assert.equal(nodesByClass(page.elements.messages, 'message-file-inline').length, expectedLinks);
+    assert.equal(socket.sent.some(message => message.type === 'file-request'), false);
+  });
+});
+
+test('mixed images and document cards retain their preview across redraw and revoke removed file controls', async () => {
+  let mounted = 0, disposed = 0;
+  const page = browser({ previewLoader: async () => ({ mountPreview: async ({ container }) => {
+    mounted++; container.textContent = '保留的合成 Word 预览'; return { dispose() { disposed++; } };
+  } }) });
+  const socket = page.join(), imageId = 'e'.repeat(64);
+  const files = [['docx', 'docx'], ['xlsx', 'xlsx'], ['pptx', 'pptx']].map(([extension, kind]) => ({
+    id: createHash('sha256').update('mixed-' + extension).digest('hex'), name: `合成文档.${extension}`, kind,
+  }));
+  const item = { ...prompt, text: '同时查看图片、Word、Excel 和演示文稿。', images: [{ id: imageId, name: '合成图片.png' }], files };
+  const update = (revision, attachments = files) => socket.receive({ type: 'data', payload: { type: 'snapshot', revision, status: 'idle', capabilities: ['file-original'], items: [{ ...item, files: attachments }] } });
+  update(1);
+  assert.equal(nodesByClass(page.elements.messages, 'message-image').length, 1);
+  assert.equal(nodesByClass(page.elements.messages, 'attachment-file').length, 3);
+  assert.equal(socket.sent.filter(message => message.type === 'file-request').length, 0);
+  assert.deepEqual(socket.sent.at(-1), { type: 'image-request', imageId });
+  const data = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLttAAAAABJRU5ErkJggg==';
+  socket.receive({ type: 'data', payload: { type: 'image-chunk', imageId, mime: 'image/png', total: 1, index: 0, data } });
+  let cards = nodesByClass(page.elements.messages, 'attachment-file');
+  cards[0].children[0].trigger('click');
+  socket.receive({ type: 'data', payload: { type: 'file-chunk', fileId: files[0].id, representation: 'original', mime: 'application/octet-stream', total: 1, index: 0, data: Buffer.from('synthetic Word original').toString('base64') } });
+  for (let n = 0; n < 8; n++) await Promise.resolve();
+  assert.equal(mounted, 1); assert.equal(cards[0].children[0]['aria-expanded'], 'true');
+  const oldDownload = nodesByClass(cards[0], 'file-download')[0];
+  update(2); cards = nodesByClass(page.elements.messages, 'attachment-file');
+  assert.equal(cards.length, 3); assert.equal(cards[0].children[0]['aria-expanded'], 'true'); assert.equal(mounted, 1);
+  assert.equal(socket.sent.filter(message => message.type === 'file-request').length, 1);
+  update(3, files.slice(1)); assert.equal(disposed, 1);
+  assert.deepEqual(nodesByClass(page.elements.messages, 'file-label').map(node => node.textContent), files.slice(1).map(file => file.name));
+  const requests = socket.sent.length, blobs = page.urls.created.length;
+  oldDownload.trigger('click'); assert.equal(socket.sent.length, requests); assert.equal(page.urls.created.length, blobs);
+  socket.receive({ type: 'revoked' });
+  assert.equal(page.elements.messages.children.length, 0);
+  oldDownload.trigger('click'); assert.equal(socket.sent.length, requests); assert.equal(page.urls.created.length, blobs);
+});
+
+test('structured PDF attachments use compact file cards and download the exact original from the opened preview', async () => {
+  let disposed = 0, mounted = 0;
+  const page = browser({ previewLoader: async () => ({ mountPreview: async ({ container, kind, bytes }) => {
+    assert.equal(kind, 'pdf'); assert.deepEqual(Buffer.from(bytes), original);
+    mounted++; container.textContent = '合成 PDF 预览'; return { dispose() { disposed++; } };
+  } }) });
+  const socket = page.join(), fileId = 'f'.repeat(64), original = Buffer.from('%PDF-1.7\nsynthetic original\x00\xff\r\n');
+  const item = { ...prompt, text: '读取 PDF 内容，然后转换为 DOC', files: [{ id: fileId, name: 'synthetic-2pages-中文附件.pdf', kind: 'pdf' }] };
+  const update = revision => socket.receive({ type: 'data', payload: { type: 'snapshot', revision, status: 'idle', capabilities: ['file-original'], items: [item] } });
+  update(1);
+  const figure = nodesByClass(page.elements.messages, 'attachment-file')[0];
+  assert.ok(figure); assert.equal(nodesByClass(page.elements.messages, 'file-chip').length, 0);
+  assert.equal(nodesByClass(figure, 'attachment-file-button').length, 1);
+  assert.equal(nodesByClass(figure, 'attachment-file-format')[0].textContent, 'PDF');
+  assert.equal(nodesByClass(figure, 'file-label')[0].textContent, item.files[0].name);
+  assert.equal(socket.sent.some(message => message.type === 'file-request'), false);
+  const download = nodesByClass(figure, 'file-download')[0]; assert.equal(download.hidden, true);
+  figure.children[0].trigger('click');
+  assert.deepEqual(socket.sent.at(-1), { type: 'file-request', fileId, representation: 'original' });
+  socket.receive({ type: 'data', payload: { type: 'file-chunk', fileId, representation: 'original', mime: 'application/octet-stream', total: 1, index: 0, data: original.toString('base64') } });
+  for (let n = 0; n < 8; n++) await Promise.resolve();
+  assert.equal(mounted, 1); assert.equal(download.hidden, false); assert.equal(download.disabled, false); assert.equal(download.textContent, '');
+  download.trigger('click');
+  const downloaded = Buffer.from(await page.urls.created.at(-1).blob.arrayBuffer());
+  assert.equal(createHash('sha256').update(downloaded).digest('hex'), createHash('sha256').update(original).digest('hex'));
+  update(2); assert.equal(mounted, 1, 'redrawing the file card retains its current preview');
+  assert.equal(socket.sent.filter(message => message.type === 'file-request').length, 1);
+  socket.receive({ type: 'revoked' }); assert.equal(disposed, 1);
+  const before = page.urls.created.length; download.trigger('click'); assert.equal(page.urls.created.length, before);
+});
+
+test('legacy Office output opens a download-only notice without reading or parsing until the download icon is clicked', async () => {
+  let mounted = 0;
+  const page = browser({ markdown: true, previewLoader: async () => ({ mountPreview: async () => { mounted++; } }) });
+  const socket = page.join(), fileId = '9'.repeat(64), original = Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1, 0xff, 0x00]);
+  const item = { ...reply('已转换。\n\n[下载 Word 文档](/synthetic/converted.doc)'), files: [{ id: fileId, name: 'converted.doc', kind: 'download', syntax: 'link', index: 0, label: '下载 Word 文档' }] };
+  socket.receive({ type: 'data', payload: { type: 'snapshot', revision: 1, status: 'idle', capabilities: ['file-original'], items: [item] } });
+  const figure = nodesByClass(page.elements.messages, 'document-file')[0], download = nodesByClass(figure, 'file-download')[0];
+  assert.ok(figure); assert.equal(nodesByClass(page.elements.messages, 'attachment-file').length, 0);
+  assert.equal(download.hidden, true); assert.equal(socket.sent.some(message => message.type === 'file-request'), false);
+  figure.children[0].trigger('click');
+  assert.match(figure.textContent, /此格式暂不支持网页预览，可下载原件查看/);
+  assert.equal(download.hidden, false); assert.equal(download.textContent, '');
+  assert.equal(socket.sent.some(message => message.type === 'file-request'), false);
+  download.trigger('click');
+  assert.deepEqual(socket.sent.at(-1), { type: 'file-request', fileId, representation: 'original' });
+  socket.receive({ type: 'data', payload: { type: 'file-chunk', fileId, representation: 'original', mime: 'application/octet-stream', total: 1, index: 0, data: original.toString('base64') } });
+  for (let n = 0; n < 8; n++) await Promise.resolve();
+  assert.equal(mounted, 0); assert.deepEqual(Buffer.from(await page.urls.created.at(-1).blob.arrayBuffer()), original);
+  assert.equal(download.hidden, true, 'download completion does not automatically reopen a panel');
+  assert.equal(nodesByClass(figure, 'file-rich-preview').length, 0);
+  socket.receive({ type: 'revoked' }); const before = page.urls.created.length; download.trigger('click'); assert.equal(page.urls.created.length, before);
+});
+
+test('legacy Office references never request an unsupported preview from a connection without original-file capability', () => {
+  const page = browser(), socket = page.join(), fileId = '6'.repeat(64);
+  snapshot(socket, 1, [{ ...prompt, files: [{ id: fileId, name: 'older.doc', kind: 'download' }] }]);
+  const figure = nodesByClass(page.elements.messages, 'attachment-file')[0]; figure.children[0].trigger('click');
+  assert.match(figure.textContent, /当前连接不支持原件下载/);
+  assert.equal(nodesByClass(figure, 'file-download').length, 0);
+  assert.equal(socket.sent.some(message => message.type === 'file-request'), false);
 });
 
 test('activity cards are lazy, literal, revision-bound and revoke on snapshot removal', () => {

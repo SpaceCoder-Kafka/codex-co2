@@ -72,6 +72,26 @@ test('file callback binds real links and media without duplicate labels or code-
   assert.equal(all(node, 'button').length, 2); assert.ok(!node.textContent.includes('结果')); assert.match(node.textContent, /code.pdf/);
 });
 
+test('standalone file context follows one top-level paragraph link without changing token positions', () => {
+  const node = new Node('div'), calls = [];
+  const source = '[**Word 文档**](/synthetic/out.docx)\n\n正文 [链接](/synthetic/readme.md)。\n\n- [列表](/synthetic/list.pdf)\n\n> [引用](/synthetic/quote.pdf)\n\n# [标题](/synthetic/title.pdf)\n\n[一](/synthetic/a.pdf) [二](/synthetic/b.csv)\n\n![图片](/synthetic/a.png)\n\n`[代码](/synthetic/code.docx)`\n\n[最后的 `表格`](/synthetic/final.xlsx)';
+  window.renderMarkdown(node, source, { renderFile(parent, index, syntax, context) {
+    calls.push({ index, syntax, standalone: context?.standalone === true });
+    if (syntax !== 'link' || !context?.standalone) return false;
+    const card = new Node('button'); card.textContent = '独立文档'; parent.append(card); return true;
+  } });
+  assert.deepEqual(calls, [
+    { index: 0, syntax: 'link', standalone: true },
+    ...Array.from({ length: 6 }, (_, index) => ({ index: index + 1, syntax: 'link', standalone: false })),
+    { index: 0, syntax: 'image', standalone: false },
+    { index: 7, syntax: 'link', standalone: true },
+  ]);
+  assert.equal(all(node, 'button').length, 2);
+  assert.match(node.textContent, /正文 链接。/);
+  assert.match(node.textContent, /\[代码\]\(\/synthetic\/code\.docx\)/);
+  assert.equal(all(node, 'strong').length, 0, 'handled labels do not render a duplicate formatted caption');
+});
+
 test('math, Mermaid and language fences expose only inert enhancement targets and preserve incomplete source', () => {
   const node = render('$x^2$\n\n$$\nx+y\n$$\n\n```mermaid\ngraph TD; A-->B\n```\n\n```js\nconst x=1\n```');
   const nodes = tag => all(node, tag);

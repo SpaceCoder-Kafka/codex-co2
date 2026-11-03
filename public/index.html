@@ -86,7 +86,7 @@
           <button id="new-replies-button" class="new-replies-button" type="button" hidden>有新回复，查看 ↓</button>
         </section>
         <footer class="composer reading-width">
-          <form id="proposal-form"><label class="sr-only" for="proposal-text">建议内容</label><div class="compose-box"><textarea id="proposal-text" name="proposal-text" rows="1" maxlength="8000" placeholder="补充你的想法…" disabled aria-describedby="send-mode keyboard-help draft-help"></textarea><div class="compose-meta"><span id="character-count" hidden>0 / 8,000</span><span id="send-mode" role="status">同步中</span><button id="send-button" class="button button-primary" type="submit" disabled aria-label="发送建议">↑</button></div></div></form>
+          <form id="proposal-form"><label class="sr-only" for="proposal-text">建议内容</label><div class="compose-box"><div id="compose-attachments" class="compose-attachments" aria-live="polite" hidden></div><textarea id="proposal-text" name="proposal-text" rows="1" maxlength="8000" placeholder="补充你的想法…" disabled aria-describedby="send-mode keyboard-help draft-help"></textarea><input id="attachment-input" type="file" multiple hidden><div class="compose-meta"><button id="attach-button" class="text-button" type="button" disabled aria-label="添加文件" title="添加文件，也可粘贴或拖放文件">＋</button><span id="character-count" hidden>0 / 8,000</span><span id="send-mode" role="status">同步中</span><button id="send-button" class="button button-primary" type="submit" disabled aria-label="发送建议">↑</button></div></div></form>
           <p id="proposal-feedback" class="inline-feedback submission-feedback" aria-live="polite"></p>
         </footer>
       </main>

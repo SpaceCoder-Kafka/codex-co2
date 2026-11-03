@@ -15,7 +15,7 @@
 </p>
 
 <p align="center">
-  <a href="CHANGELOG.md#030"><img src="https://img.shields.io/badge/source-v0.3.0-2563eb" alt="源码版本 v0.3.0"></a>
+  <a href="CHANGELOG.md#040"><img src="https://img.shields.io/badge/source-v0.4.0-2563eb" alt="源码版本 v0.4.0"></a>
   <img src="https://img.shields.io/badge/host-macOS%2014%2B%20%C2%B7%20Universal-555555" alt="分享者：macOS 14+，Universal">
   <img src="https://img.shields.io/badge/guest-browser-2563eb" alt="协作者：浏览器">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-22c55e" alt="许可：MIT"></a>
@@ -70,7 +70,7 @@ https://github.com/user-attachments/assets/b1c2f544-3684-432e-9e03-f32ac15b9370
 
 ## 安装 Codex Co²
 
-当前源码版本为 **0.3.0**，新增常见产物预览、富文本、只读活动卡片，并补齐会话展示。详见 [0.3.0 更新说明](docs/release-notes/v0.3.0-zh.md)。0.3.0 发布前，下方下载入口仍指向已发布的 **0.2.0**。
+当前源码版本为 **0.4.0**，新增网页发送文件、贴近 Desktop 的附件预览和文档卡片，并去除重复图片附件。详见 [0.4.0 更新说明](docs/release-notes/v0.4.0-zh.md)。0.4.0 发布前，下方下载入口仍指向已发布的 **0.2.0**。
 
 分享者接入**已经运行的官方 Codex Desktop**，继续使用原有 Agent、登录与工具审批设置。协作者使用支持 JavaScript 和 WebSocket 的浏览器。公网共享需要访问生成的公网地址；显式内网共享需要访问所选私有网络。
 
@@ -135,6 +135,8 @@ brew reinstall --cask SpaceCoder-Kafka/tap/codex-co2
 
 ### 协作者操作
 
+源码版支持获准访客选择、粘贴或拖放文件，也可只发送附件。附件横向排列在输入框上方，支持的格式显示缩略图，其余显示文件图标和名称。每条消息最多 8 个文件，单个最大 32 MiB，合计最大 64 MiB。图片使用图片输入；其他文件使用 Desktop 附件引用，音频理解取决于 Desktop 与模型支持。无需网页能够预览该格式。缺少主机文件传送路径的远程或云端执行环境关闭此功能。未提交附件在空闲 10 分钟或断线后清理；已派发附件保留在私有 `.coop/guest-uploads/`，供原会话继续读取。附件存储设有配额；原生 Desktop 验收仍待完成。
+
 1. 用浏览器打开邀请，填写名称并申请加入。
 2. 获准后阅读共享会话，向同一个 Agent 发送消息。
 3. 默认直接接收新消息；分享者开启消息审批时，需等待逐条确认。
@@ -169,7 +171,7 @@ macOS 恢复记录开启时，内网恢复元数据与凭据哈希会保存在�
 ## 共享前需要知道
 
 - 分享包括所选会话投影出的历史与后续消息，不只限于生成邀请之后。长历史会按容量截断。源码新增只读工具结果、命令状态与输出、Diff 和计划卡片。Desktop 不保证逐字终端输出及执行中的 Diff 实时广播，网页展示接口提供的更新和最终结果。
-- 源码支持预览并下载用户附件和助手回复中明确链接的产物：MP4；MP3、WAV、M4A、OGG、FLAC 音频；PDF；CSV/TSV、XLSX 表格；Markdown、DOCX、PPTX 及常见文本和代码文件。Markdown 支持公式、Mermaid 和代码高亮。Office 优先展示可读文字、表格、图片和常见版式，复杂内容显示降级提示，并提供原件下载。预览只读；图片每张最大 8 MiB，其他原件最大 32 MiB，文本及 CSV/TSV 预览最大 1 MiB。媒体播放受浏览器编码支持限制。本轮源码变更不代表已发布新的安装包。
+- 源码支持预览并下载用户附件和助手回复中明确链接的产物：MP4；MP3、WAV、M4A、OGG、FLAC 音频；PDF；CSV/TSV、XLSX 表格；Markdown、DOCX、PPTX 及常见文本和代码文件。Markdown 支持公式、Mermaid 和代码高亮。Office 优先展示可读文字、表格、图片和常见版式，复杂内容显示降级提示，并提供原件下载。常见文档附件和助手单独输出的文档统一显示文件卡片。旧版 DOC、XLS、PPT 支持原件下载，打开时提示暂不支持网页预览。预览只读；图片每张最大 8 MiB，其他原件最大 32 MiB，文本及 CSV/TSV 预览最大 1 MiB。媒体播放受浏览器编码支持限制。本轮源码变更不代表已发布新的安装包。
 - 回复中的 Markdown 图片在原位置显示并可点击放大：绝对路径的本地 PNG、JPEG、WebP 图片通过已准入的房间连接传输；HTTP(S) 图片由访客浏览器直接加载，不发送来源页面地址。正文中的普通路径不授予文件读取权限，网页也不能完整复用所有 Desktop 内容和插件交互。
 - 协作者消息进入现有 Agent，沿用会话的工具、沙箱、权限及计费或额度。**共享不会新建执行沙箱**，请只邀请可信任的人。
 - 只有本机分享者能改变消息策略；只影响新消息，已有待审批消息仍需决定。原生工具审批继续在官方 Desktop 处理，消息审批不能替代工具审批。

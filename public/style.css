@@ -287,6 +287,20 @@ textarea:disabled { color: #aaa; }
 .message-file > button.file-link:hover .file-label { text-decoration: underline; text-underline-offset: 3px; }
 .file-icon { display: inline-block; font-size: .95em; padding-right: 4px; }
 .file-label { overflow-wrap: anywhere; }
+.message-file.attachment-file { display: flex; flex-direction: column; align-items: flex-end; width: 100%; min-width: 0; max-width: 100%; padding: 0; margin: 0 0 10px; border: 0; background: transparent; overflow: visible; }
+.message-file.document-file { display: flex; flex-direction: column; align-items: flex-start; width: 100%; min-width: 0; max-width: 100%; padding: 0; margin: 10px 0; border: 0; background: transparent; overflow: visible; }
+.message-file > button.attachment-file-button { display: flex; align-items: center; gap: 12px; width: 280px; min-width: 0; max-width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: 16px; color: var(--ink); background: #fff; text-align: left; line-height: 1.45; }
+.attachment-file-button > .file-icon { --file-accent: #777; display: flex; align-items: center; justify-content: center; flex: 0 0 48px; width: 48px; height: 48px; border-radius: 10px; padding: 0; background: #f7f7f7; }
+.attachment-file-button > .file-icon[data-family='pdf'] { --file-accent: #ed5559; }
+.attachment-file-button > .file-icon[data-family='word'] { --file-accent: #3973c4; }
+.attachment-file-button > .file-icon[data-family='spreadsheet'] { --file-accent: #258558; }
+.attachment-file-button > .file-icon[data-family='presentation'] { --file-accent: #d36a3c; }
+.attachment-file-badge { display: flex; align-items: center; justify-content: center; width: 27px; height: 33px; padding-top: 8px; border-radius: 4px; clip-path: polygon(0 0, 65% 0, 100% 28%, 100% 100%, 0 100%); background: var(--file-accent); color: #fff; font-size: 8px; font-weight: 600; }
+.attachment-file-details { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.attachment-file-details > .file-label { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 15px; font-weight: 500; }
+.attachment-file-format { color: #777; font-size: 13px; }
+.document-file-caption { color: #777; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.attachment-file > .file-preview-panel, .document-file > .file-preview-panel { align-self: stretch; min-width: 0; }
 .file-preview-panel { display: block; max-width: 100%; border: 1px solid var(--border); border-radius: 12px; margin: 10px 0; padding: 12px; color: var(--ink); background: #fff; font-size: 14px; white-space: normal; }
 .file-preview-toolbar { display: flex; justify-content: flex-end; margin-bottom: 6px; }
 .file-preview-notice { display: block; color: #888; font-size: 12px; line-height: 1.6; }
@@ -325,3 +339,31 @@ textarea:disabled { color: #aaa; }
 .mermaid-image { display: block; max-width: 100%; height: auto; background: white; }
 .preview-note { font-size: 12px; color: #777; }
 .preview-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 10px; }
+.compose-box { display: grid; grid-template-columns: minmax(0, 1fr); row-gap: 0; background: #fff; border-color: #e8e8e8; box-shadow: 0 2px 6px #00000005; }
+.compose-box > textarea { grid-column: 1 / -1; grid-row: 2; }
+.compose-box > .compose-meta { grid-column: 1 / -1; grid-row: 3; min-height: 32px; max-width: none; flex-wrap: nowrap; }
+.compose-attachments { grid-column: 1 / -1; grid-row: 1; min-width: 0; display: flex; align-items: flex-start; gap: 8px; padding: 3px 2px 12px; overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain; }
+.compose-attachments[hidden] { display: none; }
+.compose-attachment { position: relative; flex: 0 0 164px; width: 164px; min-width: 0; overflow: hidden; border: 1px solid #e5e5e5; border-radius: 10px; background: #fff; font-size: 12px; }
+.compose-attachment-preview { height: 92px; overflow: hidden; pointer-events: none; background: #fafafa; }
+.compose-attachment-preview > img, .compose-attachment-preview > video { width: 100%; height: 100%; display: block; object-fit: cover; }
+.compose-attachment-preview > img { object-fit: contain; }
+.compose-attachment[data-preview='none'] .compose-attachment-preview { display: none; }
+.compose-attachment-footer { display: flex; align-items: center; gap: 7px; min-width: 0; padding: 9px 24px 9px 9px; }
+.compose-attachment-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.compose-file-icon { color: #777; display: flex; align-items: center; justify-content: center; flex: 0 0 23px; width: 23px; height: 27px; border: 1.5px solid currentColor; border-radius: 3px; font-size: 6px; font-weight: 700; letter-spacing: -.2px; background: #fff; }
+.compose-attachment[data-family='word'] .compose-file-icon { color: #3973c4; }
+.compose-attachment[data-family='spreadsheet'] .compose-file-icon { color: #258558; }
+.compose-attachment[data-family='presentation'] .compose-file-icon { color: #d36a3c; }
+.compose-attachment[data-family='pdf'] .compose-file-icon { color: #ed5559; }
+.compose-attachment[data-family='media'] .compose-file-icon { color: #9254de; }
+.compose-attachment-status { display: block; color: #777; padding: 0 9px 7px; font-size: 10px; }
+.compose-attachment[data-status='ready'] .compose-attachment-status { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); padding: 0; }
+.compose-attachment[data-status='failed'] { border-color: #cf8b73; }
+.compose-attachment[data-status='failed'] .compose-attachment-status { color: #a44324; }
+.compose-attachment-remove { position: absolute; right: 3px; top: 3px; display: grid; place-items: center; width: 20px; height: 20px; padding: 0; border: 1px solid #e5e5e5; border-radius: 50%; background: #fff; color: #666; font-size: 14px; cursor: pointer; }
+.compose-attachment-document { width: 800px; height: 520px; transform: scale(.205); transform-origin: 0 0; margin: 0; padding: 12px; background: #fff; }
+.compose-attachment-document .preview-toolbar, .compose-attachment-document button, .compose-attachment-document select { display: none; }
+.compose-attachment-document canvas { max-height: 440px; max-width: 760px; width: auto; }
+.compose-attachment-text { margin: 0; padding: 7px; height: 100%; overflow: hidden; font: 5px/1.5 ui-monospace, monospace; white-space: pre-wrap; overflow-wrap: anywhere; color: #555; }
+#attach-button { font-size: 22px; line-height: 1; margin-right: auto; }

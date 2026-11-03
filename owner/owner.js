@@ -681,6 +681,7 @@ function proposalCard(room, proposal) {
   card.dataset.state = proposal.status;
   heading.append(el('strong', t('{name} 的建议', { name: proposal.name })), badge(proposal.status)); card.append(heading);
   if (proposal.text) card.append(el('pre', proposal.text, 'text'));
+  for (const file of proposal.attachments ?? []) card.append(el('p', `📎 ${file.name} · ${(file.size / 1024).toFixed(1)} KiB`, 'text'));
   if (proposal.status === 'pending') {
     const row = el('div', null, 'row'); row.append(
       button('确认并交给 Agent', () => send({ type: 'approve', roomId: room.roomId, proposalId: proposal.id }), 'primary'),

@@ -7,6 +7,9 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { RpcClient } from '../lib/rpc.mjs';
 import { resolveCli } from '../lib/runtime.mjs';
 import { startResponsesFixture } from './fixtures/responses-server.mjs';
+import { GuestUploads } from '../lib/guest-uploads.mjs';
+import { ScopedThread } from '../lib/scoped-thread.mjs';
+import { randomUUID } from 'node:crypto';
 
 let binary;
 if (process.env.CODEX_COOP_INTEGRATION === '1') { try { binary = resolveCli().cliPath; } catch {} }
@@ -173,5 +176,33 @@ stream_max_retries = 0
     const afterBusy = await b.request('thread/read', { threadId, includeTurns: true });
     assert.equal(afterBusy.thread.turns.length, 5, 'Two inputs while busy must not produce two independent turns');
     t.diagnostic(`Busy turn/start returned existing turn ${active.turn.id}; both clients observed completion; one additional turn, two synthetic model requests.`);
+  });
+
+  await t.test('uploaded images and ordinary/audio/video files reach the isolated pinned backend with model calls confined to loopback', async () => {
+    const uploads = new GuestUploads(path.join(workspace, '.coop'), randomUUID());
+    const scoped = new ScopedThread({ rpc: reconnected, threadId }); await scoped.start();
+    const observed = []; reconnected.on('notification', event => observed.push(event));
+    try {
+      const cases = [ ['image.png', Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAEUlEQVR4nGP4z8DwH4QZYAwAR8oH+WdZbrcAAAAASUVORK5CYII=', 'base64')],
+        ['ordinary.txt', Buffer.from('synthetic ordinary file')], ['audio.wav', Buffer.from('RIFF synthetic audio')], ['video.mp4', Buffer.from('synthetic video')] ];
+      for (const [name, bytes] of cases) {
+        const uploadId = randomUUID(), before = fixture.requests.length;
+        uploads.receive('synthetic-guest', { type: 'upload-start', uploadId, name, size: bytes.length });
+        uploads.receive('synthetic-guest', { type: 'upload-chunk', uploadId, index: 0, data: bytes.toString('base64') });
+        uploads.receive('synthetic-guest', { type: 'upload-finish', uploadId });
+        const attachments = uploads.claim('synthetic-guest', [uploadId]);
+        const result = await scoped.submitApproved('Inspect the synthetic attachment', randomUUID(), { attachments });
+        await until(() => observed.some(e => e.method === 'turn/completed' && e.params.turn.id === result.turnId), name+' completion');
+        assert.equal(observed.find(e => e.method === 'turn/completed' && e.params.turn.id === result.turnId).params.turn.status, 'completed');
+        assert.equal(fixture.requests.length, before+1); assert.deepEqual(await fs.readFile(attachments[0].path), bytes);
+        const payload = JSON.stringify(fixture.requests.at(-1).input);
+        assert.ok(payload.includes(attachments[0].path));
+        if (name.endsWith('.png')) {
+          const parts = fixture.requests.at(-1).input.filter(item => item.role === 'user').at(-1)?.content ?? [];
+          assert.ok(parts.some(p => p.type === 'input_image'), 'Uploaded PNG must reach the local model fixture as image input: '+JSON.stringify(parts).slice(-700));
+        }
+      }
+      t.diagnostic(`Synthetic local Responses fixture: image input plus ordinary/audio/video path references accepted by 0.163.0. Deny proxy refused ${fixture.blockedDestinations.length} background connection attempts. This does not prove native Desktop UI, audio modality or semantic file understanding.`);
+    } finally { scoped.close(); uploads.close(); }
   });
 });

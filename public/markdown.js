@@ -21,9 +21,21 @@
     state.line = close + 1; return true;
   });
   const tags = new Set(['p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'blockquote', 'ul', 'ol', 'li', 'em', 'strong', 's', 'table', 'thead', 'tbody', 'tr', 'th', 'td']);
-  function appendTokens(parent, tokens, document, images) {
+  function singleLink(tokens) {
+    const content = tokens.filter(token => token.type !== 'text' || token.content.trim());
+    if (content[0]?.type !== 'link_open' || content.at(-1)?.type !== 'link_close') return false;
+    let depth = 0;
+    for (let index = 0; index < content.length; index++) {
+      if (content[index].type === 'link_open') depth++;
+      if (content[index].type === 'link_close') depth--;
+      if (depth <= 0 && index !== content.length - 1) return false;
+    }
+    return depth === 0;
+  }
+  function appendTokens(parent, tokens, document, images, context = {}) {
     const stack = [parent];
-    for (const token of tokens) {
+    for (let tokenIndex = 0; tokenIndex < tokens.length; tokenIndex++) {
+      const token = tokens[tokenIndex];
       const current = stack.at(-1);
       if (images.skipLink) {
         if (token.type === 'image') images.index++;
@@ -31,14 +43,18 @@
         if (token.type === 'link_close') images.skipLink--;
         continue;
       }
-      if (token.type === 'inline') { appendTokens(current, token.children || [], document, images); continue; }
+      if (token.type === 'inline') {
+        const standalone = tokens[tokenIndex - 1]?.type === 'paragraph_open' && tokens[tokenIndex - 1].level === 0
+          && token.level === 1 && tokens[tokenIndex + 1]?.type === 'paragraph_close' && singleLink(token.children || []);
+        appendTokens(current, token.children || [], document, images, { standalone }); continue;
+      }
       if (token.type === 'image') {
         const index = images.index++;
-        if (images.render?.(current, index, token.content || token.attrGet('alt') || '图片') || images.file?.(current, index, 'image')) continue;
+        if (images.render?.(current, index, token.content || token.attrGet('alt') || '图片') || images.file?.(current, index, 'image', context)) continue;
       }
       if (token.type === 'link_open') {
         const index = images.linkIndex++;
-        if (images.file?.(current, index, 'link')) { images.skipLink = 1; continue; }
+        if (images.file?.(current, index, 'link', context)) { images.skipLink = 1; continue; }
       }
       if (token.type === 'co2_math') {
         const node = document.createElement(token.markup === '$$' ? 'div' : 'span');

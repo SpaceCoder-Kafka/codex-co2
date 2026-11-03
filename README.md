@@ -15,7 +15,7 @@
 </p>
 
 <p align="center">
-  <a href="CHANGELOG.md#030"><img src="https://img.shields.io/badge/source-v0.3.0-2563eb" alt="Source v0.3.0"></a>
+  <a href="CHANGELOG.md#040"><img src="https://img.shields.io/badge/source-v0.4.0-2563eb" alt="Source v0.4.0"></a>
   <img src="https://img.shields.io/badge/host-macOS%2014%2B%20%C2%B7%20Universal-555555" alt="Host: macOS 14+ Universal">
   <img src="https://img.shields.io/badge/guest-browser-2563eb" alt="Guest: browser">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-22c55e" alt="License: MIT"></a>
@@ -70,7 +70,7 @@ https://github.com/user-attachments/assets/743766be-3549-4928-9f1e-d720314f8989
 
 ## Install Codex Co²
 
-The current source version is **0.3.0**, adding common artifact previews, rich text, read-only activity cards and more complete conversation display. See the [changelog](CHANGELOG.md) for details. The download links below continue to point to the published **0.2.0** release until 0.3.0 is published.
+The current source version is **0.4.0**, adding guest file uploads, Desktop-style attachment previews and document cards, with duplicate image attachments removed. See the [changelog](CHANGELOG.md) for details. The download links below continue to point to the published **0.2.0** release until 0.4.0 is published.
 
 The host attaches to your **already running official Codex Desktop**, keeping its existing Agent, login and tool approval settings. Guests use a browser with JavaScript and WebSocket support. Public sharing requires access to the generated public address; explicit intranet sharing requires access to the selected private network.
 
@@ -135,6 +135,8 @@ In-app updates verify signed update metadata and packages and remain subject to 
 
 ### Guest: join and collaborate
 
+Source builds also let admitted guests select, paste or drop files, including attachment-only messages. Attachments appear above the text input in a horizontal strip, with thumbnails where supported and file icons otherwise. Upload up to 8 files per message, 32 MiB per file and 64 MiB total. Images use image input; other files use Desktop attachment references, with audio interpretation subject to Desktop and model support. Uploading does not require browser preview support. Remote and cloud execution environments without a host-file transfer path disable this feature. Unsubmitted uploads expire after 10 minutes of inactivity and are removed on disconnection; dispatched files remain in private `.coop/guest-uploads/` storage so the conversation can continue using them. Storage quotas apply; native Desktop acceptance remains pending.
+
 1. Open the invitation in a browser, enter a display name and request access.
 2. After admission, read the shared conversation and send messages to its Agent.
 3. By default, new messages enter the Agent directly. If the host enables message approval, wait for the host's decision.
@@ -169,7 +171,7 @@ A public Quick Tunnel can stay alive while its background service keeps running,
 ## What sharing grants
 
 - Admission grants access to the selected conversation's projected history and future messages, including history from before sharing. Long histories may be truncated. Source builds also show read-only tool results, command status and output, Diffs and plans. Desktop does not guarantee live, character-by-character terminal output or in-progress Diffs; the page displays the updates and final results supplied by Desktop.
-- Source builds preview and download supported user attachments and files explicitly linked in assistant replies: MP4; MP3, WAV, M4A, OGG and FLAC audio; PDF; CSV/TSV and XLSX tables; Markdown, DOCX, PPTX and common text or code files. Markdown supports formulas, Mermaid diagrams and code highlighting. Office previews prioritize readable text, tables, images and common layouts; unsupported complex content is marked, and the original file remains available to download. Previews are read only. Images are limited to 8 MiB each, other original files to 32 MiB, and text or CSV/TSV previews to 1 MiB. Browser media codec support still applies. These source changes do not describe a newly published installation package.
+- Source builds preview and download supported user attachments and files explicitly linked in assistant replies: MP4; MP3, WAV, M4A, OGG and FLAC audio; PDF; CSV/TSV and XLSX tables; Markdown, DOCX, PPTX and common text or code files. Markdown supports formulas, Mermaid diagrams and code highlighting. Office previews prioritize readable text, tables, images and common layouts; unsupported complex content is marked, and the original file remains available to download. Common document attachments and standalone generated documents appear as compact file cards. Legacy DOC, XLS and PPT files support original downloads with a preview-unavailable notice. Previews are read only. Images are limited to 8 MiB each, other original files to 32 MiB, and text or CSV/TSV previews to 1 MiB. Browser media codec support still applies. These source changes do not describe a newly published installation package.
 - Images in assistant Markdown replies appear in place and can be enlarged: absolute local PNG, JPEG and WebP files use the admitted room connection; HTTP(S) images load directly in the guest browser without a referrer. A plain path in a message does not grant file access. Not all Desktop content or plugin interactions are projected.
 - Guest messages enter the **same Agent**, using the conversation's existing tools, sandbox, permissions and billing or usage allowance. This is not a separate execution sandbox. Invite people you trust.
 - Only the local host can change message approval. Changes affect new messages; already pending messages still need a decision. **Native tool approvals remain in official Desktop**; message approval does not replace them.

@@ -1,7 +1,7 @@
 // Legacy factory name; previews only use the admitted room socket.
 window.createThreadImages = ({ send, canRead, capabilities = () => [] }) => {
   const states = new Map(), queue = [];
-  const chunkChars = 40960, limits = { image: 8388608, video: 33554432, audio: 33554432, pdf: 33554432, xlsx: 33554432, docx: 33554432, pptx: 33554432, text: 33554432, table: 33554432, markdown: 33554432, activity: 1048576 };
+  const chunkChars = 40960, limits = { image: 8388608, video: 33554432, audio: 33554432, pdf: 33554432, xlsx: 33554432, docx: 33554432, pptx: 33554432, text: 33554432, table: 33554432, markdown: 33554432, download: 33554432, activity: 1048576 };
   const cacheLimit = 48 * 1024 * 1024;
   // Every admitted snapshot is smaller than 48 KiB and each opaque reference
   // alone contains 64 ASCII bytes. Metadata can therefore cover every entry in
@@ -42,6 +42,16 @@ window.createThreadImages = ({ send, canRead, capabilities = () => [] }) => {
     if (['video', 'audio'].includes(state.kind) && state.url) URL.revokeObjectURL(state.url);
     state.url = null; state.text = null; state.bytes = null; state.preview = null; state.previewFailed = false; state.wasPlaying = false; state.openWhenReady = false; state.status = status;
     if (expandedId === state.id) closePreview();
+    if (state.kind === 'image') syncImageFileViews(state.id);
+  }
+  function imageFileHidden(view) {
+    const image = view.previewImageId && states.get(view.previewImageId);
+    return image?.kind === 'image' && image.status === 'ready';
+  }
+  function syncImageFileViews(imageId) {
+    for (const state of states.values()) for (const view of state.views) {
+      if (view.previewImageId === imageId) view.figure.hidden = imageFileHidden(view);
+    }
   }
   const evictionOrder = (a, b) => Number(a.views.length > 0) - Number(b.views.length > 0) || a.used - b.used;
   function metadataSlot() {
@@ -58,7 +68,7 @@ window.createThreadImages = ({ send, canRead, capabilities = () => [] }) => {
     for (const view of fallbackViews) { view.button.disabled = true; view.button.title = '此引用暂不可用'; }
     fallbackViews.clear();
   }
-  const rich = state => !['image', 'audio', 'video', 'activity'].includes(state.kind) && (state.original || state.kind !== 'text');
+  const rich = state => !['image', 'audio', 'video', 'activity', 'download'].includes(state.kind) && (state.original || state.kind !== 'text');
   function discardRich(state) { state.dispose?.(); state.dispose = null; state.preview?.remove(); state.preview = null; }
   function mediaPreview(state) {
     state.used = ++usageSerial;
@@ -99,6 +109,15 @@ window.createThreadImages = ({ send, canRead, capabilities = () => [] }) => {
   function mediaMime(state) {
     const ext = state.name.split('.').pop().toLowerCase();
     return ({ mp4: 'video/mp4', mp3: 'audio/mpeg', wav: 'audio/wav', m4a: 'audio/mp4', ogg: 'audio/ogg', flac: 'audio/flac' })[ext] || 'application/octet-stream';
+  }
+  function fileFormat(state) {
+    const extension = state.name.split('.').at(-1).toUpperCase();
+    return /^[A-Z0-9]{1,8}$/.test(extension) ? extension : '文件';
+  }
+  function fileFamily(state) {
+    const format = fileFormat(state);
+    return ['DOC', 'DOCX'].includes(format) ? 'word' : ['XLS', 'XLSX', 'CSV', 'TSV'].includes(format) ? 'spreadsheet'
+      : ['PPT', 'PPTX'].includes(format) ? 'presentation' : format === 'PDF' ? 'pdf' : 'text';
   }
   function canDownload(state) { return !state.remoteUrl && (state.kind === 'image' || state.kind !== 'activity' && capabilities().includes('file-original')); }
   function downloadOriginal(state) {
@@ -267,8 +286,10 @@ window.createThreadImages = ({ send, canRead, capabilities = () => [] }) => {
     else panel.replaceChildren();
   }
   function draw(state) {
+    if (state.kind === 'image') syncImageFileViews(state.id);
     for (const view of state.views) {
       const { button, label, figure, download, panel } = view;
+      if (view.previewImageId) figure.hidden = imageFileHidden(view);
       if (state.kind === 'activity') { drawActivity(state, view); continue; }
       button.replaceChildren(); label.textContent = view.displayName;
       if (download) {
@@ -278,18 +299,32 @@ window.createThreadImages = ({ send, canRead, capabilities = () => [] }) => {
       if (state.kind !== 'image' || view.link) {
         const loading = ['queued', 'loading'].includes(state.status), expanded = !!state.expanded && canRead();
         const icon = document.createElement('span'); icon.className = 'file-icon'; icon.setAttribute('aria-hidden', 'true');
-        icon.dataset.kind = state.kind; icon.textContent = state.kind === 'image' ? '▧' : '▤';
-        const name = document.createElement('span'); name.className = 'file-label'; name.textContent = view.displayName;
-        button.append(icon, name); button.disabled = !canRead();
-        button.title = !canRead() ? '此引用暂不可用' : state.status === 'failed' ? '预览暂不可用，点击重试' : state.kind === 'image' ? '查看图片：' + view.displayName : (expanded ? '收起预览：' : '查看文件：') + view.displayName;
+        icon.dataset.kind = state.kind; icon.dataset.family = fileFamily(state); icon.textContent = view.card ? fileFormat(state) : state.kind === 'image' ? '▧' : '▤';
+        const name = document.createElement('span'); name.className = 'file-label'; name.textContent = view.card ? state.name : view.displayName;
+        if (view.card) {
+          const badge = document.createElement('span'); badge.className = 'attachment-file-badge'; badge.textContent = fileFormat(state).slice(0, 4);
+          icon.replaceChildren(badge);
+          const details = document.createElement('span'); details.className = 'attachment-file-details';
+          const format = document.createElement('span'); format.className = 'attachment-file-format'; format.textContent = fileFormat(state);
+          details.append(name, format);
+          if (!view.attachment && view.displayName !== state.name) {
+            const caption = document.createElement('span'); caption.className = 'document-file-caption'; caption.textContent = view.displayName; details.append(caption);
+          }
+          button.append(icon, details);
+        } else button.append(icon, name);
+        button.disabled = !canRead();
+        const titleName = view.card && view.displayName !== state.name ? view.displayName + '（' + state.name + '）' : view.displayName;
+        button.title = !canRead() ? '此引用暂不可用' : state.status === 'failed' ? '预览暂不可用，点击重试' : state.kind === 'image' ? '查看图片：' + titleName : (expanded ? '收起预览：' : '查看文件：') + titleName;
         button.setAttribute('aria-label', button.title); button.setAttribute('aria-busy', String(loading));
         if (state.kind !== 'image') button.setAttribute('aria-expanded', String(expanded));
         figure.dataset.state = loading ? 'loading' : !canRead() ? 'unavailable' : state.status;
         if (panel) {
           panel.hidden = !expanded && state.status !== 'failed' && !state.previewFailed && !state.problem;
-          view.notice.textContent = loading ? '正在加载预览…' : state.problem || (state.status === 'failed' ? '此引用无法预览，可重试或下载原件。' : '');
+          view.notice.textContent = loading ? (state.kind === 'download' ? '正在准备下载…' : '正在加载预览…')
+            : state.problem || (state.status === 'failed' ? '此引用无法预览，可重试或下载原件。'
+              : state.kind === 'download' ? capabilities().includes('file-original') ? '此格式暂不支持网页预览，可下载原件查看。' : '此格式暂不支持网页预览，当前连接不支持原件下载。' : '');
           view.notice.hidden = !view.notice.textContent;
-          if (state.status === 'ready' && canRead() && (expanded || state.preview)) {
+          if (state.kind !== 'download' && state.status === 'ready' && canRead() && (expanded || state.preview)) {
             const preview = mediaPreview(state); preview.hidden = !expanded || !!state.problem; panel.append(preview);
           }
         }
@@ -380,7 +415,7 @@ window.createThreadImages = ({ send, canRead, capabilities = () => [] }) => {
         if (active?.state === state) { window.clearTimeout(timer); timer = null; active = null; }
       }
     },
-    render(refs, parent, { inline = false, link = false } = {}) {
+    render(refs, parent, { inline = false, link = false, attachment = false, card = false } = {}) {
       let rendered = 0;
       for (const ref of refs ?? []) {
         const kind = ref?.kind ?? 'image';
@@ -399,7 +434,7 @@ window.createThreadImages = ({ send, canRead, capabilities = () => [] }) => {
             // Out-of-contract callers can exceed the frame-derived bound.
             // Keep a visible retry entry rather than leaving an empty article.
             const holder = document.createElement(inline ? 'span' : 'div'), figure = document.createElement(inline ? 'span' : 'div');
-            figure.className = kind === 'activity' ? 'activity-card' : 'message-file ' + (inline ? 'message-file-inline' : 'file-chip');
+            figure.className = kind === 'activity' ? 'activity-card' : 'message-file ' + (card ? 'document-file' : inline ? 'message-file-inline' : attachment ? 'attachment-file' : 'file-chip');
             const button = document.createElement('button'); button.type = 'button'; button.className = kind === 'activity' ? 'activity-summary' : 'file-link';
             button.dataset.imageId = ref.id; button.disabled = !canRead(); button.setAttribute('aria-expanded', 'false');
             const name = typeof ref.label === 'string' && ref.label.trim() ? ref.label.slice(0, 512) : ref.name.slice(0, 240);
@@ -412,7 +447,7 @@ window.createThreadImages = ({ send, canRead, capabilities = () => [] }) => {
               event.preventDefault(); event.stopPropagation?.();
               if (!canRead() || epoch !== viewEpoch) return;
               if (!metadataSlot()) { status.textContent = '暂不可用，稍后重试'; return; }
-              fallbackViews.delete(fallback); holder.replaceChildren(); this.render([ref], holder, { inline, link }); pump();
+              fallbackViews.delete(fallback); holder.replaceChildren(); this.render([ref], holder, { inline, link, attachment, card }); pump();
             });
             continue;
           }
@@ -427,7 +462,7 @@ window.createThreadImages = ({ send, canRead, capabilities = () => [] }) => {
         }
         const fileLink = kind !== 'activity' && (kind !== 'image' || link);
         const figure = document.createElement(kind === 'activity' ? 'div' : inline ? 'span' : 'figure');
-        figure.className = kind === 'activity' ? 'activity-card' : fileLink ? 'message-file ' + (inline ? 'message-file-inline' : 'file-chip') : 'message-image';
+        figure.className = kind === 'activity' ? 'activity-card' : fileLink ? 'message-file ' + (card ? 'document-file' : inline ? 'message-file-inline' : attachment ? 'attachment-file' : 'file-chip') : 'message-image';
         const button = document.createElement('button'); button.type = 'button'; button.dataset.imageId = ref.id;
         const label = document.createElement(inline ? 'span' : 'figcaption'); label.className = 'image-caption';
         const displayName = typeof ref.label === 'string' && ref.label.trim() ? ref.label.slice(0, 512) : state.name;
@@ -437,7 +472,7 @@ window.createThreadImages = ({ send, canRead, capabilities = () => [] }) => {
           panel.id = 'activity-detail-' + ++activityViewId; button.setAttribute('aria-controls', panel.id);
           overview = document.createElement('div'); overview.className = 'activity-overview'; figure.append(button, overview, panel);
         } else if (fileLink) {
-          button.className = 'file-link'; figure.append(button);
+          button.className = attachment || card ? 'file-link attachment-file-button' : 'file-link'; figure.append(button);
           if (kind !== 'image') {
             panel = document.createElement('span'); panel.className = 'file-preview-panel'; panel.hidden = true;
             panel.id = 'file-preview-' + ++activityViewId; button.setAttribute('aria-controls', panel.id);
@@ -456,7 +491,8 @@ window.createThreadImages = ({ send, canRead, capabilities = () => [] }) => {
           }); }
         parent.append(figure);
         rendered++;
-        state.views.push({ button, label, figure, download, panel, notice, overview, displayName, link }); draw(state);
+        const previewImageId = attachment && kind === 'download' && /^[a-f0-9]{64}$/.test(ref.previewImageId ?? '') ? ref.previewImageId : undefined;
+        state.views.push({ button, label, figure, download, panel, notice, overview, displayName, link, attachment, previewImageId, card: attachment || card }); draw(state);
         button.addEventListener('click', event => {
           event.preventDefault(); event.stopPropagation?.();
           if (states.get(state.id) !== state || !canRead()) return;
@@ -467,6 +503,7 @@ window.createThreadImages = ({ send, canRead, capabilities = () => [] }) => {
             if (state.expanded && state.status !== 'ready') enqueue(state);
             draw(state); return;
           }
+          if (state.kind === 'download') { state.expanded = !state.expanded; draw(state); return; }
           if (state.status !== 'ready') {
             if (state.kind === 'image' && link) state.openWhenReady = true;
             if (state.kind !== 'image') state.expanded = !state.expanded;

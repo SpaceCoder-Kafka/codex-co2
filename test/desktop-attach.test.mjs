@@ -12,6 +12,7 @@ import { startRelay } from '../lib/relay.mjs';
 import WebSocket from 'ws';
 import { setTimeout as delay } from 'node:timers/promises';
 import { activityItem, activityDetail } from '../lib/thread-activities.mjs';
+import { GuestUploads, attachmentInput } from '../lib/guest-uploads.mjs';
 
 const THREAD = '11111111-1111-4111-8111-111111111111';
 const OTHER = '22222222-2222-4222-8222-222222222222';
@@ -615,4 +616,34 @@ test('native connection loss revokes an admitted relay room and pending proposal
     rpcFactory: () => DesktopRpcClient.connect(f.endpoint) });
   await replacement.start(); t.after(() => replacement.close());
   assert.notEqual(replacement.roomId, room.roomId); assert.equal(replacement.guests.size, 0);
+});
+
+test('uploaded images and ordinary/audio/video files use the existing Desktop follower with trusted native metadata only', async t => {
+  const f = await fixture(t), rpc = await DesktopRpcClient.connect(f.endpoint); t.after(() => rpc.close());
+  await rpc.request('thread/read', { threadId: THREAD });
+  const store = new GuestUploads(path.join(path.dirname(f.endpoint), '.coop'), randomUUID()); t.after(() => store.close());
+  const thread = new ScopedThread({ rpc, threadId: THREAD }); await thread.start(); t.after(() => thread.close());
+  const cases = [ ['image.png', Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAEUlEQVR4nGP4z8DwH4QZYAwAR8oH+WdZbrcAAAAASUVORK5CYII=', 'base64')],
+    ['file.docx', Buffer.from('PK synthetic docx')], ['audio.wav', Buffer.from('RIFF synthetic audio')], ['video.mp4', Buffer.from('synthetic video')] ];
+  for (const [name, bytes] of cases) {
+    const id = randomUUID(); store.receive('guest', { type: 'upload-start', uploadId: id, name, size: bytes.length });
+    store.receive('guest', { type: 'upload-chunk', uploadId: id, index: 0, data: bytes.toString('base64') });
+    store.receive('guest', { type: 'upload-finish', uploadId: id });
+    const attachments = store.claim('guest', [id]); await thread.submitApproved('', randomUUID(), { attachments });
+    const native = f.requests.filter(r => r.method === 'thread-follower-start-turn').at(-1);
+    assert.equal(native.targetClientId, f.owner); assert.equal(native.params.conversationId, THREAD); assert.equal(native.version, 2);
+    assert.deepEqual(native.params.turnStart.context, { inheritThreadSettings: true, attachments: [{ label: name, path: attachments[0].path,
+      fsPath: attachments[0].path, ...(name.endsWith('.png') ? { isImageAttachment: true } : {}) }], commentAttachments: [] });
+    assert.equal(native.params.turnStart.request.input[0].text_elements.length, 0);
+    assert.match(native.params.turnStart.request.input[0].text, /## My request:/);
+    assert.equal(native.params.turnStart.request.input.length, name.endsWith('.png') ? 2 : 1);
+    assert.deepEqual(await fs.readFile(attachments[0].path), bytes);
+  }
+  const count = f.requests.filter(r => r.method === 'thread-follower-start-turn').length;
+  for (const attachments of [[{ path: '/synthetic/private', image: true }], [{ path: cases[0][0] }]]) await assert.rejects(rpc.request('turn/start',
+    { threadId: THREAD, input: [{ type: 'text', text: 'bad' }], attachments }), /Unsupported/);
+  await assert.rejects(rpc.request('turn/start', { threadId: THREAD, input: [{ type: 'text', text: 'bad' }, { type: 'localImage', path: '/synthetic/private' }] }), /Unsupported/);
+  rpc.nativeState.environments = [{ environmentId: 'remote-synthetic', cwd: '/synthetic/remote' }]; assert.equal(rpc.canUploadAttachments(), false);
+  assert.equal(f.requests.filter(r => r.method === 'thread-follower-start-turn').length, count);
+  // Scripted IPC confirms request shape, not native rendering or model/audio understanding.
 });

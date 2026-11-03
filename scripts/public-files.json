@@ -30,6 +30,7 @@
   "docs/release-notes/v0.1.0-zh.md",
   "docs/release-notes/v0.2.0-zh.md",
   "docs/release-notes/v0.3.0-zh.md",
+  "docs/release-notes/v0.4.0-zh.md",
   "global.json",
   "lib/app-control.mjs",
   "lib/app-info.mjs",
@@ -208,5 +209,7 @@
   "windows/Program.cs",
   "windows/app.manifest",
   "windows/installer.nsi",
-  "windows/packages.lock.json"
+  "windows/packages.lock.json",
+  "lib/guest-uploads.mjs",
+  "test/guest-uploads.test.mjs"
 ]

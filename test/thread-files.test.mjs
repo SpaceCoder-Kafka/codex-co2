@@ -60,6 +60,7 @@ test('file formats distinguish rich previews and original downloads preserve exa
   assert.equal(createHash('sha256').update(original.bytes).digest('hex'), createHash('sha256').update(utf16).digest('hex'));
   for (const [name, kind] of [['data.csv', 'table'], ['data.tsv', 'table'], ['note.markdown', 'markdown'],
     ['report.pdf', 'pdf'], ['doc.docx', 'docx'], ['book.xlsx', 'xlsx'], ['slides.pptx', 'pptx'],
+    ['legacy.doc', 'download'], ['legacy.xls', 'download'], ['legacy.ppt', 'download'],
     ['sound.mp3', 'audio'], ['sound.wav', 'audio'], ['sound.m4a', 'audio'], ['sound.ogg', 'audio'], ['sound.flac', 'audio'], ['source.svg', 'text']]) {
     assert.equal(fileKind(name), kind);
   }
@@ -70,6 +71,45 @@ test('file formats distinguish rich previews and original downloads preserve exa
   await assert.rejects(readFilePreview(ref(invalid)));
   assert.deepEqual((await readFilePreview(ref(invalid), { representation: 'original' })).bytes, Buffer.from('not a pdf'));
   await assert.rejects(readFilePreview(ref(file), { representation: 'arbitrary' }));
+});
+
+test('legacy Office records and parsed links offer only byte-exact scoped originals', async t => {
+  const { dir, put, ref } = await fixture(t);
+  // A .doc may contain an OLE container, RTF or HTML. Do not guess its format,
+  // execute it, or feed it to the OOXML renderer; preserve the supplied bytes.
+  for (const [name, bytes] of [
+    ['old.doc', Buffer.concat([Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]), Buffer.from('synthetic Office')])],
+    ['rtf.doc', Buffer.from('{\\rtf1\\ansi Synthetic Word document}')],
+    ['html.doc', Buffer.from('<html><body>合成文档<script>never executed</script></body></html>')],
+    ['old.xls', Buffer.from([0, 1, 2, 255])], ['old.ppt', Buffer.from([255, 254, 0])],
+  ]) {
+    const file = await put(name, bytes), userRef = ref(file);
+    assert.equal(userRef.kind, 'download');
+    assert.deepEqual(nativeFileParts([{ path: file }]), [{ type: 'localFile', path: file }]);
+    const text = `下载 [Word 文档](${file})`;
+    const assistantRef = assistantFileRefs('reply', text, 'room-one')[0];
+    assert.deepEqual({ kind: assistantRef.kind, label: assistantRef.label, syntax: assistantRef.syntax, index: assistantRef.index },
+      { kind: 'download', label: 'Word 文档', syntax: 'link', index: 0 });
+    for (const source of [userRef, assistantRef]) {
+      await assert.rejects(readFilePreview(source), /Preview unavailable/);
+      const original = await readFilePreview(source, { representation: 'original' });
+      assert.equal(original.mime, 'application/octet-stream');
+      assert.equal(createHash('sha256').update(original.bytes).digest('hex'), createHash('sha256').update(bytes).digest('hex'));
+    }
+    assert.notEqual(assistantRef.id, assistantFileRefs('reply', text, 'room-two')[0].id);
+    assert.deepEqual(assistantFileRefs('reply', `${file}\n\n\`[example](${file})\`\n\n\`\`\`md\n[example](${file})\n\`\`\``, 'room-one'), []);
+    await assert.rejects(readFilePreview(JSON.parse(JSON.stringify(assistantRef)), { representation: 'original' }));
+  }
+  assert.equal(fileKind('macro.docm'), null);
+  assert.equal(fileKind('installer.exe'), null);
+  assert.deepEqual(assistantFileRefs('reply', '[cloud](sandbox:/mnt/data/report.doc) [remote](//remote/report.doc) [relative](report.doc)', 'room'), []);
+  const large = await put('large.doc', Buffer.alloc(MAX_VIDEO_BYTES + 1));
+  await assert.rejects(readFilePreview(ref(large), { representation: 'original' }));
+  const local = await put('local.doc', Buffer.from('synthetic'));
+  const link = path.join(dir, 'linked.doc'); await fs.symlink(local, link);
+  await assert.rejects(readFilePreview(ref(link), { representation: 'original' }));
+  const protectedRef = ref(path.join(os.homedir(), '.codex', 'synthetic-no-read.doc'));
+  await assert.rejects(readFilePreview(protectedRef, { representation: 'original' }));
 });
 
 test('PDF, Office and audio preview signatures fail closed independently of original download', async t => {
@@ -238,7 +278,7 @@ test('both Desktop history formats preserve assistant file scope and bounded sna
   }
 });
 
-test('real relay sends scoped video/text chunks only to admitted guests and rejects extra file paths', async t => {
+test('real relay sends scoped previews and original Office bytes only to admitted guests and rejects extra paths', async t => {
   const { put } = await fixture(t), file = await put('clip.mp4', Buffer.concat([mp4, Buffer.alloc(70000)]));
   const registrationSecret = secret(), relay = await startRelay({ registrationSecret }); t.after(() => relay.close());
   const rpc = new Rpc(file), room = await new SharedRoom({ relayUrl: relay.url, registrationSecret, threadId: 'selected', rpcFactory: async () => rpc }).start();
@@ -270,6 +310,20 @@ test('real relay sends scoped video/text chunks only to admitted guests and reje
   const originalChunks = messages.filter(m => m.payload?.type === 'file-chunk' && m.payload.fileId === originalId).map(m => m.payload);
   assert.ok(originalChunks.every(c => c.mime === 'application/octet-stream' && c.representation === 'original'));
   assert.deepEqual(Buffer.concat(originalChunks.map(c => Buffer.from(c.data, 'base64'))), originalBytes);
+  const docBytes = Buffer.concat([Buffer.from('{\\rtf1 Synthetic original Office document}'), Buffer.alloc(70000)]);
+  const docPath = await put('converted.doc', docBytes);
+  rpc.thread.turns = [{ id: 'turn', status: 'completed', items: [{ id: 'reply', type: 'agentMessage', text: `下载 [Word 文档](${docPath})` }] }];
+  await room.thread.refresh();
+  await until(() => messages.some(m => m.payload?.type === 'snapshot' && m.payload.items[0].files?.[0]?.kind === 'download'));
+  const docRef = messages.findLast(m => m.payload?.type === 'snapshot').payload.items[0].files[0];
+  assert.equal(docRef.label, 'Word 文档');
+  assert.equal(room.thread.hasFile(originalId), false, 'replacing the message revokes the old attachment');
+  ws.send(JSON.stringify({ type: 'file-request', fileId: docRef.id, representation: 'original' }));
+  await until(() => messages.some(m => m.payload?.type === 'file-chunk' && m.payload.fileId === docRef.id && m.payload.index + 1 === m.payload.total));
+  const docChunks = messages.filter(m => m.payload?.type === 'file-chunk' && m.payload.fileId === docRef.id).map(m => m.payload);
+  assert.ok(docChunks.length > 1 && docChunks.every(c => c.mime === 'application/octet-stream' && c.representation === 'original'));
+  const docDownload = Buffer.concat(docChunks.map(c => Buffer.from(c.data, 'base64')));
+  assert.equal(createHash('sha256').update(docDownload).digest('hex'), createHash('sha256').update(docBytes).digest('hex'));
   ws.send(JSON.stringify({ type: 'file-request', fileId: 'f'.repeat(64) })); await until(() => messages.some(m => m.payload?.type === 'file-unavailable'));
   ws.send(JSON.stringify({ type: 'file-request', fileId, path: file })); await until(() => messages.some(m => m.type === 'invalid-message'));
 });

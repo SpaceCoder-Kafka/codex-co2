@@ -24,9 +24,14 @@ const ui = Object.fromEntries([
   'collaboration-back', 'collaboration-close', 'open-proposals', 'open-backup', 'open-help',
   'submission-summary', 'proposals-empty', 'backup-summary', 'backup-name', 'backup-unavailable',
   'identity-warning', 'open-backup-warning', 'manual-recovery', 'recovery-feedback', 'send-mode',
+  'attach-button', 'attachment-input', 'compose-attachments',
 ].map((id) => [id, byId(id)]));
 
 const proposals = new Map();
+const selectedUploads = [], uploadWaiters = new Map();
+let uploadEnabled = false, uploadGeneration = 0, uploadRunning = false;
+const uploadLimit = 32 * 1024 * 1024, uploadChunkBytes = 30 * 1024;
+let documentThumbnailCount = 0;
 function isValidInvitation(room, token) {
   return /^[A-Za-z0-9_-]{1,128}$/.test(room || '')
     && /^[A-Za-z0-9_-]{32,128}$/.test(token || '');
@@ -248,7 +253,10 @@ function canPropose() {
 function updateControls() {
   refreshCollaboration();
   ui['proposal-text'].disabled = !canPropose();
-  ui['send-button'].disabled = !canPropose() || !ui['proposal-text'].value.trim();
+  ui['send-button'].disabled = !canPropose() || (!ui['proposal-text'].value.trim() && !selectedUploads.length)
+    || selectedUploads.some(a => a.status !== 'ready');
+  ui['attach-button'].disabled = !canPropose() || !uploadEnabled || selectedUploads.length >= 8;
+  ui['attach-button'].title = uploadEnabled ? '添加文件，也可粘贴或拖放；单个最大 32 MiB' : '当前共享暂不支持发送附件';
   ui['join-button'].disabled = !validInvitation || terminal || connecting || admitted;
   ui['display-name'].disabled = connecting || admitted || terminal;
   ui['recovery-input'].disabled = connecting || admitted || terminal;
@@ -272,6 +280,7 @@ function clearConnectionTimer() {
 }
 
 function markPendingUnknown() {
+  pauseUploads();
   for (const proposal of proposals.values()) {
     if (['pending', 'processing'].includes(proposal.status)) {
       proposal.status = 'unknown';
@@ -282,6 +291,7 @@ function markPendingUnknown() {
 }
 
 function detachSocket() {
+  pauseUploads();
   clearConnectionTimer();
   stopHeartbeat();
   const previous = socket;
@@ -304,6 +314,150 @@ function disconnect(message) {
   markPendingUnknown();
   updateControls();
   scheduleReconnect();
+}
+
+function renderUploads() {
+  const list = ui['compose-attachments'];
+  list.hidden = selectedUploads.length === 0;
+  const rows = [];
+  for (const item of selectedUploads) {
+    if (!item.row) createUploadCard(item);
+    const { row, statusNode: status } = item;
+    row.dataset.status = item.status;
+    status.textContent = item.status === 'ready' ? '已上传' : item.status === 'failed' ? '上传失败，请重新添加'
+      : item.status === 'queued' ? '等待上传' : `上传中 ${Math.floor(item.received / (item.file.size || 1) * 100)}%`;
+    rows.push(row);
+  }
+  if (list.children.length !== rows.length || rows.some((row, index) => list.children[index] !== row)) list.replaceChildren(...rows);
+}
+function createUploadCard(item) {
+  const ext = item.file.name.split('.').at(-1).toLowerCase();
+  const family = ['doc', 'docx'].includes(ext) ? 'word' : ['xls', 'xlsx', 'csv', 'tsv'].includes(ext) ? 'spreadsheet'
+    : ['ppt', 'pptx'].includes(ext) ? 'presentation' : ext === 'pdf' ? 'pdf'
+      : ['mp4', 'mov', 'webm', 'mp3', 'wav', 'm4a', 'ogg', 'flac'].includes(ext) ? 'media' : 'text';
+  const row = document.createElement('div'); row.className = 'compose-attachment'; row.title = item.file.name;
+  row.dataset.preview = 'none'; row.dataset.family = family;
+  const preview = document.createElement('div'); preview.className = 'compose-attachment-preview'; preview.setAttribute('aria-hidden', 'true');
+  const footer = document.createElement('div'); footer.className = 'compose-attachment-footer';
+  const icon = document.createElement('span'); icon.className = 'compose-file-icon'; icon.setAttribute('aria-hidden', 'true');
+  icon.textContent = /^[a-z0-9]{1,5}$/.test(ext) ? ext.toUpperCase() : 'FILE';
+  const name = document.createElement('span'); name.className = 'compose-attachment-name'; name.textContent = item.file.name;
+  const status = document.createElement('span'); status.className = 'compose-attachment-status';
+  const remove = document.createElement('button'); remove.type = 'button'; remove.className = 'compose-attachment-remove';
+  remove.textContent = '×'; remove.setAttribute('aria-label', `移除 ${item.file.name}`);
+  remove.addEventListener('click', () => {
+    const index = selectedUploads.indexOf(item); if (index < 0) return;
+    selectedUploads.splice(index, 1); disposeUploadPreview(item);
+    if (canPropose()) send({ type: 'upload-cancel', uploadId: item.id });
+    uploadWaiters.get(item.id)?.reject(new Error('已移除'));
+    renderUploads(); updateControls();
+  });
+  footer.append(icon, name); row.append(preview, footer, status, remove);
+  Object.assign(item, { row, statusNode: status, preview, previewCleanups: [] });
+  void prepareUploadPreview(item, ext);
+}
+function disposeUploadPreview(item) {
+  item.previewDisposed = true;
+  for (const cleanup of item.previewCleanups ?? []) { try { cleanup(); } catch { /* Thumbnail cleanup cannot change upload authorization. */ } }
+  item.previewCleanups = [];
+  item.preview?.replaceChildren();
+  if (item.row) item.row.dataset.preview = 'none';
+}
+async function prepareUploadPreview(item, ext) {
+  const current = () => !item.previewDisposed && selectedUploads.includes(item);
+  const fallback = () => { if (current()) { item.preview.replaceChildren(); item.row.dataset.preview = 'none'; } };
+  try {
+    if (['png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp', 'avif', 'heic', 'heif', 'mp4', 'mov', 'webm'].includes(ext)) {
+      const video = ['mp4', 'mov', 'webm'].includes(ext), media = document.createElement(video ? 'video' : 'img');
+      const url = URL.createObjectURL(item.file); item.previewCleanups.push(() => { if (video) { media.pause(); media.removeAttribute('src'); media.load(); } URL.revokeObjectURL(url); });
+      media.addEventListener('error', fallback);
+      media.addEventListener(video ? 'loadeddata' : 'load', () => { if (current()) item.row.dataset.preview = video ? 'video' : 'image'; });
+      if (video) { media.muted = true; media.playsInline = true; media.preload = 'metadata'; }
+      else media.alt = item.file.name;
+      item.preview.append(media); media.src = url;
+      // Keep the preview in layout while the browser decodes its first frame.
+      item.row.dataset.preview = video ? 'video' : 'image';
+      return;
+    }
+    if (['pdf', 'docx', 'pptx', 'xlsx'].includes(ext) && item.file.size <= 4*1024*1024 && documentThumbnailCount < 2) {
+      documentThumbnailCount++;
+      item.previewCleanups.push(() => { documentThumbnailCount--; });
+      const bytes = new Uint8Array(await item.file.arrayBuffer()); if (!current()) return;
+      const load = window.co2PreviewLoader || (() => import('/vendor/previews.mjs')), api = await load(); if (!current()) return;
+      const box = document.createElement('div'); box.className = 'file-rich-preview compose-attachment-document'; item.preview.append(box);
+      const result = await api.mountPreview({ container: box, bytes, name: item.file.name, kind: ext, isCurrent: current });
+      if (!current()) { result?.dispose?.(); return; }
+      item.previewCleanups.push(() => result?.dispose?.()); item.row.dataset.preview = 'document'; return;
+    }
+    if (['txt', 'md', 'markdown', 'log', 'json', 'jsonl', 'ndjson', 'csv', 'tsv', 'yaml', 'yml', 'xml', 'html', 'css', 'js', 'mjs', 'ts', 'tsx', 'jsx', 'py', 'go', 'rs', 'swift', 'dart', 'java', 'c', 'h', 'cpp', 'sh', 'sql', 'toml', 'diff', 'patch'].includes(ext)) {
+      const bytes = await item.file.slice(0, 4096).arrayBuffer(); if (!current()) return;
+      const text = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+      if (!text.trim() || /[\u0000-\u0008\u000b\u000e-\u001f]/.test(text)) return;
+      const pre = document.createElement('pre'); pre.className = 'compose-attachment-text'; pre.textContent = text;
+      item.preview.append(pre); item.row.dataset.preview = 'text';
+    }
+  } catch { fallback(); disposeUploadPreview(item); }
+}
+function pauseUploads() {
+  uploadEnabled = false; uploadGeneration++;
+  for (const waiter of uploadWaiters.values()) waiter.reject(new Error('连接已中断'));
+  for (const item of selectedUploads) { item.status = 'failed'; disposeUploadPreview(item); }
+  renderUploads();
+}
+function uploadRequest(item, message, expected) {
+  return new Promise((resolve, reject) => {
+    const timer = window.setTimeout(() => finish(new Error('上传超时')), 30000);
+    function finish(error, payload) {
+      window.clearTimeout(timer); uploadWaiters.delete(item.id);
+      error ? reject(error) : resolve(payload);
+    }
+    uploadWaiters.set(item.id, { expected, resolve: payload => finish(null, payload), reject: error => finish(error) });
+    if (!send(message)) finish(new Error('无法上传'));
+  });
+}
+async function drainUploads() {
+  if (uploadRunning) return;
+  uploadRunning = true;
+  try {
+    for (;;) {
+      const item = selectedUploads.find(a => a.status === 'queued');
+      if (!item || !canPropose() || !uploadEnabled) break;
+      const generation = uploadGeneration;
+      const current = () => generation === uploadGeneration && selectedUploads.includes(item) && canPropose() && uploadEnabled;
+      item.status = 'uploading'; renderUploads(); updateControls();
+      try {
+        await uploadRequest(item, { type: 'upload-start', uploadId: item.id, name: item.file.name, size: item.file.size }, { status: 'uploading', index: 0 });
+        let index = 0;
+        for (let offset = 0; offset < item.file.size; offset += uploadChunkBytes) {
+          if (!current()) throw new Error('上传已中止');
+          const bytes = new Uint8Array(await item.file.slice(offset, offset + uploadChunkBytes).arrayBuffer());
+          if (!current()) throw new Error('上传已中止');
+          const data = btoa(String.fromCharCode(...bytes));
+          await uploadRequest(item, { type: 'upload-chunk', uploadId: item.id, index, data }, { status: 'uploading', index: ++index });
+          item.received = offset + bytes.length; renderUploads();
+        }
+        if (!current()) throw new Error('上传已中止');
+        await uploadRequest(item, { type: 'upload-finish', uploadId: item.id }, { status: 'ready', index });
+        if (current()) item.status = 'ready';
+      } catch (error) {
+        item.status = 'failed';
+        if (current()) { send({ type: 'upload-cancel', uploadId: item.id }); proposalFeedback(`附件上传未完成：${error.message || '请移除后重新添加。'}`, true); }
+      }
+      renderUploads(); updateControls();
+    }
+  } finally { uploadRunning = false; }
+}
+function addUploadFiles(files) {
+  if (!canPropose() || !uploadEnabled) return;
+  for (const file of Array.from(files ?? [])) {
+    if (selectedUploads.length >= 8 || file.size > uploadLimit
+      || selectedUploads.reduce((n,a) => n+a.file.size, 0)+file.size > 64*1024*1024
+      || file.name.length > 240 || /[\x00-\x1f\x7f-\x9f/\\]/.test(file.name)) {
+      proposalFeedback('每条消息最多 8 个文件，单个文件最多 32 MiB，合计最多 64 MiB。', true); continue;
+    }
+    selectedUploads.push({ id: requestId(), file, status: 'queued', received: 0 });
+  }
+  renderUploads(); updateControls(); void drainUploads();
 }
 
 function setTerminal(message, label, { preserveIdentity = false } = {}) {
@@ -348,7 +502,7 @@ function useRecoveredInvitation(next, request) {
   lastRevision = null; receivedSnapshot = false; policyKnown = false; requireApproval = true;
   reconnectAttempts = 0;
   // A new grant starts a fresh conversation connection, never a replay queue.
-  proposals.clear(); renderProposals(); ui.messages.replaceChildren(); images?.clear(); clearRichText(); contentCapabilities = []; assistantTexts.clear(); messageFolds.clear(); workFolds.clear();
+  proposals.clear(); selectedUploads.length = 0; renderUploads(); renderProposals(); ui.messages.replaceChildren(); images?.clear(); clearRichText(); contentCapabilities = []; assistantTexts.clear(); messageFolds.clear(); workFolds.clear();
   ui['proposal-text'].value = ''; saveDraft(); resizeComposer();
   ui['proposal-feedback'].textContent = ''; ui['history-note'].hidden = true; ui['new-replies-button'].hidden = true;
   ui['empty-state'].hidden = false; ui['thread-title'].textContent = '共享会话';
@@ -486,11 +640,13 @@ function renderMessage(item, parent) {
       const ref = item.images?.find(image => image.syntax !== 'link' && image.index === index);
       if (!images || !ref) return false;
       return images.render([ref], parent, { inline: true }) > 0;
-    }, renderFile(parent, index, syntax) {
+    }, renderFile(parent, index, syntax, context) {
       const image = syntax === 'link' && item.images?.find(image => image.syntax === 'link' && image.linkIndex === index);
       if (image) return !!images?.render([image], parent, { inline: true, link: true });
       const ref = item.files?.find(file => file.index === index && file.syntax === syntax);
-      return !!(images && ref && images.render([ref], parent, { inline: true }));
+      const card = syntax === 'link' && context?.standalone === true
+        && /\.(?:pdf|docx?|xlsx?|pptx?|csv|tsv|md|markdown|txt|json)$/i.test(ref?.name ?? '');
+      return !!(images && ref && images.render([ref], parent, { inline: true, card }));
     } });
     enhanceRichText(text);
   } else text.textContent = item.text;
@@ -502,7 +658,7 @@ function renderMessage(item, parent) {
   const time = item.role === 'user' && messageTime(item);
   if (time) { const timestamp = document.createElement('div'); timestamp.className = 'message-timestamp';
     timestamp.textContent = `${String(time.getHours()).padStart(2, '0')}:${String(time.getMinutes()).padStart(2, '0')}`; article.append(timestamp); }
-  images?.render([...(item.role === 'assistant' && window.renderMarkdown ? [] : item.images ?? []), ...(item.files ?? []).filter(file => item.role !== 'assistant' || !window.renderMarkdown || file.syntax === undefined)], article);
+  images?.render([...(item.role === 'assistant' && window.renderMarkdown ? [] : item.images ?? []), ...(item.files ?? []).filter(file => item.role !== 'assistant' || !window.renderMarkdown || file.syntax === undefined)], article, { attachment: item.role === 'user' });
   parent.append(article);
 }
 
@@ -758,6 +914,17 @@ function handleMessage(message) {
     case 'data': {
       if (!admitted || !message.payload || typeof message.payload !== 'object') return;
       const payload = message.payload;
+      if (payload.type === 'upload-policy') {
+        uploadEnabled = payload.enabled === true && payload.maxFileBytes === uploadLimit && payload.maxAttachments === 8 && payload.chunkBytes === uploadChunkBytes;
+        updateControls();
+      }
+      if (payload.type === 'upload-status') {
+        const waiter = uploadWaiters.get(payload.uploadId);
+        if (waiter) {
+          if (payload.status === 'failed' || payload.status === 'cancelled') waiter.reject(new Error(typeof payload.message === 'string' ? payload.message.slice(0,200) : '上传失败，请移除后重新添加。'));
+          else if (payload.status === waiter.expected.status && payload.index === waiter.expected.index) waiter.resolve(payload);
+        }
+      }
       if (payload.type === 'share-ended' && ['expired', 'interrupted', 'paused'].includes(payload.reason)) {
         const expired = payload.reason === 'expired';
         setTerminal(expired ? '邀请已到期，正在检查能否申请恢复。' : '共享因故中断，正在检查能否申请恢复邀请。',
@@ -1016,16 +1183,30 @@ ui['proposal-text'].addEventListener('keydown', (event) => {
   event.preventDefault();
   if (!event.repeat) ui['proposal-form'].requestSubmit();
 });
+ui['attach-button'].addEventListener('click', () => ui['attachment-input'].click());
+ui['attachment-input'].addEventListener('change', () => { addUploadFiles(ui['attachment-input'].files); ui['attachment-input'].value = ''; });
+ui['proposal-text'].addEventListener('paste', event => {
+  if (event.clipboardData?.files?.length && canPropose() && uploadEnabled) { event.preventDefault(); addUploadFiles(event.clipboardData.files); }
+});
+ui['proposal-form'].addEventListener('dragover', event => {
+  if (canPropose() && uploadEnabled && Array.from(event.dataTransfer?.types ?? []).includes('Files')) event.preventDefault();
+});
+ui['proposal-form'].addEventListener('drop', event => {
+  if (event.dataTransfer?.files?.length) { event.preventDefault(); addUploadFiles(event.dataTransfer.files); }
+});
 ui['proposal-form'].addEventListener('submit', (event) => {
   event.preventDefault();
   const text = ui['proposal-text'].value.trim();
-  if (!canPropose() || !text || text.length > 8000) return;
+  if (!canPropose() || (!text && !selectedUploads.length) || text.length > 8000 || selectedUploads.some(a => a.status !== 'ready')) return;
   const id = requestId();
-  if (!send({ type: 'proposal', requestId: id, text })) {
+  const attachmentIds = selectedUploads.map(a => a.id), attachmentNames = selectedUploads.map(a => a.file.name);
+  if (!send({ type: 'proposal', requestId: id, text, ...(attachmentIds.length ? { attachmentIds } : {}) })) {
     proposalFeedback('尚未发送，草稿已保留。请恢复连接后再试。', true);
     return;
   }
-  proposals.set(id, { text, status: requireApproval ? 'pending' : 'processing', message: '' });
+  proposals.set(id, { text: [text, ...attachmentNames.map(name => `📎 ${name}`)].filter(Boolean).join('\n'), status: requireApproval ? 'pending' : 'processing', message: '' });
+  for (const item of selectedUploads) disposeUploadPreview(item);
+  selectedUploads.length = 0; renderUploads();
   renderProposals();
   ui['proposal-text'].value = '';
   saveDraft();
