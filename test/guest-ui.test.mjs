@@ -609,6 +609,8 @@ test('human authors display actual room names, roles and distinct bubble classes
   assert.deepEqual(articles.map(a => a.children[0].textContent), ['阿明 · 分享者', '小林 · 协作者', '历史消息 · 作者未知', '作者待确认', 'Codex']);
   assert.match(articles[0].className, /message-host/);
   assert.match(articles[1].className, /message-guest/);
+  assert.match(articles[2].children[0].className, /message-author-historical/);
+  assert.doesNotMatch(articles[3].children[0].className, /message-author-historical/);
   socket.receive({ type: 'revoked' });
   assert.equal(page.elements.messages.children.length, 0);
   assert.equal(page.elements['proposal-feedback'].textContent, '访问已结束，旧建议不会自动重发。');

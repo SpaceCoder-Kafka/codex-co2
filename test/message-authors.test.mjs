@@ -190,3 +190,38 @@ test('a reused item ID with changed text or turn cannot inherit a persisted auth
     assert.equal(restored.decorate(items)[0].author.kind, 'unknown');
   }
 });
+
+test('a live input keeps its author when its display-only local turn becomes a native turn', () => {
+  for (const guestInput of [false, true]) {
+    const f = fixture(), local = 'co2:local-turn:' + 'a'.repeat(64);
+    const record = guestInput && f.authors.begin('request', '新输入', guest);
+    f.add('client-input', '新输入', local);
+    f.authors.observe(f.items, new Map([['history', 'old'], ['client-input', 'native-turn']]));
+    if (record) f.authors.complete(record, { id: 'native-turn', clientUserMessageId: 'client-input' });
+    assert.equal(f.author('client-input').kind, guestInput ? 'guest' : 'host');
+    const restored = new MessageAuthors('新名称', { evidence: f.authors.checkpoint() });
+    assert.equal(restored.decorate(f.items).at(-1).author.kind, guestInput ? 'guest' : 'host');
+  }
+});
+
+test('an accepted exact native ID recovers a post-dispatch input previously marked historical', () => {
+  const f = fixture(), record = f.authors.begin('request', '新输入', guest);
+  f.add('client-input', '新输入', 'temporary-turn');
+  // This models the old checkpoint after a local-to-native turn transition.
+  f.authors.observe(f.items, new Map([['history', 'old'], ['client-input', 'native-turn']]));
+  f.authors.complete(record, { id: 'native-turn', clientUserMessageId: 'client-input' });
+  const saved = f.authors.checkpoint();
+  const restored = new MessageAuthors('阿明', { evidence: saved });
+  assert.deepEqual(restored.decorate(f.items).at(-1).author, guest);
+  for (const mutation of [
+    r => { r.status = 'unknown'; },
+    r => { r.responseIds = null; },
+    r => { r.responseIds = ['different-input']; },
+    r => { r.turnId = 'different-turn'; },
+    r => { r.before = saved.sequence; },
+    r => { r.digest = '0'.repeat(64); },
+  ]) {
+    const invalid = structuredClone(saved); mutation(invalid.submissions[0][1]);
+    assert.equal(new MessageAuthors('阿明', { evidence: invalid }).decorate(f.items).at(-1).author.kind, 'unknown');
+  }
+});

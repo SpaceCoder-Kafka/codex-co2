@@ -629,6 +629,7 @@ function renderMessage(item, parent) {
   const label = document.createElement('div'); label.className = 'message-author';
   if (item.role === 'user' && kind === 'unknown') label.className += ' message-author-unknown';
   const name = typeof author?.name === 'string' ? [...author.name].slice(0, 40).join('') : '';
+  if (item.role === 'user' && kind === 'unknown' && name !== '作者待确认') label.className += ' message-author-historical';
   label.textContent = item.role === 'assistant' ? 'Codex'
     : name && kind !== 'unknown' ? `${name} · ${kind === 'host' ? '分享者' : '协作者'}`
     : name === '作者待确认' ? name : '历史消息 · 作者未知';

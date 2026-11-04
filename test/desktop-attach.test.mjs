@@ -514,6 +514,52 @@ test('Desktop author evidence survives input persistence, repeated text and late
   assert.equal(f.requests.filter(r => r.method === 'thread-follower-start-turn').length, 2, 'reopening must not replay inputs');
 });
 
+test('new Desktop turns retain host and guest authors through optimistic promotion and server persistence', async t => {
+  for (const role of ['host', 'guest']) for (const responseFirst of [false, true]) {
+    await t.test(`${role}, response ${responseFirst ? 'before' : 'after'} promotion`, async t => {
+      const f = await fixture(t), native = state();
+      native.turnHistory.history.entitiesByKey['turn:1'].turnId = 'old-turn';
+      f.malformed = native;
+      const rpc = await DesktopRpcClient.connect(f.endpoint);
+      const scoped = new ScopedThread({ rpc, threadId: THREAD, ownerName: '阿明' });
+      t.after(() => { scoped.close(); rpc.close(); }); await scoped.start();
+      const sync = async () => {
+        const updated = once(rpc, 'state');
+        f.broadcast(f.lastSocket(), THREAD, { type: 'patches', baseRevision: rpc.revision, revision: rpc.revision + 1,
+          patches: [{ op: 'replace', path: ['turnHistory'], value: structuredClone(native.turnHistory) }] });
+        await updated; await scoped.refresh();
+      };
+      let clientId = randomUUID(), submission;
+      if (role === 'guest') {
+        f.inputDelayMs = responseFirst ? 0 : 100;
+        submission = scoped.submitApproved('新回合输入', randomUUID(), { author: { id: 'guest', name: '小林', kind: 'guest' } });
+        let request;
+        for (let i = 0; i < 100 && !request; i++) {
+          request = f.requests.find(r => r.method === 'thread-follower-start-turn');
+          if (!request) await delay(5);
+        }
+        assert.ok(request); clientId = request.params.turnStart.request.clientUserMessageId;
+        if (responseFirst) await submission;
+      }
+      const history = native.turnHistory.history;
+      const turn = { turnId: null, status: 'inProgress', params: { clientUserMessageId: clientId,
+        input: [{ type: 'text', text: '新回合输入' }] }, items: [] };
+      history.entitiesByKey.new = turn; history.islands[0].entries.push({ value: 'new' }); await sync();
+      turn.turnId = TURN; await sync();
+      if (submission) await submission;
+      assert.equal(scoped.snapshot.items.find(i => i.id === clientId).author.kind, role);
+      turn.items.push({ id: 'persisted-user', clientId, type: 'userMessage', content: turn.params.input });
+      turn.status = 'completed'; await sync();
+      assert.equal(scoped.snapshot.items.find(i => i.id === clientId).author.kind, role);
+      const evidence = scoped._authors.checkpoint(); scoped.close();
+      const reopened = new ScopedThread({ rpc, threadId: THREAD, ownerName: '新名称', authorEvidence: evidence });
+      t.after(() => reopened.close()); await reopened.start();
+      assert.equal(reopened.snapshot.items.find(i => i.id === clientId).author.kind, role);
+      assert.equal(f.requests.filter(r => r.method === 'thread-follower-start-turn').length, role === 'guest' ? 1 : 0);
+    });
+  }
+});
+
 test('native approvals pending at attachment are local-only and clear while the turn remains active', async t => {
   const f = await fixture(t), native = state();
   native.turnHistory.history.entitiesByKey['turn:1'].status = 'inProgress';
