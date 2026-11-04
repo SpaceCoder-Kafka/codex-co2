@@ -118,14 +118,14 @@ const dependencies = await fs.mkdtemp(path.join(cache, 'production-'));
 try {
   for (const name of ['package.json', 'package-lock.json']) await fs.copyFile(path.join(root, name), path.join(dependencies, name));
   execFileSync('npm', ['ci', '--include=dev', '--ignore-scripts', '--no-audit', '--no-fund'], { cwd: dependencies, stdio: 'inherit' });
-  await buildWeb({ root, publicDir: path.join(service, 'public'), dependencyRoot: dependencies });
+  await buildWeb({ root, publicDir: path.join(service, 'public'), dependencyRoot: dependencies, stopService: true });
   execFileSync('npm', ['prune', '--omit=dev', '--omit=optional', '--ignore-scripts', '--no-audit', '--no-fund'], { cwd: dependencies, stdio: 'inherit' });
   const notices = await npmNotices(root, dependencies);
   if (notices !== await fs.readFile(path.join(root, 'third-party/npm-NOTICES.txt'), 'utf8')) throw new Error('Review and regenerate third-party npm notices');
   await removeDependencyBins(path.join(dependencies, 'node_modules'));
   await fs.cp(path.join(dependencies, 'node_modules'), path.join(service, 'node_modules'), { recursive: true });
   await fs.writeFile(path.join(resources, 'Licenses/npm-NOTICES.txt'), notices);
-} finally { await fs.rm(dependencies, { recursive: true, force: true }); }
+} finally { await fs.rm(dependencies, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }); }
 await fs.mkdir(path.join(service, 'bin'));
 await fs.copyFile(path.join(root, 'bin/desktop-service.mjs'), path.join(service, 'bin/desktop-service.mjs'));
 await fs.copyFile(path.join(root, 'package.json'), path.join(service, 'package.json'));

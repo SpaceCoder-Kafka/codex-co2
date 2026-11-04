@@ -6,6 +6,7 @@ export async function startResponsesFixture() {
   const requests = [];
   const blockedDestinations = [];
   const sockets = new Set();
+  const socketErrors = [];
   const holds = [];
   const releaseAll = new Set();
   const server = http.createServer(async (req, res) => {
@@ -56,6 +57,9 @@ export async function startResponsesFixture() {
   });
   server.on('connection', socket => {
     sockets.add(socket);
+    // CONNECT hands ownership of the socket to this deny proxy. The backend
+    // may reset it while being stopped; HTTP no longer handles its errors.
+    socket.on('error', error => socketErrors.push(error));
     socket.on('close', () => sockets.delete(socket));
   });
   await new Promise((resolve, reject) => {
@@ -79,6 +83,8 @@ export async function startResponsesFixture() {
       for (const release of releaseAll) release();
       for (const socket of sockets) socket.destroy();
       await new Promise(resolve => server.close(resolve));
+      const unexpected = socketErrors.filter(error => error.code !== 'ECONNRESET');
+      if (unexpected.length) throw new AggregateError(unexpected, 'Unexpected fixture socket errors');
     },
   };
 }

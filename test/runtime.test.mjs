@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
+import net from 'node:net';
+import { startResponsesFixture } from './fixtures/responses-server.mjs';
 import { once } from 'node:events';
 import { setTimeout as delay } from 'node:timers/promises';
 import { paths, prepare, isolatedEnv, ownsProcess, compareIdentity, readJson, resolveCli } from '../lib/runtime.mjs';
@@ -104,4 +106,22 @@ test('startup retires only a dead socket alias and preserves its target', async 
   await fs.writeFile(p.socketPath, 'unowned regular file');
   await assert.rejects(start(p, '/nonexistent-codex-test-binary'), /not an owned socket/);
   assert.equal(await fs.readFile(p.socketPath, 'utf8'), 'unowned regular file');
+});
+
+
+test('synthetic deny proxy survives a backend resetting its CONNECT socket', async t => {
+  const fixture = await startResponsesFixture(); t.after(() => fixture.close());
+  const socket = net.connect(Number(new URL(fixture.origin).port), '127.0.0.1');
+  t.after(() => socket.destroy());
+  await once(socket, 'connect');
+  socket.write('CONNECT blocked.invalid:443 HTTP/1.1\r\nHost: blocked.invalid:443\r\n\r\n');
+  const [reply] = await once(socket, 'data');
+  assert.match(reply.toString(), /502 Bad Gateway/);
+  socket.resetAndDestroy();
+  await once(socket, 'close');
+  const response = await fetch(fixture.origin + '/v1/responses', { method: 'POST', body: JSON.stringify({ input: 'synthetic' }) });
+  assert.equal(response.status, 200);
+  assert.match(await response.text(), /response.completed/);
+  assert.deepEqual(fixture.blockedDestinations, ['blocked.invalid:443']);
+  assert.equal(fixture.requests.length, 1);
 });

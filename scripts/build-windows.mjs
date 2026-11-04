@@ -102,14 +102,14 @@ const dependencies = await fs.mkdtemp(path.join(cache, 'dependencies-'));
 try {
   for (const name of ['package.json', 'package-lock.json']) await fs.copyFile(path.join(root, name), path.join(dependencies, name));
   run(process.execPath, [process.env.npm_execpath, 'ci', '--prefix', dependencies, '--include=dev', '--ignore-scripts', '--no-audit', '--no-fund']);
-  await buildWeb({ root, publicDir: path.join(service, 'public'), dependencyRoot: dependencies });
+  await buildWeb({ root, publicDir: path.join(service, 'public'), dependencyRoot: dependencies, stopService: true });
   run(process.execPath, [process.env.npm_execpath, 'prune', '--prefix', dependencies, '--omit=dev', '--omit=optional', '--ignore-scripts', '--no-audit', '--no-fund']);
   const notices = await npmNotices(root, dependencies);
   if (notices !== await fs.readFile(path.join(root, 'third-party/npm-NOTICES.txt'), 'utf8')) throw new Error('Review and regenerate locked npm notices');
   await removeDependencyBins(path.join(dependencies, 'node_modules'));
   await fs.cp(path.join(dependencies, 'node_modules'), path.join(service, 'node_modules'), { recursive: true });
   await fs.writeFile(path.join(licenses, 'npm-NOTICES.txt'), notices);
-} finally { await fs.rm(dependencies, { recursive: true, force: true }); }
+} finally { await fs.rm(dependencies, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }); }
 for (const name of ['LICENSE', 'THIRD_PARTY_NOTICES.md', 'ASSET_PROVENANCE.md']) await fs.copyFile(path.join(root, name), path.join(licenses, name));
 await fs.copyFile(path.join(root, 'windows/NSIS-LICENSE.txt'), path.join(licenses, 'NSIS-LICENSE.txt'));
 

@@ -12,9 +12,10 @@ async function sourceDigest(root) {
   for (const name of inputs) { hash.update(name); hash.update(await fs.readFile(path.join(root, name))); }
   return hash.digest('hex');
 }
-export async function buildWeb({ root = projectRoot, publicDir = path.join(root, 'public'), dependencyRoot = root } = {}) {
+export async function buildWeb({ root = projectRoot, publicDir = path.join(root, 'public'), dependencyRoot = root, stopService = false } = {}) {
   const dependencyRequire = createRequire(path.join(dependencyRoot, 'package.json'));
-  const { build } = dependencyRequire('esbuild');
+  const { build, stop } = dependencyRequire('esbuild');
+  try {
   const within = value => value === dependencyRoot || value.startsWith(dependencyRoot + path.sep);
   const isolatedDependencies = { name: 'locked-dependency-root', setup(builder) {
     builder.onResolve({ filter: /^[^./]/ }, async args => {
@@ -44,6 +45,11 @@ export async function buildWeb({ root = projectRoot, publicDir = path.join(root,
   for (const [url, name] of Object.entries(assets)) manifest.files[url] = createHash('sha256').update(await fs.readFile(path.join(publicDir, name))).digest('hex');
   await fs.writeFile(path.join(vendor, 'asset-manifest.json'), JSON.stringify(manifest));
   return assets;
+  } finally {
+    // Packaging owns an isolated install that is pruned immediately after this
+    // call. Release the compiler executable before Windows removes that tree.
+    if (stopService) await stop();
+  }
 }
 const builds = new Map();
 export async function ensureWebAssets({ root = projectRoot, publicDir = path.join(root, 'public') } = {}) {
