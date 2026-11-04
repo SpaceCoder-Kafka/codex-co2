@@ -13,6 +13,8 @@ import WebSocket from 'ws';
 import { setTimeout as delay } from 'node:timers/promises';
 import { activityItem, activityDetail } from '../lib/thread-activities.mjs';
 import { GuestUploads, attachmentInput } from '../lib/guest-uploads.mjs';
+import { MessageAuthors } from '../lib/message-authors.mjs';
+import { NATIVE_INPUT_DIGEST, NATIVE_INPUT_ID } from '../lib/user-presentation.mjs';
 
 const THREAD = '11111111-1111-4111-8111-111111111111';
 const OTHER = '22222222-2222-4222-8222-222222222222';
@@ -29,7 +31,7 @@ const state = (id = THREAD) => ({ id, hostId: 'local', title: '合成日常会�
 async function fixture(t) {
   const dir = await fs.mkdtemp('/tmp/co2-attach-'); await fs.chmod(dir, 0o700);
   const endpoint = path.join(dir, 'desktop.sock'), owner = randomUUID(), clientIds = new Map(), sockets = new Set(), requests = [];
-  let revision = 0, malformed, holdInput = false, noOwner = false, noOwnerCount = 0, discoveryError, discoveryDelayMs = 0, inputDelayMs = 0, inputTimeout = false;
+  let revision = 0, malformed, holdInput = false, noOwner = false, noOwnerCount = 0, discoveryError, discoveryDelayMs = 0, inputDelayMs = 0, inputTimeout = false, inputObserver;
   const encode = message => { const b = Buffer.from(JSON.stringify(message)), h = Buffer.alloc(4); h.writeUInt32LE(b.length); return Buffer.concat([h, b]); };
   const send = (socket, message) => socket.write(encode(message));
   const broadcast = (socket, id, change, extra = {}) => send(socket, { type: 'broadcast', method: 'thread-stream-state-changed', version: 11,
@@ -59,6 +61,7 @@ async function fixture(t) {
         else if (m.method === 'thread-stream-following-changed' && m.params.following) {
           broadcast(socket, m.params.conversationId, { type: 'snapshot', revision: revision++, conversationState: malformed ?? state(m.params.conversationId) });
         } else if (m.method === 'thread-follower-start-turn' && !holdInput) {
+          inputObserver?.(m);
           const reply = () => {
             if (socket.destroyed) return;
             if (inputTimeout) send(socket, { type: 'response', resultType: 'error', error: 'request-timeout', requestId: m.requestId });
@@ -76,7 +79,7 @@ async function fixture(t) {
     set noOwner(value) { noOwner = value; },
     set noOwnerCount(value) { noOwnerCount = value; }, set discoveryError(value) { discoveryError = value; },
     set discoveryDelayMs(value) { discoveryDelayMs = value; }, set inputDelayMs(value) { inputDelayMs = value; }, set inputTimeout(value) { inputTimeout = value; },
-    lastSocket: () => [...sockets].at(-1) };
+    set inputObserver(value) { inputObserver = value; }, lastSocket: () => [...sockets].at(-1) };
 }
 
 test('attaches existing and newly selected threads through IPC without owning the Desktop lifecycle', async t => {
@@ -558,6 +561,72 @@ test('new Desktop turns retain host and guest authors through optimistic promoti
       assert.equal(f.requests.filter(r => r.method === 'thread-follower-start-turn').length, role === 'guest' ? 1 : 0);
     });
   }
+});
+
+test('old pending attribution cannot block a new Desktop owner input, including restart and persisted echoes', { timeout: 5000 }, async t => {
+  const authors = new MessageAuthors('阿明'); authors.observe([], new Map());
+  authors.begin('old-request', '旧访客输入', { id: 'old-guest', name: '小林', kind: 'guest' });
+  authors.observe([{ id: 'input:1', role: 'user', text: '旧访客输入' }], new Map([['input:1', TURN]]), 'input:1');
+  const f = await fixture(t), native = state(); f.malformed = native;
+  native.turnHistory.history.entitiesByKey['turn:1'].params.input[0].text = '旧访客输入';
+  const rpc = await DesktopRpcClient.connect(f.endpoint);
+  const scoped = new ScopedThread({ rpc, threadId: THREAD, ownerName: '阿明', authorEvidence: authors.checkpoint() });
+  t.after(() => { scoped.close(); rpc.close(); }); await scoped.start();
+  const history = native.turnHistory.history, clientId = randomUUID();
+  history.entitiesByKey.owner = { turnId: 'owner-turn', status: 'inProgress', params: { clientUserMessageId: clientId,
+    input: [{ type: 'text', text: '分享者的新消息' }] }, items: [] };
+  history.islands[0].entries.push({ value: 'owner' });
+  const sync = async () => {
+    const updated = once(rpc, 'state');
+    f.broadcast(f.lastSocket(), THREAD, { type: 'patches', baseRevision: rpc.revision, revision: rpc.revision + 1,
+      patches: [{ op: 'replace', path: ['turnHistory'], value: structuredClone(native.turnHistory) }] });
+    await updated; await scoped.refresh();
+  };
+  await sync();
+  assert.equal(scoped.snapshot.items.find(i => i.id === clientId).author.kind, 'host');
+  assert.equal(scoped.snapshot.items.find(i => i.id === 'input:1').author.kind, 'unknown');
+  assert.ok(scoped.snapshot.items.every(i => !Object.getOwnPropertySymbols(i).some(k => [NATIVE_INPUT_DIGEST, NATIVE_INPUT_ID].includes(k))));
+  history.entitiesByKey.owner.items.push({ id: 'server-owner', clientId, type: 'userMessage', content: history.entitiesByKey.owner.params.input });
+  history.entitiesByKey.owner.status = 'completed'; await sync();
+  const steerId = randomUUID(); history.entitiesByKey.owner.status = 'inProgress';
+  history.entitiesByKey.owner.items.push({ id: 'steering-owner', type: 'steeringUserMessage', clientUserMessageId: steerId,
+    input: [{ type: 'text', text: '分享者的中途补充' }] }); await sync();
+  assert.equal(scoped.snapshot.items.find(i => i.id === steerId).author.kind, 'host');
+  history.entitiesByKey.owner.items.push({ id: 'server-steering-owner', type: 'userMessage', clientId: steerId,
+    content: [{ type: 'text', text: '分享者的中途补充' }] });
+  history.entitiesByKey.owner.status = 'completed'; await sync();
+  assert.equal(scoped.snapshot.items.find(i => i.id === steerId).author.kind, 'host');
+  const saved = scoped._authors.checkpoint(); scoped.close();
+  const reopened = new ScopedThread({ rpc, threadId: THREAD, ownerName: '重启后', authorEvidence: saved });
+  t.after(() => reopened.close()); await reopened.start();
+  assert.equal(reopened.snapshot.items.find(i => i.id === clientId).author.kind, 'host');
+  assert.ok(!JSON.stringify(saved).includes('分享者的新消息'));
+  assert.equal(f.requests.filter(r => r.method === 'thread-follower-start-turn').length, 0);
+});
+
+test('Desktop guest identity is checkpointed before dispatch; a lost reply never taints same-text owner input', async t => {
+  const f = await fixture(t), native = state(); f.malformed = native; f.inputTimeout = true;
+  let saved, identityBeforeDispatch = false;
+  f.inputObserver = request => { identityBeforeDispatch = saved?.submissions[0]?.[1].clientUserMessageId === request.params.turnStart.request.clientUserMessageId; };
+  const rpc = await DesktopRpcClient.connect(f.endpoint);
+  const scoped = new ScopedThread({ rpc, threadId: THREAD, ownerName: '阿明', onAuthorsChanged: e => { saved = e; } });
+  t.after(() => { scoped.close(); rpc.close(); }); await scoped.start();
+  await assert.rejects(scoped.submitApproved('相同正文', randomUUID(), { author: { id: 'guest', name: '小林', kind: 'guest' } }), { code: 'SUBMISSION_UNCERTAIN' });
+  const request = f.requests.find(r => r.method === 'thread-follower-start-turn');
+  const clientId = request.params.turnStart.request.clientUserMessageId;
+  assert.equal(saved.submissions[0][1].clientUserMessageId, clientId);
+  assert.equal(identityBeforeDispatch, true);
+  assert.equal(saved.submissions[0][1].status, 'unknown');
+  const turn = native.turnHistory.history.entitiesByKey['turn:1'];
+  turn.status = 'inProgress';
+  const ownerId = randomUUID();
+  turn.items.push({ id: 'owner-same-text', type: 'steeringUserMessage', clientUserMessageId: ownerId, input: [{ type: 'text', text: '相同正文' }] });
+  const updated = once(rpc, 'state');
+  f.broadcast(f.lastSocket(), THREAD, { type: 'patches', baseRevision: rpc.revision, revision: rpc.revision + 1,
+    patches: [{ op: 'replace', path: ['turnHistory'], value: structuredClone(native.turnHistory) }] });
+  await updated; await scoped.refresh();
+  assert.equal(scoped.snapshot.items.find(i => i.id === ownerId).author.kind, 'host');
+  assert.equal(f.requests.filter(r => r.method === 'thread-follower-start-turn').length, 1);
 });
 
 test('native approvals pending at attachment are local-only and clear while the turn remains active', async t => {

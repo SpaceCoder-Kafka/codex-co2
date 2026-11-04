@@ -2,16 +2,20 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { MessageAuthors } from '../lib/message-authors.mjs';
 import { displayName } from '../lib/display-name.mjs';
+import { createHash } from 'node:crypto';
+import { NATIVE_INPUT_DIGEST, NATIVE_INPUT_ID } from '../lib/user-presentation.mjs';
 import { SharedRoom, secret } from '../lib/host.mjs';
 
 const guest = { id: 'room-local-guest-1', name: '小林', kind: 'guest' };
 const user = (id, text) => ({ id, role: 'user', text });
+const native = (id, text, original = text, inputId) => ({ ...user(id, text), [NATIVE_INPUT_DIGEST]: createHash('sha256').update(original).digest('hex'),
+  ...(inputId ? { [NATIVE_INPUT_ID]: inputId } : {}) });
 function fixture() {
   const authors = new MessageAuthors('阿明');
   const items = [user('history', '旧历史')];
   const turns = new Map([['history', 'old']]);
   authors.observe(items, turns);
-  return { authors, items, add(id, text, turn = 'busy', live = true) {
+  return { authors, items, turns, add(id, text, turn = 'busy', live = true) {
     const item = user(id, text); items.push(item); turns.set(id, turn); authors.observe(items, turns, live ? id : null); return item;
   }, author(id) { return authors.decorate(items).find(i => i.id === id).author; } };
 }
@@ -224,4 +228,101 @@ test('an accepted exact native ID recovers a post-dispatch input previously mark
     const invalid = structuredClone(saved); mutation(invalid.submissions[0][1]);
     assert.equal(new MessageAuthors('阿明', { evidence: invalid }).decorate(f.items).at(-1).author.kind, 'unknown');
   }
+});
+
+test('legacy pending/unknown submissions cannot taint different original Desktop input across recovery', () => {
+  for (const status of ['pending', 'unknown']) {
+    const f = fixture(), record = f.authors.begin('old-request', '旧访客输入', guest);
+    if (status === 'unknown') f.authors.uncertain(record);
+    f.add('old-guest', '旧访客输入', 'old-guest-turn');
+    const restored = new MessageAuthors('阿明', { evidence: f.authors.checkpoint() });
+    const items = [...f.items, native('owner', '分享者的新输入')];
+    const turns = new Map([...f.items.map(i => [i.id, i.id === 'history' ? 'old' : 'old-guest-turn']), ['owner', 'new-turn']]);
+    restored.observe(items, turns, 'owner');
+    assert.equal(restored.decorate(items).at(-1).author.kind, 'host');
+    assert.equal(restored.decorate(items).find(i => i.id === 'old-guest').author.kind, 'unknown');
+    const saved = restored.checkpoint();
+    assert.ok(!JSON.stringify(saved).includes('分享者的新输入'));
+    const reopened = new MessageAuthors('重启后', { evidence: saved });
+    assert.equal(reopened.decorate(items).at(-1).author.kind, 'host');
+  }
+});
+
+test('native original-input evidence excludes only different input; display text is not an origin proof', () => {
+  const f = fixture(); f.authors.begin('old-request', '原始访客输入', guest);
+  for (const item of [
+    native('transformed', '展示层改写', '原始访客输入'),
+    native('same-text', '原始访客输入'),
+    user('no-proof', '其他后端改写后的输入'),
+  ]) {
+    f.items.push(item); f.turns.set(item.id, 'new-turn'); f.authors.observe(f.items, f.turns, item.id);
+    assert.equal(f.author(item.id).kind, 'unknown');
+  }
+  const item = native('confirmed-other-input', '展示层改写', '主端输入');
+  f.items.push(item); f.turns.set(item.id, 'new-turn'); f.authors.observe(f.items, f.turns, item.id);
+  assert.equal(f.author(item.id).kind, 'host');
+});
+
+test('pre-dispatch native message IDs bound uncertain submissions even for identical text and late echoes', () => {
+  for (const status of ['pending', 'unknown']) {
+    const f = fixture(), record = f.authors.begin('request', '相同正文', guest, { clientUserMessageId: 'native-guest-id' });
+    if (status === 'unknown') f.authors.uncertain(record);
+    const restored = new MessageAuthors('阿明', { evidence: f.authors.checkpoint() });
+    const items = [...f.items, native('owner', '相同正文', '相同正文', 'native-owner-id')];
+    const turns = new Map([['history', 'old'], ['owner', 'busy']]);
+    restored.observe(items, turns, 'owner');
+    assert.equal(restored.decorate(items).at(-1).author.kind, 'host');
+    items.push(native('native-guest-id', '相同正文', '相同正文', 'native-guest-id')); turns.set('native-guest-id', 'busy');
+    restored.observe(items, turns, 'native-guest-id');
+    assert.equal(restored.decorate(items).at(-1).author.kind, 'unknown');
+    assert.equal(restored.decorate(items).find(i => i.id === 'owner').author.kind, 'host');
+  }
+});
+
+test('changed native original input cannot inherit a host claim under unchanged display text', () => {
+  const f = fixture(), item = native('owner', '简短展示', '原始输入');
+  f.items.push(item); f.turns.set(item.id, 'busy'); f.authors.observe(f.items, f.turns, item.id);
+  assert.equal(f.author(item.id).kind, 'host');
+  item[NATIVE_INPUT_DIGEST] = native('x', 'x', '另一份输入')[NATIVE_INPUT_DIGEST];
+  f.authors.observe(f.items, f.turns);
+  assert.equal(f.author(item.id).kind, 'unknown');
+});
+
+test('a server display ID without native input identity cannot exclude a lost guest dispatch', () => {
+  const f = fixture(), record = f.authors.begin('request', '访客输入', guest, { clientUserMessageId: 'client-id' });
+  f.authors.uncertain(record);
+  f.add('server-id-with-no-client-correlation', '访客输入');
+  assert.equal(f.author('server-id-with-no-client-correlation').kind, 'unknown');
+  const item = native('native-steering-display-id', '访客输入', '访客输入', 'client-id');
+  f.items.push(item); f.turns.set(item.id, 'busy'); f.authors.observe(f.items, f.turns, item.id);
+  assert.equal(f.author(item.id).kind, 'unknown');
+  f.authors.complete(record, { id: 'busy', clientUserMessageId: 'client-id' });
+  assert.deepEqual(f.author(item.id), guest);
+});
+
+test('private original-input metadata is validated on recovery and identity replacement clears host evidence', () => {
+  const f = fixture(), item = native('owner', '原文', '原文', 'input-one');
+  f.items.push(item); f.turns.set(item.id, 'busy'); f.authors.observe(f.items, f.turns, item.id);
+  const saved = f.authors.checkpoint();
+  for (const field of ['inputId', 'inputDigest']) {
+    const invalid = structuredClone(saved); invalid.entries.at(-1)[1][field] = '';
+    assert.throws(() => new MessageAuthors('host', { evidence: invalid }), /格式不兼容/);
+  }
+  const invalid = structuredClone(saved); invalid.submissions.push(['request', { before: 0, digest: item[NATIVE_INPUT_DIGEST],
+    author: guest, status: 'unknown', turnId: null, responseIds: null, clientUserMessageId: '' }]);
+  assert.throws(() => new MessageAuthors('host', { evidence: invalid }), /格式不兼容/);
+  item[NATIVE_INPUT_ID] = 'input-two'; f.authors.observe(f.items, f.turns);
+  assert.equal(f.author(item.id).kind, 'unknown');
+});
+
+test('refresh can repair an existing live host checkpoint blocked by legacy pending without relabeling history', () => {
+  const f = fixture(); f.authors.begin('old', '旧访客输入', guest);
+  f.add('blocked-owner', '主端的新问题', 'new-turn');
+  assert.equal(f.author('blocked-owner').kind, 'unknown');
+  const restored = new MessageAuthors('重开后', { evidence: f.authors.checkpoint() });
+  const items = f.items.map(i => i.id === 'blocked-owner' ? native(i.id, i.text, i.text, 'owner-client') : i);
+  restored.observe(items, f.turns);
+  assert.equal(restored.decorate(items).at(-1).author.name, '阿明');
+  assert.equal(restored.decorate(items)[0].author.kind, 'unknown');
+  assert.equal(restored.checkpoint().submissions[0][1].status, 'pending');
 });
