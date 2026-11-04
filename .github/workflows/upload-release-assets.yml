@@ -28,11 +28,13 @@ jobs:
           [[ "$CO2_RUN_ID" =~ ^[0-9]+$ ]]
           [[ "$CO2_RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
           gh api "repos/$GH_REPO/actions/runs/$CO2_RUN_ID" > run.json
-          gh api "repos/$GH_REPO/releases/tags/$CO2_RELEASE_TAG" > release.json
+          gh api "repos/$GH_REPO/releases?per_page=100" > releases.json
           python3 - <<'PY'
           import json, os
           run = json.load(open('run.json'))
-          release = json.load(open('release.json'))
+          matches = [r for r in json.load(open('releases.json')) if r['tag_name'] == os.environ['CO2_RELEASE_TAG']]
+          assert len(matches) == 1
+          release = matches[0]
           assert run['status'] == 'completed' and run['conclusion'] == 'success'
           assert run['event'] == 'push' and run['head_branch'] == 'main'
           assert run['head_repository']['full_name'] == os.environ['GH_REPO']
