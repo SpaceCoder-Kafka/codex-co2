@@ -15,7 +15,7 @@
 </p>
 
 <p align="center">
-  <a href="CHANGELOG.md#040"><img src="https://img.shields.io/badge/source-v0.4.0-2563eb" alt="Source v0.4.0"></a>
+  <a href="CHANGELOG.md#040"><img src="https://img.shields.io/badge/release-v0.4.0-2563eb" alt="Release v0.4.0"></a>
   <img src="https://img.shields.io/badge/host-macOS%2014%2B%20%C2%B7%20Universal-555555" alt="Host: macOS 14+ Universal">
   <img src="https://img.shields.io/badge/guest-browser-2563eb" alt="Guest: browser">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-22c55e" alt="License: MIT"></a>
@@ -26,7 +26,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/SpaceCoder-Kafka/codex-co2/releases/tag/v0.2.0">Download</a> ·
+  <a href="https://github.com/SpaceCoder-Kafka/codex-co2/releases/tag/v0.4.0">Download</a> ·
   <a href="#new-users-install-with-homebrew">Quick start</a> ·
   <a href="#screenshots">Screenshots</a> ·
   <a href="#what-sharing-grants">Sharing boundaries</a> ·
@@ -70,7 +70,7 @@ https://github.com/user-attachments/assets/743766be-3549-4928-9f1e-d720314f8989
 
 ## Install Codex Co²
 
-The current source version is **0.4.0**, adding guest file uploads, Desktop-style attachment previews and document cards, with duplicate image attachments removed. See the [changelog](CHANGELOG.md) for details. The download links below continue to point to the published **0.2.0** release until 0.4.0 is published.
+The current release is **0.4.0**, adding guest file uploads, Desktop-style attachment previews and document cards, with duplicate image attachments removed and sender attribution fixed. See the [changelog](CHANGELOG.md) for details.
 
 The host attaches to your **already running official Codex Desktop**, keeping its existing Agent, login and tool approval settings. Guests use a browser with JavaScript and WebSocket support. Public sharing requires access to the generated public address; explicit intranet sharing requires access to the selected private network.
 
@@ -98,10 +98,10 @@ The command opens a local first-launch guide after successful installation. Use 
 
 ### Install from a DMG
 
-Alternatively, download the DMG and matching `.sha256` file from [Releases](https://github.com/SpaceCoder-Kafka/codex-co2/releases/tag/v0.2.0), then check the file:
+Alternatively, download the DMG and matching `.sha256` file from [Releases](https://github.com/SpaceCoder-Kafka/codex-co2/releases/tag/v0.4.0), then check the file:
 
 ```sh
-shasum -a 256 -c Codex-Co2-0.2.0-build27-universal.dmg.sha256
+shasum -a 256 -c Codex-Co2-0.4.0-build36-universal.dmg.sha256
 ```
 
 The macOS package is **ad-hoc signed and not notarized by Apple**. macOS may block its first launch. Attempt to open Co² from Applications, then go to **System Settings → Privacy & Security → Open Anyway** and confirm. Homebrew installs the app directly without showing the DMG's installation window. See [Apple's guidance](https://support.apple.com/en-us/102445).
@@ -171,7 +171,7 @@ A public Quick Tunnel can stay alive while its background service keeps running,
 ## What sharing grants
 
 - Admission grants access to the selected conversation's projected history and future messages, including history from before sharing. Long histories may be truncated. Source builds also show read-only tool results, command status and output, Diffs and plans. Desktop does not guarantee live, character-by-character terminal output or in-progress Diffs; the page displays the updates and final results supplied by Desktop.
-- Source builds preview and download supported user attachments and files explicitly linked in assistant replies: MP4; MP3, WAV, M4A, OGG and FLAC audio; PDF; CSV/TSV and XLSX tables; Markdown, DOCX, PPTX and common text or code files. Markdown supports formulas, Mermaid diagrams and code highlighting. Office previews prioritize readable text, tables, images and common layouts; unsupported complex content is marked, and the original file remains available to download. Common document attachments and standalone generated documents appear as compact file cards. Legacy DOC, XLS and PPT files support original downloads with a preview-unavailable notice. Previews are read only. Images are limited to 8 MiB each, other original files to 32 MiB, and text or CSV/TSV previews to 1 MiB. Browser media codec support still applies. These source changes do not describe a newly published installation package.
+- Preview and download supported user attachments and files explicitly linked in assistant replies: MP4; MP3, WAV, M4A, OGG and FLAC audio; PDF; CSV/TSV and XLSX tables; Markdown, DOCX, PPTX and common text or code files. Markdown supports formulas, Mermaid diagrams and code highlighting. Office previews prioritize readable text, tables, images and common layouts; unsupported complex content is marked, and the original file remains available to download. Common document attachments and standalone generated documents appear as compact file cards. Legacy DOC, XLS and PPT files support original downloads with a preview-unavailable notice. Previews are read only. Images are limited to 8 MiB each, other original files to 32 MiB, and text or CSV/TSV previews to 1 MiB. Browser media codec support still applies.
 - Images in assistant Markdown replies appear in place and can be enlarged: absolute local PNG, JPEG and WebP files use the admitted room connection; HTTP(S) images load directly in the guest browser without a referrer. A plain path in a message does not grant file access. Not all Desktop content or plugin interactions are projected.
 - Guest messages enter the **same Agent**, using the conversation's existing tools, sandbox, permissions and billing or usage allowance. This is not a separate execution sandbox. Invite people you trust.
 - Only the local host can change message approval. Changes affect new messages; already pending messages still need a decision. **Native tool approvals remain in official Desktop**; message approval does not replace them.
