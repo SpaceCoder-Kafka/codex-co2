@@ -6,6 +6,15 @@ IMPORTANT: This file was signed by Sparkle. Any modifications to this file requi
     <link>https://github.com/SpaceCoder-Kafka/codex-co2</link>
     <description>Real-time collaboration for Codex</description>
     <item>
+      <title>Codex Co² 0.4.0 (Build 36)</title>
+      <link>https://github.com/SpaceCoder-Kafka/codex-co2/releases/tag/v0.4.0</link>
+      <pubDate>Wed, 04 Nov 2026 06:38:18 GMT</pubDate>
+      <sparkle:version>36</sparkle:version>
+      <sparkle:shortVersionString>0.4.0</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <enclosure url="https://github.com/SpaceCoder-Kafka/codex-co2/releases/download/v0.4.0/Codex-Co2-0.4.0-build36-universal.dmg" sparkle:edSignature="7hNR10pZPfLiQaKUNC3X1LWQkAamCqISyGzQDHgfkzZ/vZ6JlYBoCvYw+RKNwRQQBCWflSegUiheuF+OdLFPDg==" length="217711712" type="application/octet-stream"></enclosure>
+    </item>
+<item>
       <title>Codex Co² 0.2.0 (Build 27)</title>
       <link>https://github.com/SpaceCoder-Kafka/codex-co2/releases/tag/v0.2.0</link>
       <pubDate>Wed, 28 Oct 2026 08:02:03 GMT</pubDate>
@@ -25,6 +34,6 @@ IMPORTANT: This file was signed by Sparkle. Any modifications to this file requi
     </item>
   </channel>
 </rss><!-- sparkle-signatures:
-edSignature: LrggNlBU1WwmG8Qb/N9QH5CiTbaP78jfsok+lzWdis7/2U7jblLYidUdusaDY9RuAvqf87ggcnM94AdypiVRAg==
-length: 1975
+edSignature: 92FWWgXvmX7YIZZvxTVI/52sCPlJ2r8cia9s8BgDCA9XLFN+OoFuXdGkIbL9dkkn90uyb+f1eOSHNJ/XNqSGCw==
+length: 2675
 -->
