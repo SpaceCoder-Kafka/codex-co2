@@ -1,0 +1,84 @@
+name: Upload verified public Windows release assets
+on:
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: Successful main Checks run containing Windows artifacts
+        required: true
+      tag:
+        description: Existing draft release tag
+        required: true
+permissions:
+  actions: read
+  contents: write
+jobs:
+  upload:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      CO2_RUN_ID: ${{ inputs.run_id }}
+      CO2_RELEASE_TAG: ${{ inputs.tag }}
+    steps:
+      - name: Require a successful public main build and matching draft target
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$CO2_RUN_ID" =~ ^[0-9]+$ ]]
+          [[ "$CO2_RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          gh api "repos/$GH_REPO/actions/runs/$CO2_RUN_ID" > run.json
+          gh api "repos/$GH_REPO/releases/tags/$CO2_RELEASE_TAG" > release.json
+          python3 - <<'PY'
+          import json, os
+          run = json.load(open('run.json'))
+          release = json.load(open('release.json'))
+          assert run['status'] == 'completed' and run['conclusion'] == 'success'
+          assert run['event'] == 'push' and run['head_branch'] == 'main'
+          assert run['head_repository']['full_name'] == os.environ['GH_REPO']
+          assert run['path'] == '.github/workflows/ci.yml'
+          assert release['draft'] and not release['prerelease']
+          assert release['tag_name'] == os.environ['CO2_RELEASE_TAG']
+          assert release['target_commitish'] == run['head_sha']
+          PY
+      - name: Download public CI artifacts and the verified macOS source inventory
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh run download "$CO2_RUN_ID" --name windows-x64-unsigned --dir windows
+          gh release download "$CO2_RELEASE_TAG" --pattern '*-universal.dmg.source.json' --dir macos
+      - name: Verify exact asset names, checksums and common public source
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib, json, os
+          run = json.load(open('run.json'))
+          mac = list(Path('macos').glob('*-universal.dmg.source.json'))
+          assert len(mac) == 1
+          baseline = json.loads(mac[0].read_text())
+          assert baseline['sourceCommit'] == run['head_sha']
+          assert len(baseline['sourceSHA256']) == 64 and baseline['files']
+          version = os.environ['CO2_RELEASE_TAG'][1:]
+          stem = mac[0].name.removesuffix('-universal.dmg.source.json')
+          assert stem.startswith('Codex-Co2-' + version + '-build')
+          names = [stem + '-windows-x64-setup.exe', stem + '-windows-x64-portable.zip']
+          expected = {'RELEASE_NOTES.md'} | {name + suffix for name in names for suffix in ['', '.sha256', '.source.json']}
+          assert {p.name for p in Path('windows').iterdir()} == expected
+          for name in names:
+              file = Path('windows') / name
+              digest = hashlib.sha256(file.read_bytes()).hexdigest()
+              assert Path(str(file) + '.sha256').read_text() == digest + '  ' + name + '\n'
+              source_file = Path(str(file) + '.source.json')
+              source = json.loads(source_file.read_text())
+              assert source['sourceSHA256'] == baseline['sourceSHA256'] and source['files'] == baseline['files']
+              source['sourceCommit'] = run['head_sha']
+              source_file.write_text(json.dumps(source, indent=2) + '\n')
+              print(name, digest)
+          PY
+      - name: Upload only the verified Windows assets to the existing draft
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release upload "$CO2_RELEASE_TAG" windows/*-windows-x64-setup.exe{,.sha256,.source.json} windows/*-windows-x64-portable.zip{,.sha256,.source.json}
