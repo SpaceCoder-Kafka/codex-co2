@@ -14,6 +14,7 @@
 
 1. **Duplicate image attachments**: Hide a redundant file card when the same structured image is displayed. Image zoom and download remain available; unavailable images retain an original-file fallback. Video cards keep their existing behavior.
 2. **File presentation**: Keep filenames, format badges and link labels on document cards while preserving inline links in ordinary prose. A display label or matching filename never grants file access or suppresses an unrelated attachment.
+3. **Sender labels**: Preserve host and collaborator attribution when Desktop turns become persistent or a conversation is shared again. Earlier unconfirmed guest submissions no longer block unrelated native host input; messages without sufficient attribution evidence remain unknown.
 
 Audio understanding depends on Desktop and model support. Remote/cloud execution without host-file transfer remains unavailable. Native Desktop acceptance is still pending; synthetic transport and browser checks do not establish full file-type parity.
 

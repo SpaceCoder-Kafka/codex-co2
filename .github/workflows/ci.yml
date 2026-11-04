@@ -25,7 +25,8 @@ jobs:
       - run: npm run test:licenses
       - name: Prepare verified Sparkle for native update tests
         run: node --input-type=module -e 'import { sparkleDistribution } from "./scripts/sparkle-distribution.mjs"; await sparkleDistribution(".coop/build-cache");'
-      - run: npm test
+      - name: Run native fixtures serially to avoid competing startup deadlines
+        run: node --test --test-concurrency=1 test/*.test.mjs
       - name: Install isolated test backend only
         run: |
           npm install --prefix "$RUNNER_TEMP/co2-test-cli" --ignore-scripts --no-audit --no-fund --no-save @openai/codex@0.163.0
