@@ -72,6 +72,8 @@ https://github.com/user-attachments/assets/b1c2f544-3684-432e-9e03-f32ac15b9370
 
 当前发布版本为 **0.4.0**，新增网页发送文件、贴近 Desktop 的附件预览和文档卡片，去除重复图片附件，并修复消息署名。详见 [0.4.0 更新说明](docs/release-notes/v0.4.0-zh.md)。
 
+**0.4.1 源码候选**分别构建 Apple Silicon（`arm64`）与 Intel（`x86_64`）macOS 包，继续内置 Node 和 cloudflared，服务端只携带运行依赖。旧 Universal 用户需手动覆盖一次对应架构应用并保留数据；新包使用各自架构的更新源。这些候选尚未发布，下方下载链接仍指向 0.4.0。
+
 分享者接入**已经运行的官方 Codex Desktop**，继续使用原有 Agent、登录与工具审批设置。协作者使用支持 JavaScript 和 WebSocket 的浏览器。公网共享需要访问生成的公网地址；显式内网共享需要访问所选私有网络。
 
 | 安装包 | 目标系统 | 验收范围 |

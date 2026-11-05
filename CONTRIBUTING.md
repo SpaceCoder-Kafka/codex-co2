@@ -23,17 +23,19 @@ The required runner fails if the exact backend is unavailable, any integration i
 
 For transport or lifecycle changes run both `npm test` and `npm run test:integration:required`. Preserve conversation authorization across requests, responses, notifications and execution capabilities. Native tool approvals belong to the host. Keep compatibility identifiers and retired SSH cleanup markers intact; host-level SSH sharing is not supported.
 
-For Universal macOS builds use an Apple Silicon or Intel Mac, Xcode command line tools and Python 3.9+:
+For macOS builds use an Apple Silicon or Intel Mac, Xcode command line tools and Python 3.9+. Select each target explicitly:
 
 ```sh
 npm run updates:key
-npm run build:macos
-npm run check:macos
+npm run build:macos -- --arch arm64
+npm run check:macos -- "dist/arm64/Codex Co².app"
+npm run build:macos -- --arch x86_64
+npm run check:macos -- "dist/x86_64/Codex Co².app"
 ```
 
 `updates:key` explicitly creates or reuses a dedicated update-signing key in macOS Keychain and saves only its public key to `macos/release.json`. Review that public metadata before building. Production builds require this configured public key (or `CO2_UPDATE_PUBLIC_KEY`) and fail closed when it is missing. The updater uses pinned Sparkle binaries and signed metadata and archives; retain the private signing key independently of Codex credentials.
 
-`CO2_BUILD_DIST` selects a separate output directory. Outputs and caches are ignored. Builds record a digest of the public source file set; associate the reviewed public source commit with the Release. Do not replace a running installation during tests. `CO2_BUILD_UPDATE_TESTING=1 npm run build:macos` creates an explicitly non-distributable bundle with a temporary test signing seed under the ignored build cache; it never accesses Keychain. An explicit loopback `CO2_UPDATE_FEED_URL` is allowed only for these test bundles. Test bundles must not be published or installed over a user's app.
+`CO2_BUILD_DIST` selects a separate output base; each architecture gets its own subdirectory. Outputs and caches are ignored. Builds record a digest of the public source file set; associate the reviewed public source commit with the Release. Do not replace a running installation during tests. `CO2_BUILD_UPDATE_TESTING=1 npm run build:macos` creates an explicitly non-distributable bundle with a temporary test signing seed under the ignored build cache; it never accesses Keychain. An explicit loopback `CO2_UPDATE_FEED_URL` is allowed only for these test bundles. Test bundles must not be published or installed over a user's app.
 
 ## Versioning and releases
 
@@ -44,10 +46,10 @@ Application build numbers in `macos/release.json` increase globally, including a
 After verifying a production bundle, prepare signed update metadata locally:
 
 ```sh
-npm run updates:prepare -- --app "dist/Codex Co².app" --dmg dist/Codex-Co2-0.2.0-build27-universal.dmg --output dist/appcast.xml --previous-feed dist/previous-appcast.xml
+npm run updates:prepare -- --app "dist/arm64/Codex Co².app" --dmg dist/arm64/Codex-Co2-0.4.1-build37-arm64.dmg --output dist/arm64/appcast-arm64.xml --initial
 ```
 
-Use `--initial` only for the first feed. Later updates must pass `--previous-feed <previous-signed-appcast.xml>` instead, preserving older channel entries and checking the global build increase. Preparation verifies the DMG, source inventory, embedded bundle and matching signing key, and does not publish anything. Publish matching Release assets first, then the signed feed unchanged as `appcast.xml` on the existing repository's separate `updates` branch. Keep generated appcasts outside the source inventory to avoid a digest cycle. Coordinate `auto_updates true` in the existing Homebrew cask when publishing the first updater-enabled release. Build 16 and earlier need a manual upgrade. The 0.3.3 → 0.1.0/0.2.0 transition uses an increasing Build; manual Homebrew migration requires a one-time `brew reinstall --cask SpaceCoder-Kafka/tap/codex-co2`.
+Use `--initial` only for the first feed. Later updates must pass `--previous-feed <previous-signed-appcast.xml>` instead, preserving older channel entries and checking the global build increase. Preparation verifies the DMG, source inventory, embedded bundle and matching signing key, and does not publish anything. Publish matching Release assets first, then the signed feed unchanged as `appcast-arm64.xml` or `appcast-x86_64.xml` on the existing repository's separate `updates` branch. Keep the legacy `appcast.xml` frozen; old Universal users manually replace the app once, preserving data. Keep architecture histories separate. Keep generated appcasts outside the source inventory to avoid a digest cycle. Coordinate `auto_updates true` in the existing Homebrew cask when publishing the first updater-enabled release. Build 16 and earlier need a manual upgrade. The 0.3.3 → 0.1.0/0.2.0 transition uses an increasing Build; manual Homebrew migration requires a one-time `brew reinstall --cask SpaceCoder-Kafka/tap/codex-co2`.
 
 To retire a previously published update, pass `--retire-build <build>` once per entry, together with `--previous-feed`. The tool verifies the previous feed signature and checks the new Build against **all** previous items before removing selected entries and signing the new feed. Unknown, duplicate and invalid retirement numbers fail. Without this option, every old entry is preserved. Archive and verify the old public release metadata, assets, tag commits, signed feed and cask before retirement. Publish and verify replacement assets, then the new signed feed and cask, before deleting any old Release. Keep old Git tags and historical evidence. Never reset the feed with `--initial` to bypass continuity checks.
 
@@ -55,9 +57,9 @@ Release titles and bodies default to English. Keep English entries in CHANGELOG.
 
 Keep date ranges, frozen remote-main comparisons and implementation evidence in maintainer records. Release bodies contain no scope paragraphs, build/source-digest footer, Upgrade or Known limitations sections. Keep installation, one-time migration instructions and persistent boundaries in the appropriate README; note version-specific restrictions briefly in the relevant entry. Checksums, source inventories and third-party notices remain associated with release assets. A `stable` channel does not establish Apple notarization, Windows signing or clean-machine/native acceptance.
 
-Universal builds combine separately verified arm64 and x86_64 main executables, Node and cloudflared. Sparkle and every native helper must also contain both slices. Inspect minimum macOS and linked libraries per slice; the host-native runtime check does not prove the other architecture works. Each cloudflared slice gets its own verified Go module/license inventory. Keep historical ARM appcast items unchanged.
+New builds contain exactly the selected architecture in the main executable, Node and cloudflared. Sparkle retains its official signed Universal framework and must include the selected target. Node is derived from a verified official archive with the recorded `strip -S -x` recipe, signed according to the existing runtime policy and checked for SQLite and other required capabilities. Its receipt distinguishes official inputs from derived bytes. Each cloudflared target retains its own verified Go module/license inventory. Historical ARM and Universal manifests remain verifiable.
 
-The Universal package targets macOS **14.0**. `scripts/cloudflared-macos.mjs` builds the pinned cloudflared source with a verified Go toolchain and an explicit deployment target for each architecture; it does not use an arbitrary local binary or patch an existing binary's minimum-version metadata. Downloads, isolated build state and toolchains stay in `.coop/`; no global Go installation is required. Preserve the source/toolchain checksums and per-architecture build provenance in the release manifest. Dependency updates must continue to pass the deployment-target gate.
+Each architecture targets macOS **14.0**. `scripts/cloudflared-macos.mjs` builds the pinned cloudflared source with a verified Go toolchain and an explicit deployment target for each architecture; it does not use an arbitrary local binary or patch an existing binary's minimum-version metadata. Downloads, isolated build state and toolchains stay in `.coop/`; no global Go installation is required. Preserve the source/toolchain checksums and per-architecture build provenance in the release manifest. Dependency updates must continue to pass the deployment-target gate.
 
 CI builds and checks these targets on macOS 26. GitHub's hosted macOS 14 images [retire on November 2, 2026](https://github.blog/changelog/2026-10-01-github-actions-macos-14-runner-image-retirement/), so the workflow does not depend on those labels. Before claiming native macOS 14 acceptance, use a macOS 14 test machine to verify installation, compatible official Desktop attachment, native approvals, sharing/reconnection, notifications and app updates. Validate Intel and Apple Silicon separately. A newer-host build or synthetic IPC test is not macOS 14 runtime acceptance.
 
@@ -78,3 +80,5 @@ npm run export:public -- /absolute/path/to/new-public-candidate
 ```
 
 The destination must not exist and must be outside this checkout. Export copies only `scripts/public-files.json`, scans it and stages a new `main` branch. It does not copy history, set an author, commit, configure a remote or publish. Review the adjacent `.review.json`, configure a public Git identity, then create the initial commit. Add new public files to the allowlist explicitly.
+
+Runtime dependency packaging keeps only the reviewed backend closure (`ws`, `markdown-it` and their locked dependencies), including the browser Markdown entry. Frontend libraries are bundled during the build. Collect notices for both groups before copying the runtime allowlist; source maps, demos, tests and development files are excluded without dropping required licenses.

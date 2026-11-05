@@ -72,6 +72,8 @@ https://github.com/user-attachments/assets/743766be-3549-4928-9f1e-d720314f8989
 
 The current release is **0.4.0**, adding guest file uploads, Desktop-style attachment previews and document cards, with duplicate image attachments removed and sender attribution fixed. See the [changelog](CHANGELOG.md) for details.
 
+The **0.4.1 source candidate** builds separate Apple Silicon (`arm64`) and Intel (`x86_64`) macOS packages with bundled Node and cloudflared and runtime-only service dependencies. Existing Universal users manually replace the app once with the matching architecture, retaining their data. New packages use separate architecture-specific update feeds. These candidates have not been published; the download links below still refer to 0.4.0.
+
 The host attaches to your **already running official Codex Desktop**, keeping its existing Agent, login and tool approval settings. Guests use a browser with JavaScript and WebSocket support. Public sharing requires access to the generated public address; explicit intranet sharing requires access to the selected private network.
 
 | Package | Target | Acceptance |

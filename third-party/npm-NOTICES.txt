@@ -1,6 +1,6 @@
 Third-party npm license and copyright texts
 
-Generated from package-lock.json. Preserve these notices when redistributing. Optional native packages are omitted from service distributions.
+Generated from the locked browser-build and service-runtime dependency closures. Preserve these notices when redistributing. Optional native packages and build-only compilers are omitted from service distributions.
 
 
 ========================================================================

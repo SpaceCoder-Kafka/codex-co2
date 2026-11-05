@@ -54,3 +54,17 @@ test('cloudflared build environment isolates Go state and credentials without in
   assert.throws(() => cloudflaredMacOSBuildEnvironment({ cacheDir: 'relative', architecture: 'arm64', sdkPath: '/sdk' }), /environment/);
   assert.throws(() => cloudflaredMacOSBuildEnvironment({ cacheDir: '/isolated', architecture: 'i386', sdkPath: '/sdk' }), /environment/);
 });
+
+test('single-architecture provenance requires exactly the declared target without weakening legacy Universal checks', () => {
+  for (const architecture of ['arm64', 'x86_64']) {
+    const candidate = provenance();
+    candidate.builds = { [architecture]: candidate.builds[architecture] };
+    assert.equal(validateCloudflaredMacOSProvenance(candidate, { architectures: [architecture] }), true);
+    assert.throws(() => validateCloudflaredMacOSProvenance(candidate), /provenance/);
+    assert.throws(() => validateCloudflaredMacOSProvenance(candidate, { architectures: [architecture === 'arm64' ? 'x86_64' : 'arm64'] }), /provenance/);
+    candidate.builds[architecture].minimumMacOS = '15.0';
+    assert.throws(() => validateCloudflaredMacOSProvenance(candidate, { architectures: [architecture] }), /provenance/);
+  }
+  for (const architectures of [[], ['arm64', 'arm64'], ['i386']])
+    assert.throws(() => validateCloudflaredMacOSProvenance(provenance(), { architectures }), /provenance/);
+});

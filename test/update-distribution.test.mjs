@@ -6,12 +6,31 @@ import path from 'node:path';
 import { createPrivateKey, createPublicKey, randomBytes, sign, verify } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { appcastXML, compareMacOSVersions, createTestSigningKey, frameworkBinaryInspection, frameworkInventory, inspectMacOSBinary, MACOS_MINIMUM_VERSION, previousAppcastItems, releaseConfiguration, requireMacOSCompatibility, updateAssetName } from '../scripts/sparkle-distribution.mjs';
+import { appcastXML, compareMacOSVersions, createTestSigningKey, frameworkBinaryInspection, frameworkInventory, inspectMacOSBinary, MACOS_MINIMUM_VERSION, previousAppcastItems, releaseConfiguration, requireMacOSCompatibility, updateAssetName, updateFeedURL } from '../scripts/sparkle-distribution.mjs';
 import { releaseNotes } from '../scripts/release-notes.mjs';
 
 const repository = 'SpaceCoder-Kafka/codex-co2';
 const feedURL = 'https://raw.githubusercontent.com/SpaceCoder-Kafka/codex-co2/updates/appcast.xml';
 const signature = randomBytes(64).toString('base64');
+test('split releases use fixed independent feeds and reject cross-architecture history', () => temporary(async directory => {
+  await fs.mkdir(path.join(directory, 'macos'));
+  await fs.writeFile(path.join(directory, 'package.json'), JSON.stringify({ version: '0.4.1' }));
+  await fs.writeFile(path.join(directory, 'macos/release.json'), JSON.stringify({ build: '37', channel: 'stable', repository, feedURL, publicKey: randomBytes(32).toString('base64') }));
+  for (const architecture of ['arm64', 'x86_64']) {
+    const release = await releaseConfiguration(directory, {}, architecture);
+    assert.equal(release.feedURL, `https://raw.githubusercontent.com/${repository}/updates/appcast-${architecture}.xml`);
+    assert.match(updateAssetName(release), new RegExp(`-${architecture}\\.dmg$`));
+    const old = appcastXML({ release: { ...release, version: '0.4.0', build: '36' }, minimumMacOS: '14.0', size: 100, signature });
+    const items = previousAppcastItems(old);
+    assert.equal(previousAppcastItems(appcastXML({ release, minimumMacOS: '14.0', size: 120, signature, previousItems: items })).length, 2);
+    const other = architecture === 'arm64' ? 'x86_64' : 'arm64';
+    const wrong = previousAppcastItems(old.replaceAll(`-${architecture}.dmg`, `-${other}.dmg`));
+    assert.throws(() => appcastXML({ release, minimumMacOS: '14.0', size: 120, signature, previousItems: wrong }), /different architecture/);
+    await assert.rejects(releaseConfiguration(directory, { CO2_UPDATE_FEED_URL: updateFeedURL(other) }, architecture), /loopback/);
+  }
+  assert.equal(updateFeedURL('universal'), feedURL);
+  assert.throws(() => updateFeedURL('../arm64'), /architecture/);
+}));
 async function temporary(run) {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'co2-update-distribution-'));
   try { return await run(directory); } finally { await fs.rm(directory, { recursive: true, force: true }); }

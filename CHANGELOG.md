@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.4.1
+
+[中文版 →](https://github.com/SpaceCoder-Kafka/codex-co2/blob/main/docs/release-notes/v0.4.1-zh.md)
+
+**Chore**
+
+1. **Smaller macOS packages**: Separate Apple Silicon and Intel packages retain bundled Node and cloudflared, with a controlled Node symbol-trimming recipe and macOS 14 compatibility.
+2. **Runtime-only dependencies**: Keep browser preview resources while excluding frontend build dependencies, source maps, demos, tests and development files from service distributions. Windows x64 uses the same runtime dependency allowlist.
+3. **Architecture-specific updates**: New macOS packages use independent update feeds. Existing Universal users manually replace the application once, preserving their data.
+
 ## 0.4.0
 
 [中文版 →](https://github.com/SpaceCoder-Kafka/codex-co2/blob/main/docs/release-notes/v0.4.0-zh.md)

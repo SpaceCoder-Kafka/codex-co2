@@ -6,7 +6,11 @@ permissions:
   contents: read
 jobs:
   synthetic:
-    name: macOS synthetic checks and Universal macOS 14 deployment
+    name: macOS synthetic checks and ${{ matrix.arch }} macOS 14 package
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [arm64, x86_64]
     # GitHub retires hosted macos-14 images on 2026-11-02. This job checks
     # deployment targets on macOS 26; macOS 14 native acceptance is separate.
     runs-on: macos-26
@@ -36,24 +40,24 @@ jobs:
           test "$("$co2_test_binary" --version)" = "codex-cli 0.163.0"
           printf 'CODEX_COOP_CLI=%s\n' "$co2_test_binary" >> "$GITHUB_ENV"
       - run: npm run test:integration:required
-      - name: Build Universal package without replacing an installed application
-        run: npm run build:macos
-      - name: Verify Universal bundle and both native architecture slices
-        run: npm run check:macos
+      - name: Build architecture-specific package without replacing an installed application
+        run: npm run build:macos -- --arch ${{ matrix.arch }}
+      - name: Verify the selected native architecture and official framework
+        run: npm run check:macos -- "dist/${{ matrix.arch }}/Codex Co².app"
       - name: Assert macOS 14 package deployment target
         run: |
-          node --input-type=module -e 'import fs from "node:fs"; import assert from "node:assert/strict"; const manifest = JSON.parse(fs.readFileSync("dist/Codex Co².app/Contents/Resources/manifest.json", "utf8")); assert.equal(manifest.minimumMacOS, "14.0");'
+          node --input-type=module -e 'import fs from "node:fs"; import assert from "node:assert/strict"; const manifest = JSON.parse(fs.readFileSync("dist/${{ matrix.arch }}/Codex Co².app/Contents/Resources/manifest.json", "utf8")); assert.equal(manifest.minimumMacOS, "14.0"); assert.equal(manifest.architecture, "${{ matrix.arch }}");'
       - name: Save macOS artifacts
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
-          name: macos-universal-unnotarized
+          name: macos-${{ matrix.arch }}-unnotarized
           if-no-files-found: error
           retention-days: 14
           path: |
-            dist/*-universal*.dmg
-            dist/*-universal*.dmg.sha256
-            dist/*-universal*.dmg.source.json
-            dist/RELEASE_NOTES.md
+            dist/${{ matrix.arch }}/*.dmg
+            dist/${{ matrix.arch }}/*.dmg.sha256
+            dist/${{ matrix.arch }}/*.dmg.source.json
+            dist/${{ matrix.arch }}/RELEASE_NOTES.md
 
   windows:
     name: Windows native security checks and x64 package

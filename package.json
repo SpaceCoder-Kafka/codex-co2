@@ -1,6 +1,6 @@
 {
   "name": "codex-co2",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "private": true,
   "type": "module",
   "description": "Real-time collaboration for Codex",
@@ -36,19 +36,19 @@
     "build:web": "node scripts/build-web.mjs"
   },
   "dependencies": {
-    "dompurify": "3.4.17",
-    "exceljs": "4.4.0",
-    "fflate": "0.8.3",
-    "highlight.js": "11.12.0",
-    "katex": "0.19.1",
     "markdown-it": "15.0.3",
-    "mermaid": "12.2.0",
-    "papaparse": "5.7.0",
-    "pdfjs-dist": "6.5.438",
     "ws": "8.22.0"
   },
   "license": "MIT",
   "devDependencies": {
-    "esbuild": "0.28.2"
+    "dompurify": "3.4.17",
+    "esbuild": "0.28.2",
+    "exceljs": "4.4.0",
+    "fflate": "0.8.3",
+    "highlight.js": "11.12.0",
+    "katex": "0.19.1",
+    "mermaid": "12.2.0",
+    "papaparse": "5.7.0",
+    "pdfjs-dist": "6.5.438"
   }
 }

@@ -6,6 +6,10 @@ import Sparkle
 struct UpdatePolicy {
     static let repository = "https://github.com/SpaceCoder-Kafka/codex-co2"
     static let feed = "https://raw.githubusercontent.com/SpaceCoder-Kafka/codex-co2/updates/appcast.xml"
+    static func architectureFeed(_ architecture: String) -> String? {
+        guard ["arm64", "x86_64"].contains(architecture) else { return nil }
+        return "https://raw.githubusercontent.com/SpaceCoder-Kafka/codex-co2/updates/appcast-\(architecture).xml"
+    }
     static let interval: TimeInterval = 86400
 
     static func action(_ object: [String: Any]) -> String? {
@@ -28,16 +32,23 @@ struct UpdatePolicy {
         guard let lastCheck = lastCheck else { return true }
         return now.timeIntervalSince(lastCheck) >= interval
     }
-    static func allowsFeed(_ raw: String, testing: Bool) -> Bool {
-        if raw == feed { return true }
+    static func allowsFeed(_ raw: String, testing: Bool, architecture: String? = nil) -> Bool {
+        if let architecture = architecture {
+            guard let expected = architectureFeed(architecture) else { return false }
+            if raw == expected { return true }
+        } else if raw == feed { return true }
         guard testing, let url = URL(string: raw) else { return false }
         return ["http", "https"].contains(url.scheme ?? "") && url.host == "127.0.0.1"
             && url.user == nil && url.password == nil && url.fragment == nil
     }
-    static func allowsArchive(_ url: URL?, testing: Bool) -> Bool {
+    static func allowsArchive(_ url: URL?, testing: Bool, architecture: String? = nil) -> Bool {
         guard let url = url, url.user == nil, url.password == nil, url.fragment == nil,
               url.pathExtension.lowercased() == "dmg" else { return false }
         if testing && url.host == "127.0.0.1" { return ["http", "https"].contains(url.scheme ?? "") }
+        if let architecture = architecture {
+            guard architectureFeed(architecture) != nil,
+                  ["-\(architecture).dmg", "-\(architecture)-preview.dmg"].contains(where: { url.lastPathComponent.hasSuffix($0) }) else { return false }
+        }
         return url.scheme == "https" && url.host == "github.com"
             && url.path.hasPrefix("/SpaceCoder-Kafka/codex-co2/releases/download/")
     }
@@ -104,7 +115,7 @@ final class AppUpdates: NSObject, SPUUserDriver, SPUUpdaterDelegate {
     private var configured: Bool {
         ["preview", "stable"].contains(channel)
             && UpdatePolicy.validKey(bundle.object(forInfoDictionaryKey: "SUPublicEDKey") as? String)
-            && UpdatePolicy.allowsFeed(feedURL, testing: testing)
+            && UpdatePolicy.allowsFeed(feedURL, testing: testing, architecture: bundle.object(forInfoDictionaryKey: "Co2Architecture") as? String)
             && bundle.object(forInfoDictionaryKey: "SUVerifyUpdateBeforeExtraction") as? Bool == true
             && bundle.object(forInfoDictionaryKey: "SURequireSignedFeed") as? Bool == true
             && bundle.object(forInfoDictionaryKey: "SUAllowsAutomaticUpdates") as? Bool == false
@@ -313,7 +324,7 @@ final class AppUpdates: NSObject, SPUUserDriver, SPUUpdaterDelegate {
         lastChecked = Date(); publish("checking")
     }
     func updater(_ updater: SPUUpdater, shouldProceedWithUpdate item: SUAppcastItem, updateCheck: SPUUpdateCheck) throws {
-        guard item.isInformationOnlyUpdate || UpdatePolicy.allowsArchive(item.fileURL, testing: testing) else {
+        guard item.isInformationOnlyUpdate || UpdatePolicy.allowsArchive(item.fileURL, testing: testing, architecture: bundle.object(forInfoDictionaryKey: "Co2Architecture") as? String) else {
             throw NSError(domain: "local.codexco2.update-policy", code: 2)
         }
     }

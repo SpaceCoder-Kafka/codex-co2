@@ -15,6 +15,12 @@ export const digest = bytes => createHash('sha256').update(bytes).digest('hex');
 export const validPublicKey = value => typeof value === 'string' && /^[A-Za-z0-9+/]{43}=$/.test(value) && Buffer.from(value, 'base64').length === 32;
 export const MACOS_ARCHITECTURES = Object.freeze(['arm64', 'x86_64']);
 export const MACOS_MINIMUM_VERSION = '14.0';
+export function updateFeedURL(architecture) {
+  const base = 'https://raw.githubusercontent.com/SpaceCoder-Kafka/codex-co2/updates/';
+  if (architecture == null || architecture === 'universal') return base + 'appcast.xml';
+  if (!MACOS_ARCHITECTURES.includes(architecture)) throw new Error('Unsupported macOS release architecture');
+  return base + `appcast-${architecture}.xml`;
+}
 export function compareMacOSVersions(a, b) {
   const av = a.split('.').map(Number), bv = b.split('.').map(Number);
   for (let i = 0; i < 3; i++) { const delta = (av[i] ?? 0) - (bv[i] ?? 0); if (delta) return delta; }
@@ -68,7 +74,7 @@ export async function frameworkBinaryInspection(directory, options = {}) {
   return binaries;
 }
 
-export async function releaseConfiguration(root, env = process.env) {
+export async function releaseConfiguration(root, env = process.env, architecture) {
   const release = JSON.parse(await fs.readFile(path.join(root, 'macos/release.json'), 'utf8'));
   const { version } = JSON.parse(await fs.readFile(path.join(root, 'package.json'), 'utf8'));
   if (!/^\d+\.\d+\.\d+$/.test(version) || !/^[1-9]\d*$/.test(release.build)
@@ -79,12 +85,13 @@ export async function releaseConfiguration(root, env = process.env) {
   const publicKey = env.CO2_UPDATE_PUBLIC_KEY ?? release.publicKey;
   if (!testing && !validPublicKey(publicKey)) throw new Error('Set up an update signing key with npm run updates:key, or provide CO2_UPDATE_PUBLIC_KEY. Test bundles require explicit CO2_BUILD_UPDATE_TESTING=1 and cannot be distributed.');
   if (publicKey != null && !validPublicKey(publicKey)) throw new Error('Invalid Ed25519 public key');
-  const feedURL = env.CO2_UPDATE_FEED_URL ?? release.feedURL;
-  if (feedURL !== release.feedURL) {
+  const expectedFeed = architecture == null ? release.feedURL : updateFeedURL(architecture);
+  const feedURL = env.CO2_UPDATE_FEED_URL ?? expectedFeed;
+  if (feedURL !== expectedFeed) {
     let parsed; try { parsed = new URL(feedURL); } catch { throw new Error('Invalid test update feed URL'); }
     if (!testing || parsed.protocol !== 'http:' || parsed.hostname !== '127.0.0.1' || parsed.username || parsed.password || parsed.hash || !parsed.port) throw new Error('Custom update feeds are restricted to explicit loopback tests');
   }
-  return { ...release, version, publicKey, feedURL, testing };
+  return { ...release, ...(architecture == null ? {} : { architecture }), version, publicKey, feedURL, testing };
 }
 
 // Test keys never enter the source checkout, the bundle, or a user Keychain.
@@ -144,7 +151,7 @@ export async function sparkleDistribution(cache) {
 
 export function updateTag({ version, build, channel }) { return channel === 'preview' ? `v${version}-preview.${build}` : `v${version}`; }
 export function updateAssetName({ version, build, channel, architecture = 'arm64' }) {
-  if (!['arm64', 'universal'].includes(architecture)) throw new Error('Unsupported macOS release architecture');
+  if (!['arm64', 'x86_64', 'universal'].includes(architecture)) throw new Error('Unsupported macOS release architecture');
   return `Codex-Co2-${version}-build${build}-${architecture}${channel === 'preview' ? '-preview' : ''}.dmg`;
 }
 export const xmlEscape = value => String(value).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&apos;');
@@ -156,9 +163,18 @@ export function appcastXML({ release, minimumMacOS, size, signature, previousIte
   if (!Array.isArray(retireBuilds) || retireBuilds.some(build => typeof build !== 'string' || !/^[1-9]\d*$/.test(build))
       || new Set(retireBuilds).size !== retireBuilds.length) throw new Error('Retired builds must be distinct positive build numbers');
   const previousBuilds = new Set();
+  const separateFeed = release.feedURL != null && release.architecture !== 'universal';
+  if (separateFeed && release.feedURL !== updateFeedURL(release.architecture)) throw new Error('Update feed architecture mismatch');
   // Validate every previous build before pruning. Retirement must never make
   // a lower build eligible or bypass verification of the previous signed feed.
   for (const item of previousItems) {
+    if (separateFeed) {
+      const raw = item.match(/<enclosure\s[^>]*\burl="([^"]+)"/)?.[1];
+      let url; try { url = new URL(raw); } catch { throw new Error('Previous feed archive URL is invalid'); }
+      if (url.origin !== 'https://github.com' || !url.pathname.startsWith('/SpaceCoder-Kafka/codex-co2/releases/download/')
+          || !new RegExp(`-${release.architecture}(?:-preview)?\\.dmg$`).test(url.pathname))
+        throw new Error('Previous feed contains a different architecture');
+    }
     const build = item.match(/<sparkle:version>([1-9]\d*)<\/sparkle:version>/)?.[1];
     if (!build || BigInt(build) >= BigInt(release.build)) throw new Error('Release build must increase globally across all channels and versions');
     previousBuilds.add(build);

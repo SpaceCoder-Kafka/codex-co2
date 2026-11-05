@@ -4,7 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
 import { createPrivateKey, createPublicKey } from 'node:crypto';
-import { SPARKLE, appcastXML, digest, previousAppcastItems, sparkleDistribution, updateAssetName, validPublicKey } from './sparkle-distribution.mjs';
+import { SPARKLE, appcastXML, digest, previousAppcastItems, sparkleDistribution, updateAssetName, updateFeedURL, validPublicKey } from './sparkle-distribution.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const args = process.argv.slice(2), options = {};
@@ -23,6 +23,12 @@ if (!output.endsWith('.xml') || output === path.resolve(options['previous-feed']
 const manifest = JSON.parse(await fs.readFile(path.join(app, 'Contents/Resources/manifest.json'), 'utf8'));
 if (!manifest.updater || Boolean(manifest.updater.testing) !== Boolean(options.testing) || manifest.updater.testing && manifest.distributable !== false) throw new Error('Bundle/update testing mode mismatch; synthetic keys cannot produce a distributable update');
 const release = { version: manifest.version, build: manifest.build, channel: manifest.channel, architecture: manifest.architecture };
+if (manifest.formatVersion >= 2) {
+  if (!['arm64', 'x86_64'].includes(release.architecture) || manifest.updater.feedURL !== updateFeedURL(release.architecture)
+      && !manifest.updater.testing) throw new Error('Split release must use its architecture-specific feed');
+  if (path.basename(output) !== `appcast-${release.architecture}.xml`) throw new Error('Write split updates to the architecture-specific appcast filename; the legacy feed stays frozen');
+  release.feedURL = updateFeedURL(release.architecture);
+}
 if (path.basename(dmg) !== updateAssetName(release)) throw new Error('DMG name does not match the bundle release metadata');
 execFileSync(process.execPath, [path.join(root, 'scripts/check-macos-bundle.mjs'), app, root], { stdio: 'inherit' });
 const checksum = await fs.readFile(dmg + '.sha256', 'utf8'), source = JSON.parse(await fs.readFile(dmg + '.source.json', 'utf8'));

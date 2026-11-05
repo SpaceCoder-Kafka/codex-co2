@@ -6,31 +6,36 @@ import { execFileSync } from 'node:child_process';
 import { publicSource } from './public-source.mjs';
 import { readWebAssets } from '../lib/web-assets.mjs';
 import { CLOUDFLARED_MACOS, validateCloudflaredMacOSProvenance } from './cloudflared-macos.mjs';
-import { SPARKLE, MACOS_ARCHITECTURES, MACOS_MINIMUM_VERSION, compareMacOSVersions, digest, frameworkBinaryInspection, frameworkInventory, inspectMacOSBinary, requireMacOSCompatibility, validPublicKey } from './sparkle-distribution.mjs';
-const app = path.resolve(process.argv[2] ?? 'dist/Codex Co².app');
+import { validateNodeMacOSDerivation, probeNodeMacOS, macOSExecutionMode, nativeMacOSArchitecture, runtimeVersionMacOS } from './node-macos.mjs';
+import { assertProductionDependencies } from './production-dependencies.mjs';
+import { SPARKLE, MACOS_ARCHITECTURES, MACOS_MINIMUM_VERSION, compareMacOSVersions, digest, frameworkBinaryInspection, frameworkInventory, inspectMacOSBinary, requireMacOSCompatibility, validPublicKey, updateFeedURL } from './sparkle-distribution.mjs';
+const app = path.resolve(process.argv[2] ?? path.join('dist', nativeMacOSArchitecture(), 'Codex Co².app'));
 const resources = path.join(app, 'Contents/Resources');
 const manifest = JSON.parse(await fs.readFile(path.join(resources, 'manifest.json'), 'utf8'));
+const current = manifest.formatVersion === 2;
+if (manifest.formatVersion !== undefined && !current) throw new Error('Unsupported macOS bundle manifest format');
 if (manifest.runtimeMode !== 'desktop-attach') throw new Error('Expected a Desktop attachment package');
-if (!['arm64', 'universal'].includes(manifest.architecture)) throw new Error('Unsupported macOS bundle architecture');
+if (!(current ? MACOS_ARCHITECTURES : ['arm64', 'universal']).includes(manifest.architecture)) throw new Error('Unsupported macOS bundle architecture');
 if (!/^\d+\.\d+(?:\.\d+)?$/.test(manifest.minimumMacOS ?? '')) throw new Error('Invalid bundle minimum macOS');
-if ((compareMacOSVersions(manifest.minimumMacOS, MACOS_MINIMUM_VERSION) <= 0 || manifest.cloudflaredBuild)
+if (!current && (compareMacOSVersions(manifest.minimumMacOS, MACOS_MINIMUM_VERSION) <= 0 || manifest.cloudflaredBuild)
     && (manifest.architecture !== 'universal' || !manifest.cloudflaredBuild)) throw new Error('macOS 14 requires a Universal bundle with controlled cloudflared build provenance');
-const architectures = manifest.architecture === 'universal' ? MACOS_ARCHITECTURES : ['arm64'];
+const architectures = manifest.architecture === 'universal' ? MACOS_ARCHITECTURES : [manifest.architecture];
 if (manifest.architecture === 'universal' && JSON.stringify(manifest.architectures) !== JSON.stringify(MACOS_ARCHITECTURES)) throw new Error('Universal bundle must declare both architecture slices');
-if (manifest.architecture === 'universal') {
+if (current && JSON.stringify(manifest.architectures) !== JSON.stringify(architectures)) throw new Error('Single-architecture bundle must declare its exact target');
+if (current || manifest.architecture === 'universal') {
   const archives = [manifest.nodeArchiveSHA256];
   if (manifest.cloudflaredBuild) {
-    validateCloudflaredMacOSProvenance(manifest.cloudflaredBuild);
+    validateCloudflaredMacOSProvenance(manifest.cloudflaredBuild, { architectures });
     if (manifest.minimumMacOS !== MACOS_MINIMUM_VERSION || manifest.versions?.cloudflared !== CLOUDFLARED_MACOS.version
         || manifest.cloudflaredSourceSHA256 !== CLOUDFLARED_MACOS.source.sha256 || manifest.cloudflaredArchiveSHA256 != null) throw new Error('Source-built cloudflared does not match the bundle compatibility or provenance metadata');
   } else {
     // Keep checking archived macOS 15 bundles with their original official
     // archives. A macOS 14 candidate must carry the new source-build proof.
-    if (compareMacOSVersions(manifest.minimumMacOS, MACOS_MINIMUM_VERSION) <= 0) throw new Error('macOS 14 bundle is missing controlled cloudflared build provenance');
+    if (current || compareMacOSVersions(manifest.minimumMacOS, MACOS_MINIMUM_VERSION) <= 0) throw new Error('macOS 14 bundle is missing controlled cloudflared build provenance');
     archives.push(manifest.cloudflaredArchiveSHA256);
   }
   for (const hashes of archives) {
-    if (Object.keys(hashes ?? {}).sort().join(',') !== [...MACOS_ARCHITECTURES].sort().join(',')
+    if (Object.keys(hashes ?? {}).sort().join(',') !== [...architectures].sort().join(',')
         || Object.values(hashes).some(value => !/^[a-f0-9]{64}$/.test(value))) throw new Error('Missing architecture-specific runtime provenance');
   }
 }
@@ -38,7 +43,7 @@ if (!['preview', 'stable'].includes(manifest.channel) || manifest.notarized !== 
 if (!manifest.updater || manifest.updater.version !== SPARKLE.version || manifest.updater.archiveSHA256 !== SPARKLE.sha256
     || !validPublicKey(manifest.updater.publicKey) || manifest.distributable !== !manifest.updater.testing
     || digest(JSON.stringify(manifest.updater.framework)) !== SPARKLE.frameworkSHA256) throw new Error('Invalid updater distribution metadata');
-if (!manifest.updater.testing && manifest.updater.feedURL !== 'https://raw.githubusercontent.com/SpaceCoder-Kafka/codex-co2/updates/appcast.xml') throw new Error('Unexpected production update feed');
+if (!manifest.updater.testing && manifest.updater.feedURL !== updateFeedURL(current ? manifest.architecture : 'universal')) throw new Error('Unexpected production update feed');
 const frameworks = path.join(app, 'Contents/Frameworks');
 if ((await fs.readdir(frameworks)).join(',') !== 'Sparkle.framework') throw new Error('Unexpected bundled framework');
 const sparkle = path.join(frameworks, 'Sparkle.framework');
@@ -47,11 +52,14 @@ execFileSync('/usr/bin/codesign', ['--verify', '--deep', '--strict', sparkle], {
 const sparkleVersion = execFileSync('/usr/libexec/PlistBuddy', ['-c', 'Print :CFBundleShortVersionString', path.join(sparkle, 'Resources/Info.plist')], { encoding: 'utf8' }).trim();
 if (sparkleVersion !== SPARKLE.version) throw new Error('Sparkle framework version mismatch');
 const frameworkBinaries = await frameworkBinaryInspection(sparkle);
-if (manifest.architecture === 'universal' && JSON.stringify(frameworkBinaries) !== JSON.stringify(manifest.frameworkBinaries)) throw new Error('Framework binary slice inventory mismatch');
+if ((current || manifest.architecture === 'universal') && JSON.stringify(frameworkBinaries) !== JSON.stringify(manifest.frameworkBinaries)) throw new Error('Framework binary slice inventory mismatch');
+if (Object.values(frameworkBinaries).some(binary => !architectures.every(architecture => binary.architectures.includes(architecture)))) throw new Error('Official updater framework does not include the bundle target');
 const runtimeFiles = (await fs.readdir(path.join(resources, 'runtime'))).sort();
 if (runtimeFiles.join(',') !== 'cloudflared,node') throw new Error('Desktop attachment package must contain only Node and cloudflared runtimes');
 if (Object.keys(manifest.versions).sort().join(',') !== 'cloudflared,node') throw new Error('Unexpected bundled runtime versions');
 const hash = data => createHash('sha256').update(data).digest('hex');
+if (current) validateNodeMacOSDerivation(manifest.nodeDerivation, { architecture: manifest.architecture,
+  archiveSHA256: manifest.nodeArchiveSHA256[manifest.architecture], finalSHA256: hash(await fs.readFile(path.join(resources, 'runtime/node'))) });
 const files = [];
 async function visit(dir, prefix = '') {
   for (const entry of await fs.readdir(dir, { withFileTypes: true })) {
@@ -68,6 +76,10 @@ for (const relative of files.filter(name => name !== 'manifest.json')) {
 }
 if (Object.keys(manifest.files).length !== files.length - 1) throw new Error('Manifest file set mismatch');
 if (!manifest.source?.files || hash(JSON.stringify(manifest.source.files)) !== manifest.source.sha256) throw new Error('Invalid source inventory');
+if (current) {
+  if (!/^[a-f0-9]{64}$/.test(manifest.source?.files?.['package-lock.json'] ?? '')) throw new Error('Missing runtime dependency lock provenance');
+  await assertProductionDependencies({ nodeModules: path.join(resources, 'service/node_modules'), receipt: manifest.productionDependencies, expectedLockSHA256: manifest.source.files['package-lock.json'] });
+}
 if (manifest.launchAgents || manifest.source.files['macos/BackgroundService.swift']) {
   const name = 'local.codexco2.sharing.plist';
   const directory = path.join(app, 'Contents/Library/LaunchAgents');
@@ -107,9 +119,9 @@ for (const name of ['LICENSE', 'npm-NOTICES.txt', 'Node-LICENSE', 'cloudflared-L
 const goNotices = JSON.parse(await fs.readFile(path.join(resources, 'Licenses/cloudflared-modules/index.json'), 'utf8'));
 const vendor = goNotices.files;
 if (!goNotices.modules.length || !Object.keys(vendor).length) throw new Error('No vendor notices recorded');
-if (manifest.architecture === 'universal') {
-  if (Object.keys(goNotices.architectures ?? {}).sort().join(',') !== [...MACOS_ARCHITECTURES].sort().join(',')) throw new Error('Missing per-architecture Go notices');
-  for (const architecture of MACOS_ARCHITECTURES) {
+if (current || manifest.architecture === 'universal') {
+  if (Object.keys(goNotices.architectures ?? {}).sort().join(',') !== [...architectures].sort().join(',')) throw new Error('Missing per-architecture Go notices');
+  for (const architecture of architectures) {
     const indexBytes = await fs.readFile(path.join(resources, `Licenses/cloudflared-modules/${architecture}/index.json`));
     if (hash(indexBytes) !== goNotices.architectures[architecture].indexSHA256) throw new Error('Go architecture notice index mismatch');
     const index = JSON.parse(indexBytes);
@@ -129,7 +141,7 @@ const nativeBinaries = {
   'runtime/cloudflared': inspectMacOSBinary(path.join(resources, 'runtime/cloudflared'), { architectures }),
   executable: inspectMacOSBinary(path.join(app, 'Contents/MacOS/CodexCo2'), { architectures, embeddedSparkle: true }),
 };
-if (manifest.architecture === 'universal' && JSON.stringify(nativeBinaries) !== JSON.stringify(manifest.nativeBinaries)) throw new Error('Native binary slice inventory mismatch');
+if ((current || manifest.architecture === 'universal') && JSON.stringify(nativeBinaries) !== JSON.stringify(manifest.nativeBinaries)) throw new Error('Native binary slice inventory mismatch');
 for (const inspection of [...Object.values(nativeBinaries), ...Object.values(frameworkBinaries)]) {
   requireMacOSCompatibility(inspection, minimum, 'Bundled native binary');
 }
@@ -137,6 +149,7 @@ for (const [key, expected] of Object.entries({ CFBundleShortVersionString: manif
   const actual = execFileSync('/usr/libexec/PlistBuddy', ['-c', `Print :${key}`, path.join(app, 'Contents/Info.plist')], { encoding: 'utf8' }).trim();
   if (!expected || actual !== expected) throw new Error(`Application version does not match the bundle manifest: ${key}`);
 }
+if (current && execFileSync('/usr/libexec/PlistBuddy', ['-c', 'Print :Co2Architecture', path.join(app, 'Contents/Info.plist')], { encoding: 'utf8' }).trim() !== manifest.architecture) throw new Error('Application target architecture does not match manifest');
 for (const [key, expected] of Object.entries({ Co2UpdateChannel: manifest.channel, Co2UpdateTesting: String(manifest.updater.testing),
   SUFeedURL: manifest.updater.feedURL, SUPublicEDKey: manifest.updater.publicKey,
   SUEnableAutomaticChecks: 'true', SUScheduledCheckInterval: '86400', SUAutomaticallyUpdate: 'false', SUAllowsAutomaticUpdates: 'false',
@@ -149,20 +162,27 @@ if (iconFile !== 'AppIcon.icns') throw new Error('Application icon is not config
 const icon = await fs.readFile(path.join(resources, iconFile));
 if (icon.toString('ascii', 0, 4) !== 'icns' || icon.readUInt32BE(4) !== icon.length) throw new Error('Invalid application icon');
 const temporaryHome = await fs.mkdtemp('/tmp/co2-bundle-check-');
+let execution = current ? macOSExecutionMode(manifest.architecture) : 'native';
 try {
   await fs.mkdir(path.join(temporaryHome, '.coop'), { mode: 0o700 });
   const env = { HOME: temporaryHome, CODEX_HOME: path.join(temporaryHome, '.coop'), PATH: '/usr/bin:/bin', LANG: 'en_US.UTF-8' };
   for (const [name, expected] of Object.entries({ node: `v${manifest.versions.node}`, cloudflared: `cloudflared version ${manifest.versions.cloudflared} ` })) {
+    if (execution === 'not-executable') continue;
     const binary = path.join(resources, 'runtime', name);
-    const actual = execFileSync(binary, ['--version'], { env, encoding: 'utf8' }).trim();
+    const actual = current ? runtimeVersionMacOS(binary, manifest.architecture, env)
+      : execFileSync(binary, ['--version'], { env, encoding: 'utf8' }).trim();
     if (!actual.startsWith(expected)) throw new Error(`Version mismatch: ${name}`);
     // inspectMacOSBinary above already checks dependencies independently for
     // every slice. Unqualified `otool -L` adds a heading per architecture;
     // treating its second heading as a dylib would reject valid fat binaries.
   }
+  if (current && execution !== 'not-executable') {
+    const observed = await probeNodeMacOS(path.join(resources, 'runtime/node'), manifest.architecture);
+    validateNodeMacOSDerivation({ ...manifest.nodeDerivation, execution: observed });
+  }
   execFileSync('/usr/bin/codesign', ['--verify', '--deep', '--strict', app], { stdio: 'pipe' });
 } finally { await fs.rm(temporaryHome, { recursive: true, force: true }); }
 console.log(JSON.stringify({ verified: true, runtimeMode: manifest.runtimeMode, architecture: manifest.architecture, minimumMacOS: minimum, versions: manifest.versions, resourceFiles: files.length,
-  inspectedArchitectures: architectures, nativeExecutionArchitecture: process.arch === 'x64' ? 'x86_64' : process.arch,
+  inspectedArchitectures: architectures, runtimeExecution: execution, nativeExecutionArchitecture: process.arch === 'x64' ? 'x86_64' : process.arch,
   updaterVersion: manifest.updater.version, distributable: manifest.distributable, cloudflaredSourceBuild: Boolean(manifest.cloudflaredBuild),
   sourceSHA256: manifest.source.sha256, goModuleNotices: Object.keys(vendor).length, privateRuntimeFiles: 0, systemOnlyPATH: true, notarized: false, note: 'Static slice checks and host-native runtime execution only; this is not Intel/Apple Silicon native Desktop or clean-Mac acceptance.' }));

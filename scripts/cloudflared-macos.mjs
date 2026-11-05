@@ -35,7 +35,7 @@ const exactKeys = (value, keys) => value && typeof value === 'object' && !Array.
 // This validates the recipe and provenance, not an unsigned hash against a
 // subsequently signed binary. The caller verifies slice hashes before lipo and
 // records the final signed runtime in its normal bundle inventory.
-export function validateCloudflaredMacOSProvenance(provenance) {
+export function validateCloudflaredMacOSProvenance(provenance, { architectures = MACOS_ARCHITECTURES } = {}) {
   const config = CLOUDFLARED_MACOS;
   const fail = () => { throw new Error('Invalid macOS cloudflared source-build provenance'); };
   if (!exactKeys(provenance, ['kind', 'version', 'minimumMacOS', 'recipeVersion', 'source', 'toolchain', 'builds'])
@@ -51,8 +51,10 @@ export function validateCloudflaredMacOSProvenance(provenance) {
       || !/^\d+(?:\.\d+){1,2}$/.test(toolchain.sdkVersion)
       || compareMacOSVersions(toolchain.sdkVersion, config.minimumMacOS) < 0
       || typeof toolchain.clangVersion !== 'string' || !/^Apple clang version [^\r\n]{1,200}$/.test(toolchain.clangVersion)) fail();
-  if (!exactKeys(provenance.builds, MACOS_ARCHITECTURES)) fail();
-  for (const architecture of MACOS_ARCHITECTURES) {
+  if (!Array.isArray(architectures) || !architectures.length || new Set(architectures).size !== architectures.length
+      || architectures.some(architecture => !MACOS_ARCHITECTURES.includes(architecture))
+      || !exactKeys(provenance.builds, architectures)) fail();
+  for (const architecture of architectures) {
     const build = provenance.builds[architecture];
     if (!exactKeys(build, ['sha256', 'minimumMacOS', 'buildInfoSHA256'])
         || !checksum(build.sha256) || !checksum(build.buildInfoSHA256)
@@ -90,7 +92,7 @@ async function verifiedDownload(url, destination, expected) {
     const temporary = destination + '.download';
     try {
       execFileSync('/usr/bin/curl', ['--disable', '--fail', '--location', '--silent', '--show-error',
-        '--connect-timeout', '15', '--max-time', '180', '--retry', '2', '--retry-max-time', '240',
+        '--connect-timeout', '15', '--max-time', '900', '--retry', '2', '--retry-max-time', '1800',
         '--output', temporary, url], { stdio: 'inherit', timeout: 260_000 });
       if (sha256(await fs.readFile(temporary)) !== expected) throw new Error(`Official artifact checksum mismatch: ${path.basename(destination)}`);
       await fs.rename(temporary, destination);
@@ -99,9 +101,11 @@ async function verifiedDownload(url, destination, expected) {
   if (sha256(await fs.readFile(destination)) !== expected) throw new Error(`Cached official artifact checksum mismatch: ${path.basename(destination)}`);
 }
 
-export async function buildCloudflaredMacOS({ cacheDir }) {
+export async function buildCloudflaredMacOS({ cacheDir, architectures: targets = MACOS_ARCHITECTURES }) {
   if (process.platform !== 'darwin' || !['arm64', 'x64'].includes(process.arch)) throw new Error('macOS cloudflared builds require an Apple Silicon or Intel Mac');
   if (MACOS_MINIMUM_VERSION !== CLOUDFLARED_MACOS.minimumMacOS) throw new Error('Review the cloudflared recipe before changing the macOS deployment target');
+  if (!Array.isArray(targets) || !targets.length || new Set(targets).size !== targets.length
+      || targets.some(architecture => !MACOS_ARCHITECTURES.includes(architecture))) throw new Error('Invalid cloudflared build architectures');
   cacheDir = path.resolve(cacheDir);
   await fs.mkdir(cacheDir, { recursive: true, mode: 0o700 }); await fs.chmod(cacheDir, 0o700);
   const hostArchitecture = process.arch === 'x64' ? 'x86_64' : 'arm64';
@@ -116,7 +120,7 @@ export async function buildCloudflaredMacOS({ cacheDir }) {
     await fs.rm(path.join(cacheDir, name), { recursive: true, force: true });
     await fs.mkdir(path.join(cacheDir, name), { mode: 0o700 });
   }
-  for (const name of ['gopath', 'gocache', 'gomodcache', 'tmp', ...MACOS_ARCHITECTURES]) await fs.mkdir(path.join(cacheDir, name), { recursive: true, mode: 0o700 });
+  for (const name of ['gopath', 'gocache', 'gomodcache', 'tmp', ...targets]) await fs.mkdir(path.join(cacheDir, name), { recursive: true, mode: 0o700 });
   execFileSync('/usr/bin/tar', ['-xzf', sourceArchive, '-C', path.join(cacheDir, 'source')]);
   execFileSync('/usr/bin/tar', ['-xzf', goArchive, '-C', path.join(cacheDir, 'toolchain')]);
   const sourceDirectory = path.join(cacheDir, 'source', `cloudflared-${config.version}`);
@@ -126,7 +130,7 @@ export async function buildCloudflaredMacOS({ cacheDir }) {
   const clangVersion = execFileSync('/usr/bin/clang', ['--version'], { encoding: 'utf8' }).trim().split('\n')[0];
   const toolchain = { goVersion: `go${config.go.version}`, hostArchitecture, archiveSHA256: archive.sha256, sdkVersion, clangVersion };
   const architectures = {}, builds = {};
-  for (const architecture of MACOS_ARCHITECTURES) {
+  for (const architecture of targets) {
     const env = cloudflaredMacOSBuildEnvironment({ cacheDir, architecture, sdkPath });
     const options = { cwd: sourceDirectory, env, timeout: 900_000 };
     const actualGo = execFileSync(go, ['version'], { ...options, encoding: 'utf8' }).trim();
@@ -157,7 +161,7 @@ export async function buildCloudflaredMacOS({ cacheDir }) {
   }
   const provenance = { kind: 'source-build', version: config.version, minimumMacOS: config.minimumMacOS,
     recipeVersion: config.recipeVersion, source: { ...config.source }, toolchain, builds };
-  validateCloudflaredMacOSProvenance(provenance);
+  validateCloudflaredMacOSProvenance(provenance, { architectures: targets });
   await fs.writeFile(path.join(cacheDir, 'provenance.json'), JSON.stringify(provenance, null, 2) + '\n', { mode: 0o600 });
   return { sourceArchive, sourceDirectory, licensePath: path.join(sourceDirectory, 'LICENSE'), architectures, provenance };
 }

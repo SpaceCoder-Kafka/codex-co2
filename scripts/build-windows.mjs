@@ -8,7 +8,7 @@ import { publicSource } from './public-source.mjs';
 import { releaseNotes } from './release-notes.mjs';
 import { buildWeb } from './build-web.mjs';
 import { npmNotices } from './third-party-notices.mjs';
-import { removeDependencyBins } from './production-dependencies.mjs';
+import { copyProductionDependencies } from './production-dependencies.mjs';
 import { WINDOWS, fileInventory, peArchitecture, sha256, windowsAssetName } from './windows-distribution.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -34,11 +34,14 @@ const release = { ...JSON.parse(await fs.readFile(path.join(root, 'macos/release
   version: JSON.parse(await fs.readFile(path.join(root, 'package.json'), 'utf8')).version };
 const installer = path.join(dist, windowsAssetName(release));
 const portable = path.join(dist, windowsAssetName(release, 'portable.zip'));
+for (const output of [app, installer, portable]) {
+  if (await fs.lstat(output).catch(error => { if (error.code !== 'ENOENT') throw error; })) throw new Error('Refusing to overwrite an existing Windows release output: ' + output);
+}
 
 async function download(url, destination, expected) {
   let bytes = await fs.readFile(destination).catch(() => null);
   if (!bytes) {
-    const response = await fetch(url, { signal: AbortSignal.timeout(180000) });
+    const response = await fetch(url, { signal: AbortSignal.timeout(900000) });
     if (!response.ok) throw new Error(`Official dependency download failed: HTTP ${response.status}`);
     bytes = Buffer.from(await response.arrayBuffer());
     if (bytes.length > 512 * 1024 * 1024) throw new Error('Official dependency is unexpectedly large');
@@ -62,7 +65,7 @@ try {
 const properties = [`-p:BaseIntermediateOutputPath=${path.join(cache, 'obj')}${path.sep}`,
   `-p:BaseOutputPath=${path.join(cache, 'bin')}${path.sep}`];
 run(dotnet, ['restore', path.join(root, 'windows/CodexCo2.csproj'), '--locked-mode', '--no-cache', '--force', '--configfile', path.join(root, 'windows/NuGet.config'), '--packages', packages, ...properties]);
-await fs.rm(app, { recursive: true, force: true }); await fs.mkdir(app, { recursive: true });
+await fs.mkdir(app, { recursive: true });
 run(dotnet, ['publish', path.join(root, 'windows/CodexCo2.csproj'), '--no-restore', '--configuration', 'Release', '--runtime', WINDOWS.runtime,
   '--self-contained', 'true', '--output', app, `-p:Version=${release.version}`, `-p:FileVersion=${release.version}.${release.build}`, ...properties]);
 for (const directory of [service, runtime, licenses]) await fs.mkdir(directory, { recursive: true });
@@ -99,15 +102,14 @@ await fs.copyFile(path.join(root, 'bin/desktop-service.mjs'), path.join(service,
 await fs.copyFile(path.join(root, 'package.json'), path.join(service, 'package.json'));
 await fs.copyFile(path.join(root, 'macos/AppIcon.png'), path.join(service, 'owner/app-icon.png'));
 const dependencies = await fs.mkdtemp(path.join(cache, 'dependencies-'));
+let productionDependencies;
 try {
   for (const name of ['package.json', 'package-lock.json']) await fs.copyFile(path.join(root, name), path.join(dependencies, name));
   run(process.execPath, [process.env.npm_execpath, 'ci', '--prefix', dependencies, '--include=dev', '--ignore-scripts', '--no-audit', '--no-fund']);
   await buildWeb({ root, publicDir: path.join(service, 'public'), dependencyRoot: dependencies, stopService: true });
-  run(process.execPath, [process.env.npm_execpath, 'prune', '--prefix', dependencies, '--omit=dev', '--omit=optional', '--ignore-scripts', '--no-audit', '--no-fund']);
   const notices = await npmNotices(root, dependencies);
   if (notices !== await fs.readFile(path.join(root, 'third-party/npm-NOTICES.txt'), 'utf8')) throw new Error('Review and regenerate locked npm notices');
-  await removeDependencyBins(path.join(dependencies, 'node_modules'));
-  await fs.cp(path.join(dependencies, 'node_modules'), path.join(service, 'node_modules'), { recursive: true });
+  productionDependencies = await copyProductionDependencies({ sourceRoot: root, installedRoot: dependencies, destination: path.join(service, 'node_modules') });
   await fs.writeFile(path.join(licenses, 'npm-NOTICES.txt'), notices);
 } finally { await fs.rm(dependencies, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }); }
 for (const name of ['LICENSE', 'THIRD_PARTY_NOTICES.md', 'ASSET_PROVENANCE.md']) await fs.copyFile(path.join(root, name), path.join(licenses, name));
@@ -129,7 +131,7 @@ for (const [id, version] of [['microsoft.web.webview2', WINDOWS.webView2SDK], ['
 for (const file of ['CodexCo2.exe', 'resources/runtime/node.exe', 'resources/runtime/cloudflared.exe', 'WebView2Loader.dll'])
   if (peArchitecture(await fs.readFile(path.join(app, file))) !== 'x64') throw new Error(`Expected x64 native executable: ${file}`);
 await fs.writeFile(path.join(app, 'RELEASE.txt'), `Codex Co² ${release.version} (Build ${release.build}) — Windows x64 ${release.channel}.\nWindows 10 version 1809 (build 17763) or newer. Unsigned experimental package.\nRequires Microsoft Edge WebView2 Runtime and an already running compatible official Codex Desktop.\nNo Codex backend, credentials or conversations are included. Windows native acceptance remains pending.\nUpdates: download a new installer from ${'https://github.com/SpaceCoder-Kafka/codex-co2/releases'}; exit Co² before installing.\n`);
-await fs.writeFile(path.join(resources, 'manifest.json'), JSON.stringify({ name: 'Codex Co²', version: release.version, build: release.build, channel: release.channel,
+await fs.writeFile(path.join(resources, 'manifest.json'), JSON.stringify({ formatVersion: 2, productionDependencies, name: 'Codex Co²', version: release.version, build: release.build, channel: release.channel,
   platform: 'win32', architecture: 'x64', minimumWindowsBuild: WINDOWS.minimumBuild, signed: false, runtimeMode: 'desktop-attach',
   updater: { automatic: false }, webView2: { sdk: WINDOWS.webView2SDK, runtimeBundled: false },
   versions: { node: WINDOWS.nodeVersion, cloudflared: WINDOWS.cloudflaredVersion, dotnet: WINDOWS.dotnetRuntime },

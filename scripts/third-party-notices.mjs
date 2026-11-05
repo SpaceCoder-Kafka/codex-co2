@@ -2,6 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { SPARKLE, digest } from './sparkle-distribution.mjs';
+import { distributionDependencyEntries } from './production-dependencies.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const noticeName = /^(?:licen[cs]e|copying|notice)(?:[.\-_].*)?$/i;
@@ -37,8 +38,8 @@ async function supplementalNotice(sourceRoot, dir, pkg, expected, packageBytes) 
 
 export async function npmNotices(sourceRoot, installedRoot = sourceRoot) {
   const lock = JSON.parse(await fs.readFile(path.join(sourceRoot, 'package-lock.json'), 'utf8'));
-  const entries = Object.entries(lock.packages).filter(([name, pkg]) => name && !pkg.dev && !pkg.optional).sort(([a], [b]) => a.localeCompare(b, 'en'));
-  const parts = ['Third-party npm license and copyright texts', 'Generated from package-lock.json. Preserve these notices when redistributing. Optional native packages are omitted from service distributions.'];
+  const entries = distributionDependencyEntries(lock);
+  const parts = ['Third-party npm license and copyright texts', 'Generated from the locked browser-build and service-runtime dependency closures. Preserve these notices when redistributing. Optional native packages and build-only compilers are omitted from service distributions.'];
   for (const [relative, expected] of entries) {
     if (!relative.startsWith('node_modules/') || relative.split('/').includes('..') || expected.link) throw new Error('Unsupported locked package path');
     const dir = path.join(installedRoot, relative);

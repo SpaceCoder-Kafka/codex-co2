@@ -6,10 +6,16 @@ import { execFileSync } from 'node:child_process';
 import { publicSource } from './public-source.mjs';
 import { readWebAssets } from '../lib/web-assets.mjs';
 import { WINDOWS, fileInventory, peArchitecture, sha256 } from './windows-distribution.mjs';
+import { assertProductionDependencies } from './production-dependencies.mjs';
 
 const app = path.resolve(process.argv[2] ?? 'dist/windows/CodexCo2');
 const resources = path.join(app, 'resources');
 const manifest = JSON.parse(await fs.readFile(path.join(resources, 'manifest.json'), 'utf8'));
+if (manifest.formatVersion !== undefined && manifest.formatVersion !== 2) throw new Error('Unsupported Windows bundle manifest format');
+if (manifest.formatVersion === 2) {
+  if (!/^[a-f0-9]{64}$/.test(manifest.source?.files?.['package-lock.json'] ?? '')) throw new Error('Missing runtime dependency lock provenance');
+  await assertProductionDependencies({ nodeModules: path.join(resources, 'service/node_modules'), receipt: manifest.productionDependencies, expectedLockSHA256: manifest.source.files['package-lock.json'] });
+}
 if (manifest.platform !== 'win32' || manifest.architecture !== 'x64' || manifest.minimumWindowsBuild !== WINDOWS.minimumBuild
     || manifest.runtimeMode !== 'desktop-attach' || manifest.signed !== false || manifest.updater?.automatic !== false
     || manifest.webView2?.runtimeBundled !== false || manifest.webView2?.sdk !== WINDOWS.webView2SDK
