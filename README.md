@@ -15,8 +15,8 @@
 </p>
 
 <p align="center">
-  <a href="CHANGELOG.md#040"><img src="https://img.shields.io/badge/release-v0.4.0-2563eb" alt="Release v0.4.0"></a>
-  <img src="https://img.shields.io/badge/host-macOS%2014%2B%20%C2%B7%20Universal-555555" alt="Host: macOS 14+ Universal">
+  <a href="CHANGELOG.md#041"><img src="https://img.shields.io/badge/release-v0.4.1-2563eb" alt="Release v0.4.1"></a>
+  <img src="https://img.shields.io/badge/host-macOS%2014%2B%20%C2%B7%20arm64%20%2F%20Intel-555555" alt="Host: macOS 14+, separate Apple Silicon and Intel packages">
   <img src="https://img.shields.io/badge/guest-browser-2563eb" alt="Guest: browser">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-22c55e" alt="License: MIT"></a>
 </p>
@@ -26,7 +26,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/SpaceCoder-Kafka/codex-co2/releases/tag/v0.4.0">Download</a> ·
+  <a href="https://github.com/SpaceCoder-Kafka/codex-co2/releases/tag/v0.4.1">Download</a> ·
   <a href="#new-users-install-with-homebrew">Quick start</a> ·
   <a href="#screenshots">Screenshots</a> ·
   <a href="#what-sharing-grants">Sharing boundaries</a> ·
@@ -70,15 +70,14 @@ https://github.com/user-attachments/assets/743766be-3549-4928-9f1e-d720314f8989
 
 ## Install Codex Co²
 
-The current release is **0.4.0**, adding guest file uploads, Desktop-style attachment previews and document cards, with duplicate image attachments removed and sender attribution fixed. See the [changelog](CHANGELOG.md) for details.
-
-The **0.4.1 source candidate** builds separate Apple Silicon (`arm64`) and Intel (`x86_64`) macOS packages with bundled Node and cloudflared and runtime-only service dependencies. Existing Universal users manually replace the app once with the matching architecture, retaining their data. New packages use separate architecture-specific update feeds. These candidates have not been published; the download links below still refer to 0.4.0.
+The current release is **0.4.1**, with separate Apple Silicon (`arm64`) and Intel (`x86_64`) macOS packages and smaller service distributions. Node and cloudflared remain bundled. Browser preview resources are retained while frontend build dependencies and development files are excluded from the installed service. See the [changelog](CHANGELOG.md) for details.
 
 The host attaches to your **already running official Codex Desktop**, keeping its existing Agent, login and tool approval settings. Guests use a browser with JavaScript and WebSocket support. Public sharing requires access to the generated public address; explicit intranet sharing requires access to the selected private network.
 
 | Package | Target | Acceptance |
 | --- | --- | --- |
-| Universal DMG | macOS 14+; Apple Silicon and Intel | Two native slices; macOS 14, Intel and clean-Mac native acceptance still required |
+| Apple Silicon DMG | macOS 14+; arm64 | Native Desktop, macOS 14 and clean-Mac acceptance still required |
+| Intel DMG | macOS 14+; x86_64 | Intel-native Desktop, macOS 14 and clean-Mac acceptance still required |
 | Windows setup EXE and portable ZIP | Windows 10 version 1809+ / Windows 11, x64 | Native Windows Desktop, installation and tool-approval acceptance still required |
 
 Windows requires Microsoft Edge WebView2 Runtime and offers manual updates through the project Releases page. Packages remain ad-hoc signed/unnotarized on macOS and unsigned on Windows. Linux packages are not built. A regular release does not establish native acceptance on every target.
@@ -100,10 +99,18 @@ The command opens a local first-launch guide after successful installation. Use 
 
 ### Install from a DMG
 
-Alternatively, download the DMG and matching `.sha256` file from [Releases](https://github.com/SpaceCoder-Kafka/codex-co2/releases/tag/v0.4.0), then check the file:
+Alternatively, download the DMG for your Mac and its matching `.sha256` file from [Releases](https://github.com/SpaceCoder-Kafka/codex-co2/releases/tag/v0.4.1), then run the corresponding check.
+
+Apple Silicon (`arm64`):
 
 ```sh
-shasum -a 256 -c Codex-Co2-0.4.0-build36-universal.dmg.sha256
+shasum -a 256 -c Codex-Co2-0.4.1-build37-arm64.dmg.sha256
+```
+
+Intel (`x86_64`):
+
+```sh
+shasum -a 256 -c Codex-Co2-0.4.1-build37-x86_64.dmg.sha256
 ```
 
 The macOS package is **ad-hoc signed and not notarized by Apple**. macOS may block its first launch. Attempt to open Co² from Applications, then go to **System Settings → Privacy & Security → Open Anyway** and confirm. Homebrew installs the app directly without showing the DMG's installation window. See [Apple's guidance](https://support.apple.com/en-us/102445).
@@ -116,14 +123,18 @@ Build 17 and later provide **About** in the sidebar and the macOS app menu. Abou
 
 The app checks for updates at most once a day in the background. Preview builds receive newer preview and stable builds; stable builds receive stable updates. Click **Update to…** to download and verify an update. If sharing is active, confirm that it can end before Co² installs and restarts. Official Codex Desktop stays running; share again after updating. Canceling installation does not schedule it for your next quit. Source/browser mode and read-only disk images offer manual downloads instead.
 
-For this one-time transition from 0.3.3 to the new release series, Build 17 and later can use the in-app updater: the internal Build continues increasing even though the displayed version becomes 0.1.0 or 0.2.0. Older builds need a manual upgrade. Homebrew users migrating manually should reinstall once, because a normal upgrade can treat 0.1.0 as an older version. First stop sharing, turn off background running if enabled, then quit Co²; keep official Codex Desktop running:
+**Upgrading from a Universal package:** Stop sharing, turn off background running if enabled, then quit Co². Keep official Codex Desktop running. Manually replace Co² once with the matching Apple Silicon or Intel package, keeping its application data. Homebrew users can run:
 
 ```sh
 brew update
 brew reinstall --cask SpaceCoder-Kafka/tap/codex-co2
 ```
 
-After migration, use the in-app updater or `brew upgrade --cask --greedy SpaceCoder-Kafka/tap/codex-co2` for subsequent releases. Windows users download the setup EXE or portable ZIP from Releases and quit the previous Co² app before replacing it.
+The new packages use separate architecture-specific update feeds. The old Universal feed is frozen, so it does not offer this migration automatically. After replacing the app, use the in-app updater or `brew upgrade --cask --greedy SpaceCoder-Kafka/tap/codex-co2` for subsequent releases.
+
+For the earlier transition from 0.3.3 to the 0.1.0/0.2.0 release series, Build 17 and later could use the in-app updater because the internal Build continued increasing. Older builds required a manual upgrade; Homebrew users needed the same one-time reinstall because a normal upgrade could treat 0.1.0 as an older version.
+
+Windows users download the setup EXE or portable ZIP from Releases and quit the previous Co² app before replacing it.
 
 In-app updates verify signed update metadata and packages and remain subject to macOS security checks.
 
@@ -193,7 +204,7 @@ Review history and attachments before sharing. Avoid disclosing secrets or mater
 
 **Why has my invitation stopped working?** Public invitations renew with a compatible relay and healthy connections, keeping the same link; the Cloudflare temporary hostname has no one-hour hard deadline. Timed intranet invitations end sharing at their fixed deadline. Permanent invitations still depend on the host and network. Brief disconnections retry first. For expiry or system interruption with a reachable original entry, follow the page's recovery prompt. Stopping sharing, changing the entry or unavailable recovery requires the host to send another invitation. A macOS background service can preserve the original intranet recovery entry across restart; active access still needs a new host decision. Choose “Got it” to dismiss an ended share while keeping its history and eligible recovery requests. Check uncertain submissions in Desktop before resending.
 
-**What has been verified?** Synthetic tests cover admission, message policy, scoped transport and revocation. Earlier manual sessions verified individual local/public paths. The current release candidate still needs final-package native Desktop, native tool approval and clean-Mac download/install acceptance. Scripted RPC tests do not prove native UI behavior.
+**What has been verified?** Synthetic tests cover admission, message policy, scoped transport and revocation. Earlier manual sessions verified individual local/public paths. Final-package native Desktop, native tool approval and clean-Mac download/install acceptance remain pending. Scripted RPC tests do not prove native UI behavior.
 
 ## Run or build from source
 
@@ -208,14 +219,16 @@ Open the local manager printed by the command. Without `--public`, access stays 
 
 For direct intranet access from source, run `npm run host -- --attach --intranet-only --open`. If multiple private addresses are detected, select the sharing address in the manager or specify a current interface address with `--lan-address 192.168.1.20`. Intranet mode never falls back to public sharing after failure. Check the connection and share again after an address change. Company routing, VPN and Wi-Fi client isolation still determine whether devices can reach each other.
 
-Building the Universal DMG needs Apple Silicon or Intel macOS, Xcode command line tools, Python 3.9+ and network access:
+Building a macOS DMG needs Apple Silicon or Intel macOS, Xcode command line tools, Python 3.9+ and network access. Select the target architecture explicitly:
 
 ```sh
-npm run build:macos
-npm run check:macos
+npm run build:macos -- --arch arm64
+npm run check:macos -- "dist/arm64/Codex Co².app"
 ```
 
-The macOS 14 candidate rebuilds the pinned cloudflared source with a verified Go toolchain. Build tools and caches stay local to the repository; no global Go installation is required. Package checks inspect every native slice's deployment target. They do not establish that Desktop attachment, tool approvals or installation work on macOS 14.
+For Intel, use `--arch x86_64` and check `dist/x86_64/Codex Co².app`.
+
+The macOS packages target macOS 14 and rebuild the pinned cloudflared source with a verified Go toolchain. Build tools and caches stay local to the repository; no global Go installation is required. Package checks inspect every native slice's deployment target. They do not establish that Desktop attachment, tool approvals or installation work on macOS 14.
 
 For Windows packages, install .NET SDK 8.0.426, Python 3.9+, NSIS 3.13 and npm dependencies, then run:
 

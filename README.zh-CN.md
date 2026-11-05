@@ -15,8 +15,8 @@
 </p>
 
 <p align="center">
-  <a href="CHANGELOG.md#040"><img src="https://img.shields.io/badge/release-v0.4.0-2563eb" alt="发布版本 v0.4.0"></a>
-  <img src="https://img.shields.io/badge/host-macOS%2014%2B%20%C2%B7%20Universal-555555" alt="分享者：macOS 14+，Universal">
+  <a href="CHANGELOG.md#041"><img src="https://img.shields.io/badge/release-v0.4.1-2563eb" alt="发布版本 v0.4.1"></a>
+  <img src="https://img.shields.io/badge/host-macOS%2014%2B%20%C2%B7%20arm64%20%2F%20Intel-555555" alt="分享者：macOS 14+，Apple Silicon 与 Intel 分架构包">
   <img src="https://img.shields.io/badge/guest-browser-2563eb" alt="协作者：浏览器">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-22c55e" alt="许可：MIT"></a>
 </p>
@@ -26,7 +26,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/SpaceCoder-Kafka/codex-co2/releases/tag/v0.4.0">下载</a> ·
+  <a href="https://github.com/SpaceCoder-Kafka/codex-co2/releases/tag/v0.4.1">下载</a> ·
   <a href="#新用户使用homebrew">快速开始</a> ·
   <a href="#应用截图">应用截图</a> ·
   <a href="#共享前需要知道">共享须知</a> ·
@@ -70,15 +70,14 @@ https://github.com/user-attachments/assets/b1c2f544-3684-432e-9e03-f32ac15b9370
 
 ## 安装 Codex Co²
 
-当前发布版本为 **0.4.0**，新增网页发送文件、贴近 Desktop 的附件预览和文档卡片，去除重复图片附件，并修复消息署名。详见 [0.4.0 更新说明](docs/release-notes/v0.4.0-zh.md)。
-
-**0.4.1 源码候选**分别构建 Apple Silicon（`arm64`）与 Intel（`x86_64`）macOS 包，继续内置 Node 和 cloudflared，服务端只携带运行依赖。旧 Universal 用户需手动覆盖一次对应架构应用并保留数据；新包使用各自架构的更新源。这些候选尚未发布，下方下载链接仍指向 0.4.0。
+当前发布版本为 **0.4.1**，macOS 分别提供 Apple Silicon（`arm64`）与 Intel（`x86_64`）安装包，并精简服务端依赖。Node 和 cloudflared 继续内置，浏览器预览资源完整保留，安装后的服务端不再携带前端构建依赖和开发文件。详见 [0.4.1 更新说明](docs/release-notes/v0.4.1-zh.md)。
 
 分享者接入**已经运行的官方 Codex Desktop**，继续使用原有 Agent、登录与工具审批设置。协作者使用支持 JavaScript 和 WebSocket 的浏览器。公网共享需要访问生成的公网地址；显式内网共享需要访问所选私有网络。
 
 | 安装包 | 目标系统 | 验收范围 |
 | --- | --- | --- |
-| Universal DMG | macOS 14+；Apple Silicon 与 Intel | 包含两种原生架构；macOS 14、Intel 与干净 Mac 原生验收仍待完成 |
+| Apple Silicon DMG | macOS 14+；arm64 | 官方 Desktop、macOS 14 与干净 Mac 原生验收仍待完成 |
+| Intel DMG | macOS 14+；x86_64 | Intel 真机 Desktop、macOS 14 与干净 Mac 原生验收仍待完成 |
 | Windows 安装 EXE 与便携 ZIP | Windows 10 1809+ / Windows 11，x64 | 官方 Desktop、安装与原生工具审批仍待 Windows 验收 |
 
 Windows 需要 Microsoft Edge WebView2 Runtime，通过项目 Releases 页面手动更新。macOS 包仍采用临时签名、未经 Apple 公证，Windows 包暂未签名。不构建 Linux 包；常规发布不代表所有目标平台都已经通过原生验收。
@@ -100,10 +99,18 @@ brew install --cask SpaceCoder-Kafka/tap/codex-co2 && open "$(brew --repository 
 
 ### 通过 DMG 安装
 
-也可以从 [Releases](https://github.com/SpaceCoder-Kafka/codex-co2/releases/tag/v0.4.0) 下载 DMG 和对应 `.sha256` 文件，下载后执行：
+也可以从 [Releases](https://github.com/SpaceCoder-Kafka/codex-co2/releases/tag/v0.4.1) 下载适合本机架构的 DMG 和对应 `.sha256` 文件，下载后执行相应校验。
+
+Apple Silicon（`arm64`）：
 
 ```sh
-shasum -a 256 -c Codex-Co2-0.4.0-build36-universal.dmg.sha256
+shasum -a 256 -c Codex-Co2-0.4.1-build37-arm64.dmg.sha256
+```
+
+Intel（`x86_64`）：
+
+```sh
+shasum -a 256 -c Codex-Co2-0.4.1-build37-x86_64.dmg.sha256
 ```
 
 macOS 包采用临时签名，**未经 Apple 公证**，首次打开可能受系统拦截。先尝试从 Applications 打开 Co²，再到「系统设置 → 隐私与安全性 → 仍要打开」确认。Homebrew 会直接安装应用，不会展示 DMG 的安装引导窗口。请参考 [Apple 指引](https://support.apple.com/zh-cn/102445)。
@@ -116,14 +123,18 @@ Build 17 起在侧栏和 macOS 应用菜单提供「关于」入口，显示实�
 
 应用每天最多在后台检查一次。Preview 接收更新的预览版及正式版，正式版只接收正式版。点击「更新到…」下载并校验更新；仍有共享时，确认结束共享后才安装并重开 Co²。官方 Codex Desktop 保持运行，更新后可重新分享。取消安装不会留下下次退出时自动更新的任务。源码浏览器模式和只读安装盘运行提供手动下载入口。
 
-本次从 0.3.3 切换至新的 0.1.0／0.2.0 发布系列，Build 17 及之后可使用应用内更新：显示版本重新编号，内部 Build 仍持续递增。更早版本需要手动迁移。旧 Homebrew 用户本次使用重新安装，避免普通升级将 0.1.0 判断为旧版。操作前先停止共享、关闭后台运行，再退出 Co²；保持官方 Codex Desktop 运行：
+**从 Universal 包升级：**先停止共享、关闭后台运行，再退出 Co²；保持官方 Codex Desktop 运行。手动覆盖一次对应 Apple Silicon 或 Intel 架构的 Co²，保留应用数据。Homebrew 用户可执行：
 
 ```sh
 brew update
 brew reinstall --cask SpaceCoder-Kafka/tap/codex-co2
 ```
 
-完成迁移后，后续版本可使用应用内更新或 `brew upgrade --cask --greedy SpaceCoder-Kafka/tap/codex-co2`。Windows 用户从 Releases 下载安装 EXE 或便携 ZIP，退出旧版 Co² 后手动替换。
+新包使用各自架构的更新源；旧 Universal 更新源已冻结，不会自动推送这次迁移。完成覆盖后，后续版本可使用应用内更新或 `brew upgrade --cask --greedy SpaceCoder-Kafka/tap/codex-co2`。
+
+早先从 0.3.3 切换至 0.1.0／0.2.0 发布系列时，Build 17 及之后因内部 Build 持续递增，可使用应用内更新。更早版本需要手动迁移；Homebrew 用户需同样重新安装一次，避免普通升级将 0.1.0 判断为旧版。
+
+Windows 用户从 Releases 下载安装 EXE 或便携 ZIP，退出旧版 Co² 后手动替换。
 
 应用内更新会校验更新信息与安装包的签名，仍遵守 macOS 的安全检查。
 
@@ -191,7 +202,7 @@ macOS 恢复记录开启时，内网恢复元数据与凭据哈希会保存在�
 
 **邀请失效或连接中断？** 公网邀请在中继支持且连接正常时自动续期并保留原链接，Cloudflare 临时域名没有一小时硬性时限。内网定时邀请到固定截止时间就结束共享；永久邀请仍受主机和网络可用性约束。短暂断线先尝试重连；自然到期或系统中断且原入口仍可用时，可按页面提示申请恢复。停止共享、更换入口或无法恢复时，需分享者另发邀请。macOS 后台服务可在重启后恢复原内网页面的申请入口，实际准入仍需分享者重新决定。已结束卡片可点「我知道了」移除，分享历史和仍有效的恢复申请不受影响。发送结果不确定时，先在 Desktop 核对，避免重复发送。
 
-**验证到哪一步？** 合成测试覆盖准入、消息策略、会话传输和撤权；此前人工验证过部分本机与公网协作。当前候选仍需完成最终安装包的官方 Desktop、原生工具审批及干净 Mac 下载与安装验收。RPC 测试不能证明原生窗口行为。
+**验证到哪一步？** 合成测试覆盖准入、消息策略、会话传输和撤权；此前人工验证过部分本机与公网协作。最终安装包的官方 Desktop、原生工具审批及干净 Mac 下载与安装验收仍待完成。RPC 测试不能证明原生窗口行为。
 
 ## 从源码运行与构建
 
@@ -206,14 +217,16 @@ npm run host -- --attach --public --open
 
 源码内网直连使用 `npm run host -- --attach --intranet-only --open`。如果检测到多个私网地址，在管理页选择共享地址，或使用 `--lan-address 192.168.1.20` 指定当前网卡地址。内网模式不会在失败后回退公网；网络地址改变后需检查并重新分享。公司路由、VPN 或 Wi-Fi 访客隔离仍决定设备能否互通。
 
-Universal DMG 构建另需 Apple Silicon 或 Intel macOS、Xcode 命令行工具、Python 3.9+ 和网络：
+macOS DMG 构建另需 Apple Silicon 或 Intel macOS、Xcode 命令行工具、Python 3.9+ 和网络。请明确选择目标架构：
 
 ```sh
-npm run build:macos
-npm run check:macos
+npm run build:macos -- --arch arm64
+npm run check:macos -- "dist/arm64/Codex Co².app"
 ```
 
-macOS 14 候选包使用经过校验的 Go 工具链重新编译固定版本的 cloudflared 源码。构建工具和缓存保留在仓库内，无需全局安装 Go。包检查会核对每个原生架构的最低系统要求，不能代替 macOS 14 上的 Desktop 接入、工具审批与安装验收。
+Intel 使用 `--arch x86_64`，并检查 `dist/x86_64/Codex Co².app`。
+
+macOS 包以 macOS 14 为目标，使用经过校验的 Go 工具链重新编译固定版本的 cloudflared 源码。构建工具和缓存保留在仓库内，无需全局安装 Go。包检查会核对每个原生架构的最低系统要求，不能代替 macOS 14 上的 Desktop 接入、工具审批与安装验收。
 
 Windows 构建另需 .NET SDK 8.0.426、Python 3.9+、NSIS 3.13 和 npm 依赖：
 
