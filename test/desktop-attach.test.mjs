@@ -28,13 +28,13 @@ const state = (id = THREAD) => ({ id, hostId: 'local', title: '合成日常会�
     } },
   } } });
 
-async function fixture(t) {
+async function fixture(t, streamVersion = 11) {
   const dir = await fs.mkdtemp('/tmp/co2-attach-'); await fs.chmod(dir, 0o700);
   const endpoint = path.join(dir, 'desktop.sock'), owner = randomUUID(), clientIds = new Map(), sockets = new Set(), requests = [];
   let revision = 0, malformed, holdInput = false, noOwner = false, noOwnerCount = 0, discoveryError, discoveryDelayMs = 0, inputDelayMs = 0, inputTimeout = false, inputObserver;
   const encode = message => { const b = Buffer.from(JSON.stringify(message)), h = Buffer.alloc(4); h.writeUInt32LE(b.length); return Buffer.concat([h, b]); };
   const send = (socket, message) => socket.write(encode(message));
-  const broadcast = (socket, id, change, extra = {}) => send(socket, { type: 'broadcast', method: 'thread-stream-state-changed', version: 11,
+  const broadcast = (socket, id, change, extra = {}) => send(socket, { type: 'broadcast', method: 'thread-stream-state-changed', version: streamVersion,
     sourceClientId: owner, targetClientIds: [clientIds.get(socket)], params: { hostId: 'local', conversationId: id, change }, ...extra });
   const server = net.createServer(socket => {
     sockets.add(socket); let buffer = Buffer.alloc(0);
@@ -171,13 +171,14 @@ test('cancellation, catalog removal and URL-open failure stop automatic loading 
   assert.equal(f.requests.some(r => r.method === 'thread-follower-start-turn'), false);
 });
 
-test('projects text and rejects malformed activity; live patches preserve thread/owner/recipient scope', async t => {
-  const f = await fixture(t), rpc = await DesktopRpcClient.connect(f.endpoint);
+for (const version of [11, 13]) test(`v${version} projects scoped snapshots and patches only from the selected thread, owner and recipient`, async t => {
+  const f = await fixture(t, version), rpc = await DesktopRpcClient.connect(f.endpoint);
   const scoped = new ScopedThread({ rpc, threadId: THREAD }); t.after(() => { scoped.close(); rpc.close(); });
   await scoped.start();
   assert.deepEqual(scoped.snapshot.items.map(x => x.text), ['A 的既有消息', '既有回复']);
   assert.equal(scoped.snapshot.historyTruncated, true);
   assert.ok(!JSON.stringify(scoped.snapshot).includes('never-project'));
+  assert.equal(rpc.streamVersion, version);
   const original = rpc.revision, socket = f.lastSocket();
   const change = { type: 'snapshot', revision: original + 1, conversationState: state(OTHER) };
   f.broadcast(socket, OTHER, change);
@@ -185,6 +186,7 @@ test('projects text and rejects malformed activity; live patches preserve thread
   f.broadcast(socket, THREAD, change, { targetClientIds: [randomUUID()] });
   await new Promise(r => setTimeout(r, 25)); assert.equal(rpc.revision, original);
   f.broadcast(socket, THREAD, { type: 'patches', baseRevision: original, revision: original + 1,
+    ...(version === 13 ? { acceptedTextChanges: [] } : {}),
     patches: [{ op: 'replace', path: ['turnHistory', 'history', 'entitiesByKey', 'turn:1', 'items', 0, 'text'], value: '实时新回复' }] });
   await new Promise((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error('Live projection timed out')), 2000);
@@ -666,13 +668,20 @@ test('only an explicit local decision submits exact text; no guest options or ap
   room.close();
 });
 
+test('unsupported first snapshot reports protocol incompatibility during invitation creation', async t => {
+  const f = await fixture(t, 12), runtime = await attachDesktop({ endpoint: f.endpoint });
+  t.after(() => runtime.close());
+  await assert.rejects(runtime.selectThread(THREAD, { activate: true }), /不支持此 Codex 会话同步协议版本/);
+  assert.deepEqual(await runtime.listThreads(), []);
+});
+
 test('version changes, stream gaps, mismatched snapshot IDs and disconnects fail closed', async t => {
-  for (const kind of ['version', 'gap', 'id', 'disconnect']) {
+  for (const kind of ['version', 'switch', 'gap', 'id', 'disconnect']) {
     const f = await fixture(t), rpc = await DesktopRpcClient.connect(f.endpoint); await rpc.request('thread/read', { threadId: THREAD });
     const closed = once(rpc, 'closed'), socket = f.lastSocket();
     if (kind === 'disconnect') socket.destroy();
     else f.broadcast(socket, THREAD, kind === 'gap' ? { type: 'patches', baseRevision: 9999, revision: 10000, patches: [] } :
-      { type: 'snapshot', revision: rpc.revision + 1, conversationState: state(kind === 'id' ? OTHER : THREAD) }, kind === 'version' ? { version: 12 } : {});
+      { type: 'snapshot', revision: rpc.revision + 1, conversationState: state(kind === 'id' ? OTHER : THREAD) }, kind === 'version' ? { version: 12 } : kind === 'switch' ? { version: 13 } : {});
     await closed; await assert.rejects(rpc.request('turn/start', {}), /disconnected/);
     assert.equal(rpc.nativeState, null);
   }

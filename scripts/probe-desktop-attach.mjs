@@ -22,7 +22,7 @@ try {
   let installedBundledVersion = null;
   try { installedBundledVersion = execFileSync('/Applications/ChatGPT.app/Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex', ['--version'], { encoding: 'utf8', timeout: 3000 }).trim(); } catch {}
   console.log(JSON.stringify({ observedAt: new Date().toISOString(), installedBundledVersion,
-    transport: 'existing Desktop IPC', streamVersion: 11, threadId: thread.id, revision: rpc.revision,
+    transport: 'existing Desktop IPC', streamVersion: rpc.streamVersion, threadId: thread.id, revision: rpc.revision,
     turns: thread.turns.length, textItems: thread.turns.reduce((n, t) => n + t.items.length, 0),
     historyTruncated: thread.historyTruncated, stateChanges: changes,
     sameNativeOwner: ownerBefore === digest(rpc.owner), configurationUnchanged: configBefore === configuration(),
