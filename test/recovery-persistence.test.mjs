@@ -58,6 +58,47 @@ test('LAN restart restores a hash-only recovery entry with an unchanged recovery
   assert.equal(third.status(source, origin).status, 'unavailable');
 });
 
+test('automatic LAN rejoin binds both proofs to the stored room, origin, authorization and invitation deadlines', supported, async t => {
+  const f = await fixture(t), first = await f.open(), source = f.room({ admissionScope: randomUUID() });
+  const personal = secret(), proof = { ...source, sessionId: personal };
+  first.registerRoom(source);
+  first.checkpointMembers(source.roomId, source.admissionScope, [{ hash: hash(personal),
+    name: 'Synthetic visitor', participantId: randomUUID(), expiresAt: f.now() + HOUR }]);
+  assert.equal(first.getRestartAuthorization(proof, origin), null);
+  first.close({ preserve: true });
+  const second = await f.open();
+  assert.equal(second.getRestartAuthorization(proof, origin).threadId, source.threadId);
+  assert.equal(second.getRestartAuthorization(proof, 'http://192.168.1.21:47870'), null);
+  const another = f.room({ threadId: 'another-thread', admissionScope: randomUUID() });
+  second.registerRoom(another);
+  assert.equal(second.getRestartAuthorization({ ...another, sessionId: personal }, origin), null);
+  f.advance(HOUR);
+  assert.equal(second.getRestartAuthorization(proof, origin), null);
+  assert.equal(second.status(proof, origin).status, 'recoverable');
+  f.advance(DAY);
+  assert.equal(second.getRestartAuthorization(proof, origin), null);
+});
+
+test('host startup restores only the latest eligible invitation per thread, including rooms with no visitors', supported, async t => {
+  const f = await fixture(t), first = await f.open();
+  const add = (threadId, extra) => {
+    const room = f.room({ threadId, admissionScope: randomUUID(), ...extra });
+    assert.ok(first.registerRoom(room)); return room;
+  };
+  const old = add('one'); first.updateRoom(old.roomId, { state: 'revoked', endReason: 'paused' });
+  const current = add('one'), other = add('two');
+  add('stopped'); first.revokeThread('stopped');
+  const expiring = add('expired', { inviteExpiresAt: f.now() + HOUR });
+  first.close({ preserve: true }); f.advance(HOUR);
+  const second = await f.open();
+  assert.deepEqual(second.restartRoomIds(origin), [current.roomId, other.roomId]);
+  assert.deepEqual(second.hostRestartAuthorization(other.roomId, origin).members, []);
+  assert.equal(second.hostRestartAuthorization(expiring.roomId, origin), null);
+  assert.deepEqual(second.restartRoomIds('http://192.168.1.21:47870'), []);
+  second.disablePersistence();
+  assert.deepEqual(second.restartRoomIds(origin), []);
+});
+
 test('crash restoration uses the last checkpoint and respects the absolute invite deadline', supported, async t => {
   const f = await fixture(t), first = await f.open(), source = f.room();
   first.registerRoom(source);

@@ -788,7 +788,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
     func prepareUpdateInstallation(_ completion: @escaping (UpdatePreparationResult) -> Void) {
         if helper?.isRunning == true && activeRooms != 0 {
             let alert = NSAlert(); alert.messageText = localized("结束共享并更新")
-            alert.informativeText = localized("更新会暂时停止共享服务并重新打开 Co²。内网原地址可用时可申请恢复；公网临时链接需要重新分享。")
+            alert.informativeText = localized("更新会暂时停止共享。开启共享恢复记录时，已获准的访客可用原浏览器和有效内网链接返回。公网临时链接需要重新分享。")
             alert.addButton(withTitle: localized("结束共享并更新")); alert.addButton(withTitle: localized("取消"))
             guard alert.runModal() == .alertFirstButtonReturn else { completion(.cancelled); return }
         }

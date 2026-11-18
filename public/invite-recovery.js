@@ -33,7 +33,7 @@
     } catch { return null; }
   };
 
-  window.createInviteRecovery = ({ invitation, getName, newToken, newRequestId, onRecoverable, onUnavailable, onApproved }) => {
+  window.createInviteRecovery = ({ invitation, returningVisitor = false, getName, newToken, newRequestId, onRecoverable, onUnavailable, onApproved }) => {
     const ids = ['invite-recovery-panel', 'invite-recovery-title', 'invite-recovery-description', 'invite-recovery-form',
       'invite-recovery-name', 'invite-recovery-button', 'invite-recovery-feedback', 'invite-recovery-storage'];
     const ui = Object.fromEntries(ids.map(id => [id.replace('invite-recovery-', ''), document.getElementById(id)]));
@@ -42,6 +42,7 @@
     let record = null, socket = null, timer = null, retryTimer = null, heartbeat = null;
     let retryCount = 0, closed = false, suspended = false, handedOff = false, blocked = false;
     let persistent = true, supported = false, recoveryExpiresAt = 0, queuedRequest = false, approved = null;
+    let deferReceipt = returningVisitor;
     let lastActivity = 0;
     const canVerify = () => validId(original.roomId) && validToken(original.inviteToken);
     const persist = () => {
@@ -200,21 +201,22 @@
       try { pointer = JSON.parse(window.sessionStorage?.getItem(pointerKey) || 'null'); } catch {}
       record = records().find(saved => canVerify() ? saved.originalRoomId === original.roomId
         : saved.originalRoomId === pointer?.originalRoomId && saved.requestId === pointer?.requestId) || null;
-      if (record) { ui.name.value = record.name; persist(); panel('正在查询申请', '正在读取此前申请的处理结果。'); }
+      if (record && !deferReceipt) { ui.name.value = record.name; persist(); panel('正在查询申请', '正在读取此前申请的处理结果。'); }
     } catch {}
     return {
       get hasRequest() { return Boolean(record); },
       start() { connect(); },
       probe() {
+        deferReceipt = false;
         if (handedOff && nextInvitation && !blocked) {
           original = nextInvitation; nextInvitation = null; handedOff = false;
           record = null; supported = false; recoveryExpiresAt = 0;
         }
-        if (!record && !handedOff && !blocked) connect();
+        if (!handedOff && !blocked) connect();
       },
       suspend() { suspended = true; stop(); },
-      resume() { suspended = false; if (record && !handedOff && !blocked) connect(); },
-      visible() { deliver(); if (record && !handedOff && !socket && !blocked) connect(); },
+      resume() { suspended = false; if (record && !deferReceipt && !handedOff && !blocked) connect(); },
+      visible() { deliver(); if (record && !deferReceipt && !handedOff && !socket && !blocked) connect(); },
       revoke() {
         blocked = true; stop(); approved = null; ui.panel.hidden = true;
         if (record) { record.confirmed = true; record.expiresAt = 0; persist(); }

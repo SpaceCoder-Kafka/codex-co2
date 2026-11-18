@@ -877,7 +877,7 @@ function handleMessage(message) {
       invitationRecovery?.probe();
       break;
     case 'interrupted':
-      setTerminal('共享因故中断，正在检查能否申请恢复邀请。', '共享因故中断');
+      setTerminal('共享因故中断，正在检查能否申请恢复邀请。', '共享因故中断', { preserveIdentity: true });
       invitationRecovery?.probe();
       break;
     case 'paused':
@@ -929,7 +929,7 @@ function handleMessage(message) {
       if (payload.type === 'share-ended' && ['expired', 'interrupted', 'paused'].includes(payload.reason)) {
         const expired = payload.reason === 'expired';
         setTerminal(expired ? '邀请已到期，正在检查能否申请恢复。' : '共享因故中断，正在检查能否申请恢复邀请。',
-          expired ? '邀请已到期' : '共享因故中断', { preserveIdentity: payload.reason === 'paused' });
+          expired ? '邀请已到期' : '共享因故中断', { preserveIdentity: !expired });
         invitationRecovery?.probe(); return;
       }
       if (payload.type === 'share-paused') {
@@ -1217,18 +1217,19 @@ ui['proposal-form'].addEventListener('submit', (event) => {
   updateControls();
 });
 
-invitationRecovery = window.createInviteRecovery?.({ invitation: { roomId, inviteToken },
+const returningVisitor = validInvitation && savedVisitor && Boolean(displayName);
+invitationRecovery = window.createInviteRecovery?.({ invitation: { roomId, inviteToken }, returningVisitor,
   getName: () => displayName || ui['display-name'].value, newToken: newVisitorToken, newRequestId: requestId,
   onRecoverable: reason => {
     setTerminal(reason === 'expired' ? '邀请已到期，可以向分享者申请恢复。' : '共享因故中断，可以向分享者申请恢复。',
-      reason === 'expired' ? '邀请已到期' : '共享因故中断');
+      reason === 'expired' ? '邀请已到期' : '共享因故中断', { preserveIdentity: reason !== 'expired' });
     ui['join-panel'].hidden = true;
   }, onUnavailable: () => {
     setTerminal('邀请不可恢复，请联系分享者发送新邀请。', '邀请不可恢复');
     ui['join-panel'].hidden = true;
   }, onApproved: useRecoveredInvitation,
 });
-if (invitationRecovery?.hasRequest) {
+if (!returningVisitor && invitationRecovery?.hasRequest) {
   terminal = true; ui['join-panel'].hidden = true;
   setStatus('正在查询恢复申请', 'pending');
   emptyState('等待邀请恢复', '正在查询此前申请的处理结果。');
@@ -1244,8 +1245,9 @@ if (invitationRecovery?.hasRequest) {
 updateControls();
 resizeComposer();
 window.addEventListener('resize', () => { resizeComposer(); for (const fit of fitMessageFolds) fit(); });
-if (validInvitation && savedVisitor && displayName && !invitationRecovery?.hasRequest) connect();
-invitationRecovery?.start();
+// Let the saved identity try the original LAN invitation before offering manual recovery.
+if (returningVisitor) connect();
+else invitationRecovery?.start();
 
 // Keep the composer above the software keyboard without changing transcript scroll.
 if (window.visualViewport) {

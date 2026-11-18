@@ -207,7 +207,7 @@ function renderBackground() {
   $('#background-title').textContent = t(foreground ? '共享恢复记录' : '后台运行');
   $('#background-description').textContent = t(foreground ? '服务随管理应用运行，退出应用后暂停共享。' : '退出管理界面后继续共享；电脑登录后自动启动本机服务。');
   $('#background-toggle-label').textContent = t(foreground ? '保留邀请恢复记录' : '后台运行并自动恢复共享服务');
-  $('#background-hint').textContent = t(foreground ? '开启后，重新打开应用可在原内网地址申请恢复；关闭会撤销已保存的恢复资格。' : '默认开启。关闭后，退出应用会停止服务，且不再后台自启动。停止共享始终立即撤销访问。');
+  $('#background-hint').textContent = t(foreground ? '开启后，已获准的访客可用原浏览器和有效的内网邀请返回。关闭会撤销已保存的恢复资格。' : '默认开启。关闭后，退出应用会停止服务，且不再后台自启动。停止共享始终立即撤销访问。');
   $('#background-enabled').checked = backgroundState?.enabled !== false;
   $('#background-enabled').disabled = !nativeBackground || backgroundState?.supported !== true || backgroundSaving;
   $('#background-status').textContent = t(backgroundSaving ? '正在保存…'

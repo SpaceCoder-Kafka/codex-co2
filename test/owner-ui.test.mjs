@@ -229,7 +229,7 @@ test('intranet lifetime dialog and fixed or permanent validity translate without
     assert.equal(e['invite-lifetime-permanent'].getAttribute('type'), 'radio');
     assert.equal(e['invite-lifetime-permanent'].getAttribute('aria-describedby'), 'invite-permanent-tooltip');
     assert.equal(e['invite-permanent-tooltip'].getAttribute('role'), 'tooltip');
-    assert.equal(e['invite-permanent-tooltip'].textContent, messages[language]['永久表示不设固定到期时间。停止共享会撤销邀请；内网地址不变且开启后台运行时，重启后可通过旧链接申请恢复。']);
+    assert.equal(e['invite-permanent-tooltip'].textContent, messages[language]['永久邀请没有固定截止时间。访客身份有独立的有效期。停止共享会撤销邀请。']);
     assert.equal(e['invite-lifetime-hint'].textContent, messages[language]['不设固定到期时间；停止共享会撤销邀请。重启恢复取决于后台运行设置及原地址是否可用。']);
     e['invite-lifetime-cancel'].onclick();
     const r = { ...room(), intranetOnly: true, inviteExpiresAt: Date.UTC(2030, 0, 2), inviteLifetime: '1d' };

@@ -291,6 +291,34 @@ test('recoverable expired invitation offers a request only after server verifica
   assert.equal(page.elements['send-button'].disabled, true);
 });
 
+test('the original link tries the saved admission before probing for manual recovery', () => {
+  const persistentStorage = new Map();
+  const first = browser({ persistentStorage, inviteRecovery: true });
+  const probe = first.sockets[0]; probe.open(); probe.receive({ type: 'recovery-status', status: 'active' });
+  const guest = first.join();
+  const { sessionId } = guest.sent[0];
+  guest.receive({ type: 'data', payload: { type: 'visitor-recovery', expiresAt: Date.now() + 60000, name: '合成访客' } });
+  guest.receive({ type: 'paused' }); offerInviteRecovery(first, 'paused');
+  const reopened = browser({ persistentStorage, inviteRecovery: true });
+  assert.equal(reopened.sockets.length, 1);
+  const socket = reopened.sockets[0]; assert.match(socket.url, /\/guest$/);
+  socket.open();
+  assert.equal(socket.sent[0].sessionId, sessionId);
+  socket.receive({ type: 'admitted' }); snapshot(socket, 1, [prompt], 'idle');
+  assert.equal(reopened.messages().length, 1);
+  assert.ok(!socket.sent.some(m => m.type === 'proposal'));
+
+  // A receipt from an earlier attempt is still available if direct admission fails.
+  const { request } = requestInviteRecovery(first);
+  const retry = browser({ persistentStorage, inviteRecovery: true });
+  retry.visibility('visible');
+  assert.equal(retry.sockets.length, 1);
+  const direct = retry.sockets[0]; direct.open(); direct.receive({ type: 'join-rejected' });
+  const watch = retry.sockets.at(-1); watch.open();
+  assert.equal(watch.sent[0].type, 'watch');
+  assert.equal(watch.sent[0].requestId, request.requestId);
+});
+
 test('same browser reopens or refreshes a recovery request using its receipt without creating another request', () => {
   const persistentStorage = new Map(), storage = new Map();
   const first = browser({ inviteRecovery: true, persistentStorage, storage }); offerInviteRecovery(first);
