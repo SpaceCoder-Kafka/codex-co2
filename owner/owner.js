@@ -280,23 +280,22 @@ function renderNetwork() {
   if (!networkDraft || (!networkDirty && !networkSaving)) {
     networkDraft = { intranetOnly: Boolean(network?.intranetOnly), lanAddress: network?.lanAddress ?? '' };
   }
-  const candidates = [...new Map((network?.interfaces ?? []).map(item => [item.address, item])).values()];
-  if (networkDraft.intranetOnly && !networkDraft.lanAddress && candidates.length === 1) networkDraft.lanAddress = candidates[0].address;
-  const options = [el('option', t(candidates.length ? '选择内网地址' : '未找到可用内网地址'))]; options[0].value = '';
-  for (const item of candidates) {
+  const candidates = new Map((network?.interfaces ?? []).map(item => [item.address, item]));
+  if (networkDraft.intranetOnly && !network?.lanAddress && !networkDraft.lanAddress && candidates.size === 1) {
+    networkDraft.lanAddress = candidates.keys().next().value;
+  }
+  const selected = candidates.has(networkDraft.lanAddress) ? networkDraft.lanAddress : '';
+  const options = [el('option', t(candidates.size ? '选择内网地址' : '未找到可用内网地址'))]; options[0].value = '';
+  for (const item of candidates.values()) {
     const option = el('option', `${item.address} (${item.name})`); option.value = item.address; options.push(option);
   }
-  if (networkDraft.lanAddress && !candidates.some(item => item.address === networkDraft.lanAddress)) {
-    const option = el('option', t('{address}（已不可用）', { address: networkDraft.lanAddress }));
-    option.value = networkDraft.lanAddress; option.disabled = true; options.push(option);
-  }
-  $('#lan-address').replaceChildren(...options); $('#lan-address').value = networkDraft.lanAddress;
+  $('#lan-address').replaceChildren(...options); $('#lan-address').value = selected;
   $('#intranet-only').checked = networkDraft.intranetOnly;
   $('#lan-address-row').hidden = !networkDraft.intranetOnly;
-  const moving = Boolean(network?.intranetOnly && networkDraft.intranetOnly && network.lanAddress && networkDraft.lanAddress !== network.lanAddress);
+  const moving = Boolean(network?.intranetOnly && networkDraft.intranetOnly && network.lanAddress && selected && selected !== network.lanAddress);
   const blocked = networkChangeBlocked(moving);
   $('#intranet-only').disabled = networkChangeBlocked(); $('#lan-address').disabled = networkChangeBlocked(true);
-  $('#save-network').disabled = blocked || !networkDirty;
+  $('#save-network').disabled = blocked || !networkDirty || (networkDraft.intranetOnly && !selected);
   $('#save-network').setAttribute('aria-busy', String(networkSaving));
   $('#save-network').textContent = t(networkSaving ? '正在保存…' : moving ? '在新地址继续共享' : '保存访问范围');
   $('#network-current').textContent = t(!network ? '正在读取访问范围…' : network.intranetOnly ? '当前：仅内网可访问' : '当前：公网分享');
@@ -306,7 +305,7 @@ function renderNetwork() {
   const note = !network ? '正在读取访问范围…'
     : !network.configurable ? '访问范围由启动参数管理，请退出后调整启动参数。'
     : networkWorkBusy() || connectionAction || lastState.connection?.state === 'connecting' ? '网络操作进行中，请稍候…'
-    : moving || (network.intranetOnly && network.lanAddress && !candidates.some(item => item.address === network.lanAddress))
+    : moving || (network.intranetOnly && network.lanAddress && !candidates.has(network.lanAddress))
       ? '换址后请发送新邀请。原批准仍有效，访客可导入身份恢复文件。'
     : busyThreadId || lastState.rooms.some(room => room.state !== 'revoked') ? '请先结束所有共享，再更改访问范围。'
     : networkDirty ? '尚未保存，当前邀请仍沿用已保存的访问范围。'

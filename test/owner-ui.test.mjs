@@ -386,10 +386,30 @@ test('multiple intranet addresses require an explicit choice and failed saves re
   assert.equal(e['intranet-only'].checked, true); assert.equal(e['lan-address'].value, '10.5.0.20');
   assert.equal(e['save-network'].disabled, false); assert.ok(e['network-status'].textContent.includes('未能保存'));
   page.receive({ type: 'state', rooms: [], network: network() });
-  assert.equal(e['lan-address'].value, '10.5.0.20');
-  assert.ok(e['lan-address'].children.some(option => option.textContent.includes('已不可用')));
+  assert.equal(e['lan-address'].value, '');
+  assert.deepEqual(e['lan-address'].children.map(option => option.value), ['', '192.168.40.20']);
+  assert.equal(e['save-network'].disabled, true);
   e['save-network'].onclick();
   assert.equal(page.sent.filter(m => m.type === 'set-network-mode').length, 1);
+});
+
+test('a saved unavailable LAN address stays out of the picker until the host explicitly selects a replacement', () => {
+  const page = browser(), e = page.elements, picker = e['lan-address'], save = e['save-network'];
+  const oldAddress = '192.168.215.0', wifi = { name: 'en0', address: '192.168.61.198' };
+  for (const interfaces of [[], [wifi]]) {
+    page.receive(lanState({ network: network({ intranetOnly: true, lanAddress: oldAddress, interfaces }) }));
+    assert.deepEqual(picker.children.map(option => option.value), ['', ...interfaces.map(item => item.address)]);
+    assert.equal(picker.value, '');
+    assert.equal(e['intranet-only'].checked, true);
+    assert.equal(save.disabled, true);
+    save.onclick();
+  }
+  picker.value = wifi.address; picker.onchange();
+  assert.equal(save.disabled, false);
+  assert.equal(save.textContent, '在新地址继续共享');
+  assert.equal(page.sent.some(m => m.type === 'set-network-mode'), false);
+  save.onclick();
+  assert.deepEqual(page.sent.at(-1), { type: 'set-network-mode', intranetOnly: true, lanAddress: wifi.address });
 });
 
 test('server access scope synchronizes across windows while drafts remain separate and busy or active shares forbid changes', () => {

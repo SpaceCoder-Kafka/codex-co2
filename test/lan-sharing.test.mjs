@@ -8,7 +8,7 @@ import { SharingService } from '../lib/sharing-service.mjs';
 import { lanInterfaces, selectLanAddress } from '../lib/lan-network.mjs';
 import { openLanSettings } from '../lib/lan-settings.mjs';
 
-const privateInterface = address => ({ address, family: 'IPv4', internal: false });
+const privateInterface = address => ({ address, family: 'IPv4', internal: false, netmask: '255.255.255.0' });
 async function fixture(t, { saved, interfaces = { en0: [privateInterface('192.168.40.2')] }, options = {}, dependencies = {} } = {}) {
   const root = await fs.mkdtemp('/tmp/co2-lan-service-'), runtimeDir = path.join(root, '.coop');
   await fs.mkdir(runtimeDir, { mode: 0o700 });

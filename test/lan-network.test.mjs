@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { privateIPv4, lanInterfaces, selectLanAddress, lanRequestAllowed } from '../lib/lan-network.mjs';
 
-const entry = (address, overrides = {}) => ({ address, family: 'IPv4', internal: false, ...overrides });
+const entry = (address, overrides = {}) => ({ address, family: 'IPv4', internal: false, netmask: '255.255.255.0', ...overrides });
 const request = (remoteAddress = '192.168.1.42', headers = {}) => ({
   headers: { host: '192.168.1.2:8787', ...headers }, socket: { remoteAddress, localAddress: '192.168.1.2' },
 });
@@ -33,6 +33,25 @@ test('interface candidates discard public, internal and unsupported entries, ded
   ]);
   assert.deepEqual(lanInterfaces({}), []);
   assert.deepEqual(lanInterfaces(null), []);
+});
+
+test('LAN invitations use a host address in the assigned subnet, including on bridge and point-to-point interfaces', () => {
+  const interfaces = {
+    bridge101: [entry('192.168.215.0'), entry('192.168.215.255')],
+    'Wi-Fi': [entry('10.64.1.0', { netmask: '255.255.254.0' }), entry('10.64.0.255', { netmask: '255.255.254.0' })],
+    bridge100: [entry('10.64.4.128', { netmask: '255.255.255.192' }), entry('10.64.4.191', { netmask: '255.255.255.192' }),
+      entry('10.64.4.190', { netmask: '255.255.255.192' })],
+    utun0: [entry('10.64.8.0', { netmask: '255.255.255.254' }), entry('10.64.8.1', { netmask: '255.255.255.254' }),
+      entry('10.64.8.255', { netmask: '255.255.255.255' })],
+    invalid: [entry('10.65.1.1', { netmask: '255.255.0.255' }), entry('10.65.1.2', { netmask: '255.255.255.256' }),
+      entry('10.65.1.3', { netmask: undefined })],
+  };
+  assert.deepEqual(lanInterfaces(interfaces).map(item => item.address), [
+    '10.64.0.255', '10.64.1.0', '10.64.4.190', '10.64.8.0', '10.64.8.1', '10.64.8.255',
+  ]);
+  assert.throws(() => selectLanAddress('192.168.215.0', interfaces), /已不可用/);
+  assert.throws(() => selectLanAddress('192.168.215.255', interfaces), /已不可用/);
+  assert.equal(selectLanAddress('10.64.1.0', interfaces), '10.64.1.0');
 });
 
 test('LAN selection never invents or retains an address that is not currently assigned', () => {
