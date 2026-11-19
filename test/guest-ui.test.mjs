@@ -661,6 +661,22 @@ test('processing proposals become uncertain on disconnect and are never replayed
   assert.equal(socket.sent.filter(m => m.type === 'proposal').length, 1);
 });
 
+test('an admitted tab displays the member’s pending submission and decision from another tab without sending its own draft', () => {
+  const page = browser(), socket = page.join(); snapshot(socket, 1, [prompt], 'idle');
+  page.elements['proposal-text'].value = 'draft in the second tab';
+  const requestId = webcrypto.randomUUID();
+  const status = (value, extra = {}) => socket.receive({ type: 'data',
+    payload: { type: 'proposal-status', requestId, status: value, ...extra } });
+  status('pending', { text: 'first tab submission' });
+  assert.equal(page.elements.proposals.children.length, 1);
+  const entry = () => page.elements.proposals.children[0];
+  assert.equal(entry().children[1].textContent, 'first tab submission');
+  status('accepted');
+  assert.equal(entry().children[0].dataset.status, 'accepted');
+  assert.equal(page.elements['proposal-text'].value, 'draft in the second tab');
+  assert.equal(socket.sent.some(m => m.type === 'proposal'), false);
+});
+
 
 test('guest composer follows host approval policy and submission status without acquiring policy controls', () => {
   const page = browser(), socket = page.join(); snapshot(socket, 1, []);
@@ -1039,6 +1055,18 @@ test('revocation deletes only the current remembered identity, while pausing ret
   assert.equal(next.elements['recovery-code'].value, '');
   assert.equal(next.elements['recovery-panel'].hidden, true);
   assert.equal(browser({ persistentStorage, invitation: scopedInvitation('scope-one', 'third-room') }).sockets.length, 0);
+});
+
+test('a late denial in one tab cannot erase the approved credential of another tab in the same scope', () => {
+  const persistentStorage = new Map(), invitation = scopedInvitation('scope-one');
+  const first = browser({ persistentStorage, invitation }), second = browser({ persistentStorage, invitation });
+  const stale = first.join(), approved = second.join(); confirmIdentity(approved);
+  const identity = approved.sent[0].sessionId;
+  assert.notEqual(stale.sent[0].sessionId, identity);
+  stale.receive({ type: 'denied' });
+  assert.equal(JSON.parse(persistentStorage.get('co2.visitor-identities'))[0].token, identity);
+  approved.receive({ type: 'rate-limited' });
+  assert.equal(JSON.parse(persistentStorage.get('co2.visitor-identities'))[0].token, identity);
 });
 
 test('blocked persistent storage leaves admission usable and visibly prompts the guest to save a backup', () => {

@@ -11,6 +11,7 @@ import { GuestUploads, uploadMessage, attachmentInput, MAX_UPLOAD_BYTES, UPLOAD_
 import { protectedAttachmentPath } from '../lib/attachment-paths.mjs';
 import { fileRefs, readFilePreview } from '../lib/thread-files.mjs';
 import { SharedRoom, secret } from '../lib/host.mjs';
+import { GuestPermissions } from '../lib/guest-permissions.mjs';
 import { startRelay } from '../lib/relay.mjs';
 import { ScopedThread } from '../lib/scoped-thread.mjs';
 
@@ -121,12 +122,12 @@ class Rpc extends EventEmitter {
 async function live(t, requireApproval = false) {
   const { runtime } = fixture(t), rpc = new Rpc(), registrationSecret = secret();
   const relay = await startRelay({ registrationSecret });
-  const room = await new SharedRoom({ relayUrl: relay.url, registrationSecret, threadId: 'synthetic-thread', runtimeDir: runtime, requireApproval, rpcFactory: async () => rpc }).start();
+  const room = await new SharedRoom({ relayUrl: relay.url, registrationSecret, threadId: 'synthetic-thread', runtimeDir: runtime, requireApproval, permissions: new GuestPermissions(), rpcFactory: async () => rpc }).start();
   t.after(async () => { room.close(); await relay.close(); });
-  async function join(admit = true) {
+  async function join(admit = true, sessionId) {
     const ws = new WebSocket(relay.url.replace(/^http/, 'ws')+'/guest', { origin: relay.url }), messages = [];
     ws.on('message', b => messages.push(JSON.parse(b))); await once(ws, 'open'); t.after(() => ws.terminate());
-    ws.send(JSON.stringify({ type: 'join', roomId: room.roomId, inviteToken: room.inviteToken, name: 'Synthetic guest' }));
+    ws.send(JSON.stringify({ type: 'join', roomId: room.roomId, inviteToken: room.inviteToken, name: 'Synthetic guest', ...(sessionId && { sessionId }) }));
     const pending = await until(() => messages.find(m => m.type === 'pending')); await until(() => room.guests.has(pending.guestId));
     if (admit) { room.admit(pending.guestId, true); await until(() => messages.some(m => m.payload?.type === 'upload-policy')); }
     return { ws, messages, id: pending.guestId,
@@ -145,6 +146,42 @@ async function live(t, requireApproval = false) {
   }
   return { rpc, room, relay, join };
 }
+
+test('two tabs of an approved member share pending proposals and attachments, deduplicate dispatch and revoke together', async t => {
+  const { rpc, room, join } = await live(t, true), identity = secret();
+  const a = await join(true, identity), outsider = await join(true, secret());
+  const uploadId = await a.upload('retained.txt', Buffer.from('synthetic handoff'));
+  const unused = await a.upload('unsubmitted.txt', Buffer.from('only this tab'));
+  const requestId = randomUUID(), proposal = { type: 'proposal', requestId, text: 'Inspect the handoff', attachmentIds: [uploadId] };
+  const status = (client, expected) => client.messages.some(m => m.payload?.requestId === requestId && m.payload.status === expected);
+  a.send(proposal); await until(() => status(a, 'pending'));
+  const b = await join(false, identity);
+  await until(() => status(b, 'pending'));
+  assert.equal(room.guests.size, 3); assert.equal(room.view().guests.length, 2);
+  assert.equal(a.ws.readyState, WebSocket.OPEN);
+  assert.equal(status(outsider, 'pending'), false);
+  a.ws.close(); await until(() => !room.guests.has(a.id));
+  assert.equal(room.uploads.items.has(unused), false);
+  assert.equal(room.uploads.items.has(uploadId), true);
+  b.send(proposal);
+  await until(() => b.messages.filter(m => m.payload?.requestId === requestId && m.payload.status === 'pending').length === 2);
+  const pending = room.view().proposals.filter(p => p.requestId === requestId);
+  assert.equal(pending.length, 1);
+  await room.decide(pending[0].id, true); await until(() => status(b, 'accepted'));
+  assert.equal(rpc.calls.length, 1); assert.match(rpc.calls[0].input[0].text, /retained\.txt/);
+  assert.equal(status(outsider, 'accepted'), false);
+  const c = await join(false, identity);
+  await until(() => c.messages.some(m => m.type === 'admitted'));
+  const doomedId = randomUUID();
+  c.send({ type: 'proposal', requestId: doomedId, text: 'Must not dispatch after revocation' });
+  const doomed = await until(() => room.view().proposals.find(p => p.requestId === doomedId));
+  room.removeGuest(a.id); // A representative card can be clicked after that tab closes.
+  await until(() => [b, c].every(client => client.messages.some(m => m.type === 'revoked')));
+  await assert.rejects(room.decide(doomed.id, true), /失效/);
+  assert.equal(outsider.ws.readyState, WebSocket.OPEN);
+  const again = await join(false, identity);
+  assert.equal(room.guests.get(again.id).status, 'pending'); assert.equal(rpc.calls.length, 1);
+});
 test('real relay transports a multi-chunk file beyond the old message rate, then dispatches once with no paths in guest acknowledgements', async t => {
   const { rpc, room, join } = await live(t), guest = await join();
   const bytes = Buffer.alloc(UPLOAD_CHUNK_BYTES*122+5, 65), id = await guest.upload('large.bin', bytes);

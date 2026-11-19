@@ -152,10 +152,14 @@ function rememberIdentity(record) {
   return persistent;
 }
 function forgetIdentity() {
-  try { window.localStorage?.setItem(identitiesKey, JSON.stringify(storedIdentities().filter(old => !sameIdentity(old)))); } catch {}
+  const matches = record => sameIdentity(record) && record.token === visitorToken;
+  try {
+    const stored = storedIdentities();
+    if (stored.some(matches)) window.localStorage?.setItem(identitiesKey, JSON.stringify(stored.filter(old => !matches(old))));
+  } catch {}
   try {
     const saved = JSON.parse(window.sessionStorage?.getItem(visitorKey) || 'null');
-    if (saved && sameIdentity(saved)) window.sessionStorage.removeItem(visitorKey);
+    if (saved && matches(saved)) window.sessionStorage.removeItem(visitorKey);
   } catch {}
   recoveryRecord = null;
   ui['recovery-code'].value = '';
@@ -897,7 +901,7 @@ function handleMessage(message) {
       break;
     case 'rate-limited':
     case 'invalid-message':
-      setTerminal('连接已停止，请联系分享者检查后获取新邀请。', '连接已停止');
+      setTerminal('连接已停止，请稍后重新打开邀请。', '连接已停止', { preserveIdentity: true });
       break;
     case 'offline':
       taskNotifications?.reset();
@@ -975,8 +979,14 @@ function handleMessage(message) {
         refreshCollaboration();
         ui['proposal-help'].textContent = requireApproval ? '分享者已开启消息审批，确认后才交给 Agent。' : '消息将直接交给 Agent，无需逐条审批。';
       }
-      if (payload.type === 'proposal-status' && proposals.has(payload.requestId)
-          && Object.hasOwn(proposalLabels, payload.status)) {
+      if (payload.type === 'proposal-status' && Object.hasOwn(proposalLabels, payload.status)) {
+        if (!proposals.has(payload.requestId)) {
+          // A different tab of this admitted member submitted the proposal.
+          if (typeof payload.requestId !== 'string' || !/^[0-9a-f-]{36}$/i.test(payload.requestId)
+            || !['pending', 'processing'].includes(payload.status) || typeof payload.text !== 'string'
+            || payload.text.length > 10000 || proposals.size >= 200) return;
+          proposals.set(payload.requestId, { text: payload.text });
+        }
         const proposal = proposals.get(payload.requestId);
         proposal.status = payload.status;
         proposal.message = typeof payload.message === 'string' ? payload.message.slice(0, 500) : '';
