@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.5.0
+
+[中文版 →](https://github.com/SpaceCoder-Kafka/codex-co2/blob/main/docs/release-notes/v0.5.0-zh.md)
+
+**New Features**
+
+1. **Continue a shared chat in your own Codex.** After admission, choose **Import to my Codex** and confirm in your local Co² app to open an independent conversation in Desktop. When both apps support attachment import, the copy includes local links to downloaded originals, including messages containing only attachments. The import identifies missing files and truncated history.
+2. **Return to a LAN conversation.** With recovery records enabled, eligible shares can resume when the host restarts. On macOS, a Bonjour invitation lets a returning guest reuse a valid approval in the same browser after the host selects a new LAN address. A numeric IP invitation is also available.
+3. **Open an invitation in multiple tabs.** Admitted guests can refresh or reopen a valid invitation. Tabs in the same browser share membership and keep separate message drafts.
+4. **Download files without a browser preview.** Open the attachment card or file link to save the original, including diagnostic files and files with no extension.
+
+**Bug Fixes**
+
+1. **Desktop compatibility and message delivery.** Support version 13 of the Desktop conversation stream and prevent duplicate guest messages in busy conversations.
+2. **Conversation and network selection.** Hide untitled and spawned threads from the session picker. Check that the guest endpoint is reachable on the selected LAN interface before offering an invitation.
+
 ## 0.4.1
 
 [中文版 →](https://github.com/SpaceCoder-Kafka/codex-co2/blob/main/docs/release-notes/v0.4.1-zh.md)
