@@ -306,7 +306,7 @@ function renderNetwork() {
     : !network.configurable ? '访问范围由启动参数管理，请退出后调整启动参数。'
     : networkWorkBusy() || connectionAction || lastState.connection?.state === 'connecting' ? '网络操作进行中，请稍候…'
     : moving || (network.intranetOnly && network.lanAddress && !candidates.has(network.lanAddress))
-      ? '换址后请发送新邀请。同一浏览器用原主机名打开新邀请，会自动核验已保存的身份。'
+      ? '换址后请发送新邀请。使用名称邀请的访客只需打开一次，页面会自动连接并核验已保存的身份。'
     : busyThreadId || lastState.rooms.some(room => room.state !== 'revoked') ? '请先结束所有共享，再更改访问范围。'
     : networkDirty ? '尚未保存，当前邀请仍沿用已保存的访问范围。'
     : '保存后用于新邀请并保留。模型与工具的网络访问沿用原会话。';
@@ -744,7 +744,7 @@ ws.onmessage = event => {
   if (m.type === 'network-result') {
     networkDirty = false; networkSaving = false; networkDraft = null; networkStatus = '访问范围已保存';
     if (lastState) { lastState = { ...lastState, network: m.network }; renderRooms(lastState); }
-    if (m.moved) { selectTab('shared', true); notice('内网地址已更新，请发送新邀请。如果浏览器仍连到旧 IP，约一分钟后重新打开新邀请。'); }
+    if (m.moved) { selectTab('shared', true); notice('内网地址已更新，请复制新邀请。访客打开后，页面会自动连接。'); }
     else notice('访问范围已保存');
     return;
   }
@@ -872,7 +872,7 @@ function renderRooms(m) {
         const numeric = new URL(room.inviteUrl);
         numeric.hostname = m.network.lanAddress;
         if (numeric.href === room.ipInviteUrl && numeric.href !== room.inviteUrl) {
-          invite.append(el('p', t('同一浏览器通过此名称回访时会自动核验身份。首次从旧名称或数字 IP 切换到这里，可重新申请加入。'), 'muted'));
+          invite.append(el('p', t('邀请会打开当前地址，再回到保存访客身份的页面。同一浏览器可沿用已有批准。'), 'muted'));
           const alternate = el('details'), ipRow = el('div', null, 'invite-row');
           ipRow.append(inviteInput(room.roomId + ':ip', room.ipInviteUrl), button('复制 IP 邀请', () => copyInvite(room.ipInviteUrl)));
           alternate.append(el('summary', t('访客打不开主机名时使用 IP 邀请')), ipRow,

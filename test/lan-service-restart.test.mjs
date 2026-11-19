@@ -12,6 +12,7 @@ import { SharingService } from '../lib/sharing-service.mjs';
 import { BackgroundService, connectBackground } from '../lib/background-service.mjs';
 import { startRelay } from '../lib/relay.mjs';
 import { secret } from '../lib/host.mjs';
+import { lanEntryHostname } from '../lib/lan-network.mjs';
 import { openLanSettings } from '../lib/lan-settings.mjs';
 
 const address = '192.168.44.11';
@@ -35,7 +36,7 @@ async function fixture(t, { hostname = null } = {}) {
   const services = [], daemons = [], calls = [];
   let available = true, desktop = true, occupied = false, healthy = true, currentAddress = address;
   const dependencies = {
-    publishLanBonjour: async () => hostname && ({ hostname, isCurrent: async () => true, close: async () => {} }),
+    publishLanBonjour: async selected => hostname && ({ hostname, entryHostname: lanEntryHostname(hostname, selected), isCurrent: async () => true, close: async () => {} }),
     lanInterfaces: () => available ? [{ name: 'synthetic', address: currentAddress }] : [],
     selectLanAddress: selected => {
       if (!available || (selected && selected !== currentAddress)) throw new Error('所选内网地址已不可用，请重新选择当前网络地址。');
@@ -404,8 +405,8 @@ for (const cold of [false, true]) test(`explicit DHCP address migration preserve
   const { room, local } = await share(f, first, '1h');
   const advertised = name => local.messages.filter(m => m.type === 'state').flatMap(m => m.rooms)
     .find(r => r.roomId === room.roomId && r.inviteUrl && new URL(r.inviteUrl).hostname === name);
-  const before = await until(() => advertised(hostname ?? address));
-  const browserOrigin = new URL(before.inviteUrl).origin;
+  const before = await until(() => advertised(hostname ? lanEntryHostname(hostname, address) : address));
+  const browserOrigin = first.relay.guestOrigin;
   if (hostname) assert.equal(before.ipInviteUrl, room.view().inviteUrl);
   const sessionId = secret(), guest = await peer(t, browserOrigin, '/guest', true);
   const original = { roomId: room.roomId, inviteToken: room.inviteToken };
@@ -435,9 +436,11 @@ for (const cold of [false, true]) test(`explicit DHCP address migration preserve
   assert.equal(target.inviteExpiresAt, room.inviteExpiresAt);
   const offered = await until(() => manager.messages.filter(m => m.type === 'state').flatMap(m => m.rooms)
     .find(r => r.roomId === target.roomId && r.inviteUrl));
-  const afterOrigin = new URL(offered.inviteUrl).origin;
+  const afterOrigin = service.relay.guestOrigin;
   if (hostname) {
     assert.equal(afterOrigin, browserOrigin);
+    assert.equal(new URL(offered.inviteUrl).hostname, lanEntryHostname(hostname, movedAddress));
+    assert.notEqual(new URL(offered.inviteUrl).origin, new URL(before.inviteUrl).origin);
     assert.equal(offered.ipInviteUrl, target.view().inviteUrl);
     assert.notEqual(offered.ipInviteUrl, before.ipInviteUrl);
   } else assert.equal(afterOrigin, service.inviteOrigin);

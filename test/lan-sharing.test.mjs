@@ -25,7 +25,10 @@ async function fixture(t, { saved, interfaces = { en0: [privateInterface('192.16
     publishLanBonjour: async () => null,
     startRelay: async value => {
       const relay = { options: value, url: 'http://127.0.0.1:35000', inviteOrigin: value.lanAddress ? `http://${value.lanAddress}:35001` : 'http://127.0.0.1:35000',
-        setLanHostname: name => { relay.guestOrigin = name ? `http://${name}:35001` : relay.inviteOrigin; },
+        setLanHostname: (name, entry) => {
+          relay.guestOrigin = name ? `http://${name}:35001` : relay.inviteOrigin;
+          relay.entryOrigin = entry ? `http://${entry}:35001` : null;
+        },
         setAllowedOrigins: origins => { relay.origins = origins; }, close: async () => { relay.closed = true; calls.push('relay-close'); } };
       relays.push(relay); calls.push('relay'); return relay;
     },
@@ -52,19 +55,20 @@ test('persisted LAN mode survives restart without public access, and host transp
 
 test('only a verified hostname is offered alongside the numeric LAN origin, including after DNS catches up', async t => {
   const address = '192.168.40.2', numeric = 'http://' + address + ':35001', hostname = 'co2-lab.local';
-  let available = false, aliasHealthy = false, closed = 0;
+  const entryHostname = 'v4-c0a82802.' + hostname, entryOrigin = 'http://' + entryHostname + ':35001';
+  let available = false, aliasHealthy = false, entryHealthy = false, closed = 0;
   const alias = 'http://' + hostname + ':35001';
   const probes = [];
   const f = await fixture(t, { saved: { intranetOnly: true, lanAddress: address }, dependencies: {
     publishLanBonjour: async (selected, port) => {
       assert.equal(selected, address); assert.equal(port, 35001);
-      return available ? { hostname, isCurrent: async () => available, close: async () => { closed++; } } : null;
+      return available ? { hostname, entryHostname, isCurrent: async () => available, close: async () => { closed++; } } : null;
     },
     checkHealth: async (origin, { direct, expectedAddress }) => {
       assert.equal(direct, true);
-      if (origin === alias) assert.equal(expectedAddress, address);
+      if (origin === alias || origin === entryOrigin) assert.equal(expectedAddress, address);
       else assert.equal(origin, numeric);
-      probes.push(origin); return { ok: origin === numeric || aliasHealthy };
+      probes.push(origin); return { ok: origin === numeric || (origin === alias ? aliasHealthy : entryHealthy) };
     },
   } });
   await f.service.start(); await f.service.ensureRelay();
@@ -72,9 +76,11 @@ test('only a verified hostname is offered alongside the numeric LAN origin, incl
   available = true; await f.service.checkConnection();
   assert.equal(f.ownerOptions.getNetwork().guestOrigin, numeric);
   aliasHealthy = true; await f.service.checkConnection();
-  assert.equal(f.ownerOptions.getNetwork().guestOrigin, alias);
+  assert.equal(f.ownerOptions.getNetwork().guestOrigin, numeric);
+  entryHealthy = true; await f.service.checkConnection();
+  assert.equal(f.ownerOptions.getNetwork().guestOrigin, entryOrigin);
   assert.equal(f.ownerOptions.getInviteOrigin(), numeric);
-  assert.equal(probes.at(-1), alias);
+  assert.deepEqual(probes.slice(-2), [alias, entryOrigin]);
   available = false; await f.service.checkConnection();
   assert.equal(f.ownerOptions.getNetwork().guestOrigin, numeric);
   assert.equal(closed, 1);

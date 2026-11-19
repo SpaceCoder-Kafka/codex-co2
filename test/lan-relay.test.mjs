@@ -116,6 +116,31 @@ test('the verified Bonjour hostname and raw IP require their own matching browse
   guest.ws.close();
 });
 
+test('only the current address-specific landing name can check the stable visitor endpoint', async t => {
+  const hostname = 'co2-test.local', entry = 'v4-c0a8140a.' + hostname;
+  const f = await fixture(t, { lanHostname: hostname });
+  const port = f.relay.lanServer.address().port;
+  f.relay.setLanHostname(hostname, entry);
+  const origin = 'http://' + entry + ':' + port;
+  const entryHost = { Host: entry + ':' + port };
+  const canonical = { Host: hostname + ':' + port };
+  assert.equal(f.relay.entryOrigin, origin);
+  assert.equal(await status(f.url + '/', entryHost), 200);
+  assert.equal(await status(f.url + '/entry.js', entryHost), 200);
+  assert.equal(await status(f.url + '/guest.js', entryHost), 404);
+  assert.equal(await status(f.url + '/lan-entry-check', { ...canonical, Origin: origin }), 204);
+  assert.equal(await status(f.url + '/lan-entry-check', { ...canonical, Origin: 'http://somewhere.local:' + port }), 403);
+  assert.equal(await status(f.url + '/lan-entry-check', { ...f.headers, Origin: origin }), 404);
+  assert.equal(await status(f.url + '/', { ...entryHost, Via: 'proxy' }), 403);
+  assert.equal(await status(f.url + '/', { Host: 'v4-c0a8140b.' + hostname + ':' + port }), 403);
+  assert.throws(() => f.relay.setLanHostname(hostname, 'v4-c0a8140b.' + hostname), /entry hostname/);
+  for (const endpoint of ['/guest', '/recovery', '/host']) {
+    await assert.rejects(connection(f.url + endpoint, { headers: entryHost, origin }), /403/);
+  }
+  f.relay.setLanHostname(null);
+  assert.equal(await status(f.url + '/', entryHost), 403);
+});
+
 test('LAN recovery uses the numeric checkpoint on both origins and returns approved links on the guest’s own origin', async t => {
   const recovery = new EventEmitter(), requestId = randomUUID(), receiptToken = secret();
   const restarts = [];

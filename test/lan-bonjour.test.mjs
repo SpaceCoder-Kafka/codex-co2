@@ -23,62 +23,85 @@ function fixture(overrides = {}) {
   return { options, registrations };
 }
 
-test('Bonjour registration is scoped to the selected interface, and its name survives a DHCP move', async () => {
+test('both Bonjour names are scoped to the selected IPv4; only the entry hostname changes after a move', async () => {
   const { options, registrations } = fixture();
   const first = await publishLanBonjour(address, port, options);
   assert.equal(first.hostname, 'desk-mac-co2-57471.local');
-  assert.deepEqual(registrations[0].request, { hostname: first.hostname, interfaceName: 'en0', address, port });
+  assert.equal(first.entryHostname, 'v4-c0a82c1d.' + first.hostname);
+  assert.deepEqual(registrations.map(({ request }) => request.hostname), [first.hostname, first.entryHostname]);
+  for (const { request } of registrations) {
+    assert.equal(request.interfaceName, 'en0'); assert.equal(request.address, address); assert.equal(request.port, port);
+  }
   assert.equal(await first.isCurrent(), true);
   await first.close();
   assert.equal(await first.isCurrent(), false);
-  const nextAddress = '192.168.139.3';
+  const nextAddress = '192.168.139.3', queried = new Set();
   const next = await publishLanBonjour(nextAddress, port, { ...options,
     lookupAddresses: async (name, flags) => {
-      assert.equal(name, first.hostname + '.'); assert.deepEqual(flags, { all: true });
+      queried.add(name); assert.deepEqual(flags, { all: true });
       return [{ address: nextAddress, family: 4 }];
     } });
   assert.equal(next.hostname, first.hostname);
-  assert.equal(registrations[1].request.interfaceName, 'bridge100');
+  assert.equal(next.entryHostname, 'v4-c0a88b03.' + first.hostname);
+  assert.deepEqual(queried, new Set([next.hostname + '.', next.entryHostname + '.']));
+  assert.ok(registrations.slice(2).every(({ request }) => request.interfaceName === 'bridge100'));
   await next.close();
   const other = await publishLanBonjour(address, port + 1, options);
-  assert.notEqual(other.hostname, first.hostname);
+  assert.notEqual(other.hostname, first.hostname); assert.notEqual(other.entryHostname, first.entryHostname);
   await other.close();
+  assert.ok(registrations.every(({ record }) => record.closed));
 });
 
-test('a loopback, second interface, IPv6 or stale answer withdraws the published invite', async () => {
+test('a loopback, second interface, IPv6 or stale answer for either name prevents its use', async () => {
   const { options, registrations } = fixture();
-  let answers = [{ family: 4, address }];
-  options.lookupAddresses = async () => answers;
+  const answers = [{ family: 4, address }];
   const publication = await publishLanBonjour(address, port, options);
-  for (const invalidAnswers of [[], [{ family: 4, address: '192.168.139.3' }],
-    [...answers, { family: 4, address: '127.0.0.1' }], [...answers, { family: 6, address: '::1' }]]) {
-    answers = invalidAnswers;
-    assert.equal(await publication.isCurrent(), false);
-    assert.equal(await publishLanBonjour(address, port, options), null);
-    assert.equal(registrations.at(-1).record.closed, true);
+  for (const name of [publication.hostname, publication.entryHostname]) {
+    for (const invalid of [[], [{ family: 4, address: '192.168.139.3' }],
+      [...answers, { family: 4, address: '127.0.0.1' }], [...answers, { family: 6, address: '::1' }]]) {
+      options.lookupAddresses = async queried => queried === name + '.' ? invalid : answers;
+      assert.equal(await publishLanBonjour(address, port, options), null);
+      assert.ok(registrations.slice(-2).every(({ record }) => record.closed));
+    }
   }
+  // A registrar can exit while its owner's old addresses remain in resolver caches.
+  registrations[1].record.active = false;
+  assert.equal(await publication.isCurrent(), false);
   await publication.close();
 });
 
-test('registration failure, timeout and service cancellation retire owned records', async () => {
-  const { options } = fixture();
-  for (const ready of [Promise.resolve(false), new Promise(() => {})]) {
-    let closed = false;
-    const result = await publishLanBonjour(address, port, { ...options, timeoutMs: 10,
-      register: () => ({ ready, active: false, close() { closed = true; } }) });
-    assert.equal(closed, true); assert.equal(result, null);
+test('partial startup, lookup timeout and service cancellation withdraw both owned records', async () => {
+  for (const failedIndex of [0, 1]) {
+    for (const ready of [Promise.resolve(false), new Promise(() => {})]) {
+      const { options, registrations } = fixture();
+      const result = await publishLanBonjour(address, port, { ...options, timeoutMs: 20,
+        register(request) {
+          const index = registrations.length;
+          const record = options.register(request);
+          if (index === failedIndex) record.ready = ready;
+          return record;
+        } });
+      assert.equal(result, null); assert.equal(registrations.length, 2);
+      assert.ok(registrations.every(({ record }) => record.closed));
+    }
   }
-  const { options: cancellable, registrations } = fixture();
-  const controller = new AbortController();
-  const registered = await publishLanBonjour(address, port, { ...cancellable, signal: controller.signal });
-  controller.abort();
+  const { options, registrations } = fixture();
+  assert.equal(await publishLanBonjour(address, port, { ...options, register(request) {
+    if (registrations.length) throw new Error('Could not spawn second registrar');
+    return options.register(request);
+  } }), null);
   assert.equal(registrations[0].record.closed, true);
-  assert.equal(await registered.isCurrent(), false);
+  const controller = new AbortController();
+  const published = await publishLanBonjour(address, port, { ...options, signal: controller.signal });
+  controller.abort();
+  assert.ok(registrations.slice(-2).every(({ record }) => record.closed));
+  assert.equal(await published.isCurrent(), false);
+  await published.close();
   const { options: stalled, registrations: stalledRecords } = fixture({
-    lookupAddresses: () => new Promise(() => {}), timeoutMs: 10,
+    lookupAddresses: () => new Promise(() => {}), timeoutMs: 20,
   });
   assert.equal(await publishLanBonjour(address, port, stalled), null);
-  assert.equal(stalledRecords[0].record.closed, true);
+  assert.ok(stalledRecords.every(({ record }) => record.closed));
 });
 
 test('only a unique eligible interface and valid macOS computer name can be published', async () => {
@@ -92,5 +115,8 @@ test('only a unique eligible interface and valid macOS computer name can be publ
   assert.deepEqual(registrations, []);
   const longName = await publishLanBonjour(address, port, { ...options, getLocalHostName: async () => 'a'.repeat(63) });
   assert.equal(longName.hostname.split('.')[0].length, 63);
+  const instances = registrations.map(({ request }) => request.instance);
+  assert.equal(new Set(instances).size, 2);
+  assert.ok(instances.every(label => Buffer.byteLength(label) <= 63 && label.includes(String(port))));
   await longName.close();
 });

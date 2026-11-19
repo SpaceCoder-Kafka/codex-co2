@@ -10,6 +10,16 @@ struct InvitationClipboard {
         guard octets.count == 4, zip(parts, octets).allSatisfy({ String($0.1) == $0.0 && (0...255).contains($0.1) }) else { return false }
         return octets[0] == 10 || (octets[0] == 172 && (16...31).contains(octets[1])) || (octets[0] == 192 && octets[1] == 168)
     }
+    static func isLanName(_ host: String, port: Int) -> Bool {
+        let labels = host.components(separatedBy: ".")
+        var canonical = host
+        if labels.count == 3 {
+            guard labels[0].range(of: #"^v4-(?:0a[0-9a-f]{6}|ac1[0-9a-f]{5}|c0a8[0-9a-f]{4})$"#, options: .regularExpression) != nil,
+                  labels[1].hasSuffix("-co2-\(port)") else { return false }
+            canonical = labels.dropFirst().joined(separator: ".")
+        }
+        return canonical != "localhost.local" && canonical.range(of: #"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.local$"#, options: .regularExpression) != nil
+    }
     static func isToken(_ raw: String) -> Bool {
         guard raw.range(of: "^[A-Za-z0-9_-]{43}$", options: .regularExpression) != nil,
               let bytes = Data(base64Encoded: raw.replacingOccurrences(of: "-", with: "+").replacingOccurrences(of: "_", with: "/") + "="), bytes.count == 32 else { return false }
@@ -21,8 +31,7 @@ struct InvitationClipboard {
               url.user == nil, url.password == nil, url.query == nil, ["", "/"].contains(url.path),
               url.port == nil || (1...65535).contains(url.port!), let fragment = url.percentEncodedFragment else { return false }
         if url.scheme?.lowercased() == "http" {
-            let localName = host != "localhost.local" && host.range(of: #"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.local$"#, options: .regularExpression) != nil
-            guard (isPrivateIPv4(host) || localName), url.percentEncodedHost == host, url.port != nil else { return false }
+            guard let port = url.port, (isPrivateIPv4(host) || isLanName(host, port: port)), url.percentEncodedHost == host else { return false }
         } else if url.scheme?.lowercased() != "https" { return false }
         var fields: [String: String] = [:]
         for field in fragment.split(separator: "&", omittingEmptySubsequences: false) {

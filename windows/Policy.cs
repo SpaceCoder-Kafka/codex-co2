@@ -31,6 +31,17 @@ internal static class Policy
         return octets[0] == 10 || (octets[0] == 172 && octets[1] >= 16 && octets[1] <= 31)
             || (octets[0] == 192 && octets[1] == 168);
     }
+    static bool LanName(string host, int port)
+    {
+        var labels = host.Split('.');
+        if (labels.Length == 3)
+        {
+            if (!Regex.IsMatch(labels[0], @"^v4-(?:0a[0-9a-f]{6}|ac1[0-9a-f]{5}|c0a8[0-9a-f]{4})$")
+                || !labels[1].EndsWith("-co2-" + port, StringComparison.Ordinal)) return false;
+            host = labels[1] + "." + labels[2];
+        }
+        return host != "localhost.local" && Regex.IsMatch(host, @"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.local$");
+    }
     public static bool Invitation(string raw)
     {
         if (raw.Length >= 4096 || raw.Any(c => char.IsControl(c) || char.IsWhiteSpace(c))
@@ -41,8 +52,7 @@ internal static class Policy
         var authority = raw.Split(new[] { "://" }, StringSplitOptions.None).ElementAtOrDefault(1)?.Split('/')[0].Split('#')[0];
         if (url.Scheme == "http")
         {
-            var localName = url.Host != "localhost.local" && Regex.IsMatch(url.Host, @"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.local$");
-            if ((!PrivateIPv4(url.Host) && !localName) || authority != url.Host + ":" + url.Port) return false;
+            if ((!PrivateIPv4(url.Host) && !LanName(url.Host, url.Port)) || authority != url.Host + ":" + url.Port) return false;
         }
         else if (url.Scheme != "https") return false;
         var fields = new Dictionary<string, string>();

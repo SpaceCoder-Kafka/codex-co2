@@ -25,7 +25,7 @@ let token = String(repeating: "A", count: 43)
 let fragment = "room=123e4567-e89b-42d3-a456-426614174000&invite=" + token
 let scope = "123e4567-e89b-42d3-a456-426614174001"
 let hosts = ["https://synthetic.example/", "http://192.168.40.20:35001/", "http://10.5.0.20:8080/", "http://172.16.40.20:8080/", "http://172.31.1.2:8080/",
-    "http://synthetic-mac.local:35001/", "http://a.local:8080/"]
+    "http://synthetic-mac.local:35001/", "http://a.local:8080/", "http://v4-c0a82814.synthetic-co2-35001.local:35001/"]
 for (index, host) in hosts.enumerated() {
     let url = host + "#" + fragment + "&scope=" + scope
     let result = InvitationClipboard.response(to: ["requestId": "copy-" + String(index + 1), "url": url], board: board)!
@@ -48,6 +48,8 @@ let invalid = [
     "http://synthetic.local/#" + fragment,
     "http://synthetic.local:65536/#" + fragment,
     "http://sub.synthetic.local:8080/#" + fragment,
+    "http://v4-7f000001.synthetic-co2-8080.local:8080/#" + fragment,
+    "http://v4-c0a82814.synthetic-co2-35001.local:8080/#" + fragment,
     "http://synthetic.local.example:8080/#" + fragment,
     "http://synthetic.local.:8080/#" + fragment,
     "http://-synthetic.local:8080/#" + fragment,
