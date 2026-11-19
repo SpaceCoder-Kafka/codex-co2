@@ -467,7 +467,11 @@
     "服务随管理应用运行，退出应用后暂停共享。": "服务随管理应用运行，退出应用后暂停共享。",
     "保留邀请恢复记录": "保留邀请恢复记录",
     "开启后，已获准的访客可用原浏览器和有效的内网邀请返回。关闭会撤销已保存的恢复资格。": "开启后，已获准的访客可用原浏览器和有效的内网邀请返回。关闭会撤销已保存的恢复资格。",
-    "恢复记录已关闭，退出应用后停止共享。": "恢复记录已关闭，退出应用后停止共享。"
+    "恢复记录已关闭，退出应用后停止共享。": "恢复记录已关闭，退出应用后停止共享。",
+    "在新地址继续共享": "在新地址继续共享",
+    "换址后请发送新邀请。原批准仍有效，访客可导入身份恢复文件。": "换址后请发送新邀请。原批准仍有效，访客可导入身份恢复文件。",
+    "内网地址已更新，请复制新邀请发给访客。": "内网地址已更新，请复制新邀请发给访客。",
+    "共享已暂停，正在等待内网地址和 Desktop 可用。": "共享已暂停，正在等待内网地址和 Desktop 可用。"
   },
   "zh-TW": {
     "应用导航": "應用程式導覽",
@@ -937,7 +941,11 @@
     "服务随管理应用运行，退出应用后暂停共享。": "服務隨管理應用程式執行，退出應用程式後暫停共享。",
     "保留邀请恢复记录": "保留邀請恢復記錄",
     "开启后，已获准的访客可用原浏览器和有效的内网邀请返回。关闭会撤销已保存的恢复资格。": "開啟後，已獲准的訪客可用原瀏覽器和有效的內網邀請返回。關閉會撤銷已儲存的恢復資格。",
-    "恢复记录已关闭，退出应用后停止共享。": "恢復記錄已關閉，退出應用程式後停止共享。"
+    "恢复记录已关闭，退出应用后停止共享。": "恢復記錄已關閉，退出應用程式後停止共享。",
+    "在新地址继续共享": "在新位址繼續分享",
+    "换址后请发送新邀请。原批准仍有效，访客可导入身份恢复文件。": "換址後請傳送新的邀請。原核准仍有效，訪客可匯入身分復原檔案。",
+    "内网地址已更新，请复制新邀请发给访客。": "內網位址已更新，請複製新邀請並傳給訪客。",
+    "共享已暂停，正在等待内网地址和 Desktop 可用。": "分享已暫停，正在等待內網位址和 Desktop 可用。"
   },
   "en": {
     "应用导航": "App navigation",
@@ -1407,6 +1415,10 @@
     "服务随管理应用运行，退出应用后暂停共享。": "The service runs with the management app. Quitting the app pauses sharing.",
     "保留邀请恢复记录": "Keep invitation recovery records",
     "开启后，已获准的访客可用原浏览器和有效的内网邀请返回。关闭会撤销已保存的恢复资格。": "Approved visitors can return using their original browser and a valid LAN invitation. Turning this off revokes saved recovery eligibility.",
-    "恢复记录已关闭，退出应用后停止共享。": "Recovery records are off. Quitting the app stops sharing."
+    "恢复记录已关闭，退出应用后停止共享。": "Recovery records are off. Quitting the app stops sharing.",
+    "在新地址继续共享": "Continue sharing at the new address",
+    "换址后请发送新邀请。原批准仍有效，访客可导入身份恢复文件。": "Send the new invitation after moving. Previously approved guests can import their identity backup while their access remains valid.",
+    "内网地址已更新，请复制新邀请发给访客。": "The intranet address has changed. Copy the new invitation and send it to your guests.",
+    "共享已暂停，正在等待内网地址和 Desktop 可用。": "Sharing is paused until the intranet address and Desktop are available."
   }
 }

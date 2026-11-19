@@ -269,10 +269,11 @@ $('#save-share-limit').onclick = () => {
   shareLimitDirty = true; shareLimitSaving = true; shareLimitStatus = '正在保存…'; renderShareLimit();
   send({ type: 'set-share-limit', shareLimit });
 };
-function networkChangeBlocked() {
+function networkChangeBlocked(allowLanMove = false) {
   return disconnected || ws.readyState !== WebSocket.OPEN || !lastState?.network || !lastState.network.configurable
     || networkWorkBusy() || Boolean(connectionAction) || lastState.connection?.state === 'connecting'
-    || Boolean(busyThreadId) || Boolean(pendingInviteLifetime) || lastState.rooms.some(room => room.state !== 'revoked');
+    || Boolean(busyThreadId) || Boolean(pendingInviteLifetime)
+    || (!(allowLanMove && intranetMode() && networkDraft?.intranetOnly) && lastState.rooms.some(room => room.state !== 'revoked'));
 }
 function renderNetwork() {
   const network = lastState?.network;
@@ -292,11 +293,12 @@ function renderNetwork() {
   $('#lan-address').replaceChildren(...options); $('#lan-address').value = networkDraft.lanAddress;
   $('#intranet-only').checked = networkDraft.intranetOnly;
   $('#lan-address-row').hidden = !networkDraft.intranetOnly;
-  const blocked = networkChangeBlocked();
-  $('#intranet-only').disabled = blocked; $('#lan-address').disabled = blocked;
+  const moving = Boolean(network?.intranetOnly && networkDraft.intranetOnly && network.lanAddress && networkDraft.lanAddress !== network.lanAddress);
+  const blocked = networkChangeBlocked(moving);
+  $('#intranet-only').disabled = networkChangeBlocked(); $('#lan-address').disabled = networkChangeBlocked(true);
   $('#save-network').disabled = blocked || !networkDirty;
   $('#save-network').setAttribute('aria-busy', String(networkSaving));
-  $('#save-network').textContent = t(networkSaving ? '正在保存…' : '保存访问范围');
+  $('#save-network').textContent = t(networkSaving ? '正在保存…' : moving ? '在新地址继续共享' : '保存访问范围');
   $('#network-current').textContent = t(!network ? '正在读取访问范围…' : network.intranetOnly ? '当前：仅内网可访问' : '当前：公网分享');
   $('#network-hint').textContent = t(networkDraft.intranetOnly
     ? '同事通过内网 IP 加入，不创建公网入口。HTTP 未加密，访客系统通知不可用。'
@@ -304,6 +306,8 @@ function renderNetwork() {
   const note = !network ? '正在读取访问范围…'
     : !network.configurable ? '访问范围由启动参数管理，请退出后调整启动参数。'
     : networkWorkBusy() || connectionAction || lastState.connection?.state === 'connecting' ? '网络操作进行中，请稍候…'
+    : moving || (network.intranetOnly && network.lanAddress && !candidates.some(item => item.address === network.lanAddress))
+      ? '换址后请发送新邀请。原批准仍有效，访客可导入身份恢复文件。'
     : busyThreadId || lastState.rooms.some(room => room.state !== 'revoked') ? '请先结束所有共享，再更改访问范围。'
     : networkDirty ? '尚未保存，当前邀请仍沿用已保存的访问范围。'
     : '保存后用于新邀请并保留。模型与工具的网络访问沿用原会话。';
@@ -314,11 +318,11 @@ $('#intranet-only').onchange = () => {
   networkDraft.intranetOnly = $('#intranet-only').checked; networkDirty = true; networkStatus = ''; renderNetwork();
 };
 $('#lan-address').onchange = () => {
-  if (networkChangeBlocked()) { renderNetwork(); return; }
+  if (networkChangeBlocked(true)) { renderNetwork(); return; }
   networkDraft.lanAddress = $('#lan-address').value; networkDirty = true; networkStatus = ''; renderNetwork();
 };
 $('#save-network').onclick = () => {
-  if (networkChangeBlocked() || !networkDirty) return;
+  if (networkChangeBlocked(networkDraft?.lanAddress !== lastState?.network?.lanAddress) || !networkDirty) return;
   if (networkDraft.intranetOnly && !(lastState.network.interfaces ?? []).some(item => item.address === networkDraft.lanAddress)) {
     networkStatus = '请选择当前可用的内网地址。'; renderNetwork(); $('#lan-address').focus(); return;
   }
@@ -717,7 +721,9 @@ ws.onmessage = event => {
   if (m.type === 'network-result') {
     networkDirty = false; networkSaving = false; networkDraft = null; networkStatus = '访问范围已保存';
     if (lastState) { lastState = { ...lastState, network: m.network }; renderRooms(lastState); }
-    notice('访问范围已保存'); return;
+    if (m.moved) { selectTab('shared', true); notice('内网地址已更新，请复制新邀请发给访客。'); }
+    else notice('访问范围已保存');
+    return;
   }
   if (m.type === 'connection-result') {
     connectionAction = ''; if (lastState) renderRooms(lastState);
@@ -779,9 +785,18 @@ function renderRooms(m) {
   if (!active.length) $('#room-policies').append(el('p', t('暂无正在共享的会话。'), 'muted'));
   $('#workspace').dataset.sharing = m.rooms.some(room => room.state !== 'revoked') ? 'true' : 'false';
   const hasRecoveryRequests = renderRecoveryRequests(m);
-  const visible = m.rooms.filter(room => room.state !== 'revoked' || (m.attention ?? []).some(item => item.roomId === room.roomId));
+  const waiting = m.waitingLanRooms ?? [];
+  for (const room of waiting) {
+    const card = el('section', null, 'room');
+    card.append(el('h2', room.title), el('p', t('共享已暂停，正在等待内网地址和 Desktop 可用。'), 'muted'),
+      button('选择内网地址', () => { selectTab('settings'); $('#lan-address').focus(); }),
+      button('停止共享', () => send({ type: 'stop-waiting-lan-room', roomId: room.roomId }), 'danger'));
+    $('#rooms').append(card);
+  }
+  const visible = m.rooms.filter(room => !waiting.some(saved => saved.roomId === room.roomId)
+    && (room.state !== 'revoked' || (m.attention ?? []).some(item => item.roomId === room.roomId)));
   if (!visible.length) {
-    if (!hasRecoveryRequests) {
+    if (!hasRecoveryRequests && !waiting.length) {
       $('#rooms').append(emptyState.cloneNode(true)); i18n.apply();
       $('#empty-browse').onclick = () => selectTab('sessions', true);
     }

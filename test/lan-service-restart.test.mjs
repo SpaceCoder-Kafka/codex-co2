@@ -12,6 +12,7 @@ import { SharingService } from '../lib/sharing-service.mjs';
 import { BackgroundService, connectBackground } from '../lib/background-service.mjs';
 import { startRelay } from '../lib/relay.mjs';
 import { secret } from '../lib/host.mjs';
+import { openLanSettings } from '../lib/lan-settings.mjs';
 
 const address = '192.168.44.11';
 const resourceRoot = new URL('../', import.meta.url).pathname;
@@ -32,13 +33,12 @@ async function peer(t, origin, route, lan = false) {
 async function fixture(t) {
   const root = await fs.mkdtemp('/tmp/co2-lan-restart-'), runtimeDir = path.join(root, '.coop');
   const services = [], daemons = [], calls = [];
-  let available = true, desktop = true, occupied = false;
+  let available = true, desktop = true, occupied = false, currentAddress = address;
   const dependencies = {
-    lanInterfaces: () => available ? [{ name: 'synthetic', address }] : [],
+    lanInterfaces: () => available ? [{ name: 'synthetic', address: currentAddress }] : [],
     selectLanAddress: selected => {
-      assert.ok(!selected || selected === address);
-      if (!available) throw new Error('所选内网地址已不可用，请重新选择当前网络地址。');
-      return address;
+      if (!available || (selected && selected !== currentAddress)) throw new Error('所选内网地址已不可用，请重新选择当前网络地址。');
+      return currentAddress;
     },
     startTunnel: () => { throw new Error('LAN must never start a public tunnel'); },
     attachDesktop: async () => {
@@ -65,9 +65,9 @@ async function fixture(t) {
         const server = http.createServer(handler);
         if (servers++ === 1) {
           const listen = server.listen;
-          server.listen = function(port, host, callback) { assert.equal(host, address); return listen.call(this, port, '127.0.0.1', callback); };
+          server.listen = function(port, host, callback) { assert.equal(host, options.lanAddress); return listen.call(this, port, '127.0.0.1', callback); };
           for (const event of ['request', 'upgrade']) server.prependListener(event, req => Object.defineProperties(req.socket, {
-            localAddress: { configurable: true, value: address }, remoteAddress: { configurable: true, value: '192.168.44.12' },
+            localAddress: { configurable: true, value: options.lanAddress }, remoteAddress: { configurable: true, value: '192.168.44.12' },
           }));
         }
         return server;
@@ -99,7 +99,7 @@ async function fixture(t) {
   };
   t.after(async () => { for (const daemon of daemons) await daemon.close(); for (const service of services) await service.close(); await fs.rm(root, { recursive: true, force: true }); });
   return { start, startForeground, manager, runtimeDir, calls, set available(value) { available = value; },
-    set desktop(value) { desktop = value; }, set occupied(value) { occupied = value; } };
+    set desktop(value) { desktop = value; }, set occupied(value) { occupied = value; }, set address(value) { currentAddress = value; } };
 }
 async function share(f, service, inviteLifetime = 'permanent') {
   await service.setNetwork({ intranetOnly: true, lanAddress: address });
@@ -246,7 +246,7 @@ test('missing LAN address and occupied fixed port wait without changing origin, 
   await until(() => second.relay === null);
   f.available = true;
   await until(() => second.inviteOrigin === origin);
-  assert.equal(second.recovery.status(original, origin).status, 'recoverable');
+  await until(() => second.recovery.status(original, origin).status === 'active');
 });
 
 test('disabling background recovery erases persisted eligibility without stopping the current foreground share', async t => {
@@ -305,12 +305,13 @@ test('foreground manager disconnect preserves enabled recovery but never restore
   await fourth.disconnect();
 });
 
-test('OFF revokes an unopened checkpoint while LAN is missing before same-process ON can load it', async t => {
+test('OFF revokes a waiting checkpoint while LAN is missing before same-process ON can load it', async t => {
   const f = await fixture(t), first = await f.start(), { room } = await share(f, first);
   const origin = first.inviteOrigin, original = { roomId: room.roomId, inviteToken: room.inviteToken };
   await first.close(); f.available = false;
   const second = await f.start();
-  assert.equal(second.recovery.persistenceEnabled, false);
+  assert.equal(second.recovery.persistenceEnabled, true);
+  assert.equal(second.recovery.waitingLanRooms()[0].roomId, room.roomId);
   const checkpoint = path.join(f.runtimeDir, 'lan-invite-recovery.json');
   assert.ok((await fs.stat(checkpoint)).size);
   await second.setBackgroundEnabled(false);
@@ -320,7 +321,7 @@ test('OFF revokes an unopened checkpoint while LAN is missing before same-proces
   assert.equal(second.recovery.status(original, origin).status, 'unavailable');
 });
 
-test('failed erasure of an unopened checkpoint blocks ON until a new disabled startup', async t => {
+test('failed erasure of a waiting checkpoint blocks ON until a new disabled startup', async t => {
   const f = await fixture(t), first = await f.start(), { room } = await share(f, first);
   const origin = first.inviteOrigin, original = { roomId: room.roomId, inviteToken: room.inviteToken };
   await first.close(); f.available = false;
@@ -335,4 +336,83 @@ test('failed erasure of an unopened checkpoint blocks ON until a new disabled st
   await third.setBackgroundEnabled(true); f.available = true;
   await until(() => third.inviteOrigin === origin);
   assert.equal(third.recovery.status(original, origin).status, 'unavailable');
+});
+
+for (const cold of [false, true]) test(`explicit DHCP address migration preserves scoped grants and the deadline (${cold ? 'cold start' : 'memory only'})`, async t => {
+  const f = await fixture(t);
+  const first = await f.start({ persistentLan: cold });
+  const { room, local } = await share(f, first, '1h');
+  const sessionId = secret(), guest = await peer(t, first.inviteOrigin, '/guest', true);
+  const original = { roomId: room.roomId, inviteToken: room.inviteToken };
+  guest.send({ type: 'join', ...original, sessionId, name: 'Migrating visitor' });
+  const { guestId } = await until(() => guest.messages.find(m => m.type === 'pending'));
+  await until(() => room.guests.has(guestId));
+  local.send({ type: 'admit', roomId: room.roomId, guestId });
+  const proof = await until(() => guest.messages.find(m => m.payload?.type === 'visitor-recovery'));
+  const participant = room.guests.get(guestId).participantId, originalOrigin = first.inviteOrigin;
+
+  if (cold) await first.close();
+  const movedAddress = '192.168.44.99'; f.address = movedAddress;
+  const service = cold ? await f.start() : first;
+  await until(() => service.connection.state === 'unavailable');
+  const manager = cold ? await f.manager(service) : local;
+  await until(() => manager.messages.some(m => m.waitingLanRooms?.some(saved => saved.roomId === room.roomId)));
+  assert.equal(service.relay, null);
+  manager.send({ type: 'set-network-mode', intranetOnly: true, lanAddress: movedAddress });
+  await until(() => manager.messages.some(m => m.type === 'network-result' && m.moved));
+  const target = [...service.owner.rooms.values()].find(r => !r.closed);
+  assert.ok(target);
+  assert.equal(new URL(service.inviteOrigin).hostname, movedAddress);
+  assert.equal(new URL(service.inviteOrigin).port, new URL(originalOrigin).port);
+  assert.notEqual(target.roomId, room.roomId);
+  assert.notEqual(target.inviteToken, room.inviteToken);
+  assert.equal(target.admissionScope, proof.payload.scopeId);
+  assert.equal(target.inviteExpiresAt, room.inviteExpiresAt);
+  const join = async (roomId, inviteToken, member) => {
+    const client = await peer(t, service.inviteOrigin, '/guest', true);
+    client.send({ type: 'join', roomId, inviteToken, sessionId: member, name: 'New tab' });
+    return client;
+  };
+  for (const id of [room.roomId, target.roomId]) {
+    const old = await join(id, room.inviteToken, sessionId);
+    await until(() => old.messages.some(m => m.type === 'join-rejected'));
+    assert.equal(old.messages.some(m => m.type === 'data'), false);
+  }
+  const accepted = await join(target.roomId, target.inviteToken, sessionId);
+  const restored = await until(() => accepted.messages.find(m => m.payload?.type === 'visitor-recovery'));
+  assert.equal(restored.payload.expiresAt, proof.payload.expiresAt);
+  assert.ok([...target.guests.values()].some(g => g.participantId === participant));
+  const newcomer = await join(target.roomId, target.inviteToken, secret());
+  const pending = await until(() => newcomer.messages.find(m => m.type === 'pending'));
+  await until(() => target.guests.has(pending.guestId));
+  assert.equal(target.guests.get(pending.guestId).status, 'pending');
+  manager.send({ type: 'stop-waiting-lan-room', roomId: room.roomId });
+  await until(() => manager.messages.some(m => m.type === 'error' && m.operation === 'stop-waiting-lan-room'));
+  assert.equal(target.closed, false);
+  f.available = false;
+  await until(() => service.recovery.waitingLanRooms().some(r => r.roomId === target.roomId));
+  manager.send({ type: 'stop-waiting-lan-room', roomId: target.roomId });
+  await until(() => !service.recovery.waitingLanRooms().length);
+  assert.equal(service.permissions.get(target.admissionScope, createHash('sha256').update(sessionId).digest('base64url')), undefined);
+});
+
+test('address migration resumes when interrupted before or after the checkpoint write', async t => {
+  const f = await fixture(t), first = await f.start(), { room } = await share(f, first, '1d');
+  const movedAddress = '10.17.0.2';
+  await first.close(); f.address = movedAddress;
+  const file = path.join(f.runtimeDir, 'lan-sharing.json');
+  const settings = await openLanSettings(file);
+  await settings.moveAddress(movedAddress);
+  const intent = await fs.readFile(file);
+  const second = await f.start();
+  const moved = await until(() => [...second.owner.rooms.values()].find(candidate => candidate.historyStarted && !candidate.closed));
+  assert.notEqual(moved.roomId, room.roomId);
+  assert.equal(moved.admissionScope, room.admissionScope);
+  assert.equal(moved.inviteExpiresAt, room.inviteExpiresAt);
+  await second.close();
+  await fs.writeFile(file, intent);
+  const third = await f.start();
+  const resumed = await until(() => [...third.owner.rooms.values()].find(candidate => candidate.historyStarted && !candidate.closed));
+  assert.equal(resumed.view().inviteUrl, moved.view().inviteUrl);
+  assert.equal((await openLanSettings(file)).previousAddress(), null);
 });
