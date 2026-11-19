@@ -340,7 +340,8 @@ function renderUploads() {
   if (list.children.length !== rows.length || rows.some((row, index) => list.children[index] !== row)) list.replaceChildren(...rows);
 }
 function createUploadCard(item) {
-  const ext = item.file.name.split('.').at(-1).toLowerCase();
+  const dot = item.file.name.lastIndexOf('.');
+  const ext = dot > 0 ? item.file.name.slice(dot + 1).toLowerCase() : '';
   const family = ['doc', 'docx'].includes(ext) ? 'word' : ['xls', 'xlsx', 'csv', 'tsv'].includes(ext) ? 'spreadsheet'
     : ['ppt', 'pptx'].includes(ext) ? 'presentation' : ext === 'pdf' ? 'pdf'
       : ['mp4', 'mov', 'webm', 'mp3', 'wav', 'm4a', 'ogg', 'flac'].includes(ext) ? 'media' : 'text';
@@ -656,7 +657,7 @@ function renderMessage(item, parent) {
       if (image) return !!images?.render([image], parent, { inline: true, link: true });
       const ref = item.files?.find(file => file.index === index && file.syntax === syntax);
       const card = syntax === 'link' && context?.standalone === true
-        && /\.(?:pdf|docx?|xlsx?|pptx?|csv|tsv|md|markdown|txt|json)$/i.test(ref?.name ?? '');
+        && (ref?.kind === 'download' || /\.(?:pdf|docx?|xlsx?|pptx?|csv|tsv|md|markdown|txt|json)$/i.test(ref?.name ?? ''));
       return !!(images && ref && images.render([ref], parent, { inline: true, card }));
     } });
     enhanceRichText(text);

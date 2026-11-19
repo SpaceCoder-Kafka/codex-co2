@@ -111,7 +111,8 @@ window.createThreadImages = ({ send, canRead, capabilities = () => [] }) => {
     return ({ mp4: 'video/mp4', mp3: 'audio/mpeg', wav: 'audio/wav', m4a: 'audio/mp4', ogg: 'audio/ogg', flac: 'audio/flac' })[ext] || 'application/octet-stream';
   }
   function fileFormat(state) {
-    const extension = state.name.split('.').at(-1).toUpperCase();
+    const dot = state.name.lastIndexOf('.');
+    const extension = dot > 0 ? state.name.slice(dot + 1).toUpperCase() : '';
     return /^[A-Z0-9]{1,8}$/.test(extension) ? extension : '文件';
   }
   function fileFamily(state) {
@@ -313,15 +314,17 @@ window.createThreadImages = ({ send, canRead, capabilities = () => [] }) => {
           button.append(icon, details);
         } else button.append(icon, name);
         button.disabled = !canRead();
-        const titleName = view.card && view.displayName !== state.name ? view.displayName + '（' + state.name + '）' : view.displayName;
-        button.title = !canRead() ? '此引用暂不可用' : state.status === 'failed' ? '预览暂不可用，点击重试' : state.kind === 'image' ? '查看图片：' + titleName : (expanded ? '收起预览：' : '查看文件：') + titleName;
+        const titleName = (view.card || state.kind === 'download') && view.displayName !== state.name ? view.displayName + '（' + state.name + '）' : view.displayName;
+        button.title = !canRead() ? '此引用暂不可用' : state.kind === 'download' ? (expanded ? '收起文件：' : '查看文件：') + titleName
+          : state.status === 'failed' ? '预览暂不可用，点击重试' : state.kind === 'image' ? '查看图片：' + titleName : (expanded ? '收起预览：' : '查看文件：') + titleName;
         button.setAttribute('aria-label', button.title); button.setAttribute('aria-busy', String(loading));
         if (state.kind !== 'image') button.setAttribute('aria-expanded', String(expanded));
         figure.dataset.state = loading ? 'loading' : !canRead() ? 'unavailable' : state.status;
         if (panel) {
           panel.hidden = !expanded && state.status !== 'failed' && !state.previewFailed && !state.problem;
           view.notice.textContent = loading ? (state.kind === 'download' ? '正在准备下载…' : '正在加载预览…')
-            : state.problem || (state.status === 'failed' ? '此引用无法预览，可重试或下载原件。'
+            : state.problem || (state.status === 'failed' && state.kind === 'download' ? '下载失败。请确认原件仍可用且不超过 32 MiB，再点击下载重试。'
+              : state.status === 'failed' ? '此引用无法预览，可重试或下载原件。'
               : state.kind === 'download' ? capabilities().includes('file-original') ? '此格式暂不支持网页预览，可下载原件查看。' : '此格式暂不支持网页预览，当前连接不支持原件下载。' : '');
           view.notice.hidden = !view.notice.textContent;
           if (state.kind !== 'download' && state.status === 'ready' && canRead() && (expanded || state.preview)) {

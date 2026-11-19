@@ -1435,25 +1435,25 @@ test('new file capability requests exact originals, downloads bytes and preserve
   socket.receive({ type: 'revoked' }); assert.equal(audio.paused, true); assert.equal(audio.src, undefined);
 });
 
-test('common structured document formats consistently show lazy file cards with filename and format', async t => {
+test('structured documents and download-only attachments show lazy file cards with filename and format', async t => {
   for (const [extension, kind] of [
     ['pdf', 'pdf'], ['doc', 'download'], ['docx', 'docx'], ['xls', 'download'], ['xlsx', 'xlsx'],
     ['ppt', 'download'], ['pptx', 'pptx'], ['csv', 'table'], ['tsv', 'table'], ['md', 'markdown'],
-    ['markdown', 'markdown'], ['txt', 'text'], ['json', 'text'],
-  ]) await t.test(extension.toUpperCase(), async () => {
+    ['markdown', 'markdown'], ['txt', 'text'], ['json', 'text'], ['hprof', 'download'], ['', 'download'],
+  ]) await t.test(extension.toUpperCase() || 'extensionless', async () => {
     let mountedKind;
     const page = browser({ previewLoader: async () => ({ mountPreview: async ({ container, kind: previewKind }) => {
       mountedKind = previewKind; container.textContent = '合成文档预览'; return { dispose() {} };
     } }) });
     const socket = page.join(), fileId = createHash('sha256').update(extension).digest('hex');
-    const file = { id: fileId, name: `合成报告-${extension}.${extension}`, kind };
+    const file = { id: fileId, name: extension ? `合成报告-${extension}.${extension}` : 'capture', kind };
     const item = { ...prompt, text: '阅读这份文档。', files: [file] };
     socket.receive({ type: 'data', payload: { type: 'snapshot', revision: 1, status: 'idle', capabilities: ['file-original'], items: [item] } });
     const user = nodesByClass(page.elements.messages, 'message-user')[0];
     const card = nodesByClass(user, 'attachment-file')[0], bubble = nodesByClass(user, 'message-text')[0];
     assert.ok(card); assert.ok(user.children.includes(card), 'attachment card belongs outside the text bubble');
     assert.equal(bubble.contains(card), false); assert.equal(nodesByClass(user, 'file-chip').length, 0);
-    assert.equal(nodesByClass(card, 'attachment-file-format')[0].textContent, extension.toUpperCase());
+    assert.equal(nodesByClass(card, 'attachment-file-format')[0].textContent, extension.toUpperCase() || '文件');
     assert.equal(nodesByClass(card, 'file-label')[0].textContent, file.name);
     const button = nodesByClass(card, 'attachment-file-button')[0], panel = nodesByClass(card, 'file-preview-panel')[0];
     const download = nodesByClass(card, 'file-download')[0];
@@ -1479,11 +1479,11 @@ test('common structured document formats consistently show lazy file cards with 
   });
 });
 
-test('standalone assistant document outputs use file cards for common formats without loading bytes', async t => {
+test('standalone assistant documents and unknown formats use file cards without loading bytes', async t => {
   for (const [extension, kind] of [
     ['pdf', 'pdf'], ['doc', 'download'], ['docx', 'docx'], ['xls', 'download'], ['xlsx', 'xlsx'],
     ['ppt', 'download'], ['pptx', 'pptx'], ['csv', 'table'], ['tsv', 'table'], ['md', 'markdown'],
-    ['markdown', 'markdown'], ['txt', 'text'],
+    ['markdown', 'markdown'], ['txt', 'text'], ['hprof', 'download'], ['trace', 'download'],
   ]) await t.test(extension.toUpperCase(), () => {
     const page = browser({ markdown: true }), socket = page.join();
     const fileId = createHash('sha256').update('output-' + extension).digest('hex'), name = `合成产物.${extension}`;
@@ -1500,9 +1500,43 @@ test('standalone assistant document outputs use file cards for common formats wi
     const button = nodesByClass(card, 'attachment-file-button')[0], download = nodesByClass(card, 'file-download')[0];
     assert.equal(button['aria-expanded'], 'false'); assert.equal(download.hidden, true); assert.equal(download.textContent, '');
     assert.equal(socket.sent.some(message => message.type === 'file-request'), false);
+    if (kind === 'download') {
+      button.trigger('click');
+      assert.equal(download.hidden, false);
+      assert.equal(socket.sent.some(message => message.type === 'file-request'), false);
+      download.trigger('click');
+      assert.deepEqual(socket.sent.at(-1), { type: 'file-request', fileId, representation: 'original' });
+    }
     socket.receive({ type: 'revoked' }); const count = socket.sent.length;
     button.trigger('click'); download.trigger('click'); assert.equal(socket.sent.length, count);
   });
+});
+
+test('an inline trace reference downloads its unchanged original on demand', async () => {
+  const page = browser({ markdown: true }), socket = page.join(), fileId = '4'.repeat(64);
+  const item = { ...reply('本次采集的[性能记录](/synthetic/startup.trace)已保存。'),
+    files: [{ id: fileId, name: 'startup.trace', kind: 'download', syntax: 'link', index: 0, label: '性能记录' }] };
+  socket.receive({ type: 'data', payload: { type: 'snapshot', revision: 1, status: 'idle', capabilities: ['file-original'], items: [item] } });
+  assert.equal(nodesByClass(page.elements.messages, 'document-file').length, 0);
+  const link = nodesByClass(page.elements.messages, 'message-file-inline')[0];
+  const download = nodesByClass(link, 'file-download')[0];
+  assert.match(link.textContent, /性能记录/);
+  assert.match(link.children[0].title, /startup\.trace/);
+  assert.equal(download.hidden, true);
+  link.children[0].trigger('click');
+  assert.equal(download.hidden, false);
+  assert.equal(socket.sent.some(message => message.type === 'file-request'), false);
+  download.trigger('click');
+  assert.deepEqual(socket.sent.at(-1), { type: 'file-request', fileId, representation: 'original' });
+  socket.receive({ type: 'data', payload: { type: 'file-unavailable', fileId } });
+  assert.match(link.textContent, /下载失败.*32 MiB/);
+  assert.equal(download.hidden, false);
+  download.trigger('click');
+  assert.deepEqual(socket.sent.at(-1), { type: 'file-request', fileId, representation: 'original' });
+  const bytes = Buffer.from([0, 1, 254, 255]);
+  socket.receive({ type: 'data', payload: { type: 'file-chunk', fileId, representation: 'original',
+    mime: 'application/octet-stream', total: 1, index: 0, data: bytes.toString('base64') } });
+  assert.deepEqual(Buffer.from(await page.urls.created.at(-1).blob.arrayBuffer()), bytes);
 });
 
 test('sentence, list, quote, heading and code citations retain inline document links rather than artifact cards', async t => {

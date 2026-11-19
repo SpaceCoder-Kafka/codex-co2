@@ -73,7 +73,7 @@ test('file formats distinguish rich previews and original downloads preserve exa
   await assert.rejects(readFilePreview(ref(file), { representation: 'arbitrary' }));
 });
 
-test('legacy Office records and parsed links offer only byte-exact scoped originals', async t => {
+test('unrecognized files and legacy Office records offer byte-exact originals for native attachments and assistant links', async t => {
   const { dir, put, ref } = await fixture(t);
   // A .doc may contain an OLE container, RTF or HTML. Do not guess its format,
   // execute it, or feed it to the OOXML renderer; preserve the supplied bytes.
@@ -82,14 +82,16 @@ test('legacy Office records and parsed links offer only byte-exact scoped origin
     ['rtf.doc', Buffer.from('{\\rtf1\\ansi Synthetic Word document}')],
     ['html.doc', Buffer.from('<html><body>合成文档<script>never executed</script></body></html>')],
     ['old.xls', Buffer.from([0, 1, 2, 255])], ['old.ppt', Buffer.from([255, 254, 0])],
+    ['heap.hprof', Buffer.from([0, 255, 1, 0])], ['startup.trace', Buffer.from('synthetic trace')],
+    ['capture', Buffer.alloc(0)], ['archive.custom-v1', Buffer.from([0, 1])],
   ]) {
     const file = await put(name, bytes), userRef = ref(file);
     assert.equal(userRef.kind, 'download');
     assert.deepEqual(nativeFileParts([{ path: file }]), [{ type: 'localFile', path: file }]);
-    const text = `下载 [Word 文档](${file})`;
+    const text = `下载 [原件](${file})`;
     const assistantRef = assistantFileRefs('reply', text, 'room-one')[0];
     assert.deepEqual({ kind: assistantRef.kind, label: assistantRef.label, syntax: assistantRef.syntax, index: assistantRef.index },
-      { kind: 'download', label: 'Word 文档', syntax: 'link', index: 0 });
+      { kind: 'download', label: '原件', syntax: 'link', index: 0 });
     for (const source of [userRef, assistantRef]) {
       await assert.rejects(readFilePreview(source), /Preview unavailable/);
       const original = await readFilePreview(source, { representation: 'original' });
@@ -100,8 +102,8 @@ test('legacy Office records and parsed links offer only byte-exact scoped origin
     assert.deepEqual(assistantFileRefs('reply', `${file}\n\n\`[example](${file})\`\n\n\`\`\`md\n[example](${file})\n\`\`\``, 'room-one'), []);
     await assert.rejects(readFilePreview(JSON.parse(JSON.stringify(assistantRef)), { representation: 'original' }));
   }
-  assert.equal(fileKind('macro.docm'), null);
-  assert.equal(fileKind('installer.exe'), null);
+  assert.equal(fileKind('macro.docm'), 'download');
+  assert.equal(fileKind('installer.exe'), 'download');
   assert.deepEqual(assistantFileRefs('reply', '[cloud](sandbox:/mnt/data/report.doc) [remote](//remote/report.doc) [relative](report.doc)', 'room'), []);
   const large = await put('large.doc', Buffer.alloc(MAX_VIDEO_BYTES + 1));
   await assert.rejects(readFilePreview(ref(large), { representation: 'original' }));
@@ -110,6 +112,23 @@ test('legacy Office records and parsed links offer only byte-exact scoped origin
   await assert.rejects(readFilePreview(ref(link), { representation: 'original' }));
   const protectedRef = ref(path.join(os.homedir(), '.codex', 'synthetic-no-read.doc'));
   await assert.rejects(readFilePreview(protectedRef, { representation: 'original' }));
+});
+
+test('unknown formats retain file scope boundaries and leave supported assistant images on their image path', async t => {
+  const { dir, put, ref } = await fixture(t);
+  const file = await put('startup.trace', Buffer.from([0, 255]));
+  assert.deepEqual(nativeFileParts([{ path: file, startLine: 1, endLine: 2 }]), []);
+  assert.deepEqual(fileRefs('user', [{ type: 'text', text: `[trace](${file})` }, { type: 'mention', path: file }], 'room'), []);
+  const imageRecords = ['photo.heic', 'photo.webp'].map(name => ({ type: 'localImage', path: path.join(dir, name) }));
+  assert.deepEqual(fileRefs('user', imageRecords, 'room').map(({ name, kind }) => ({ name, kind })),
+    [{ name: 'photo.heic', kind: 'download' }]);
+  const literals = [file, `[${file}](https://example.invalid/trace)`, '[relative](./startup.trace)',
+    '[image](/synthetic/image.JPEG)', '![image](/synthetic/image.PNG)', `[directory](${dir}/)`,
+    `[location](${file}:12)`, `[fragment](${file}#L20)`];
+  assert.deepEqual(assistantFileRefs('reply', literals.join('\n\n'), 'room'), []);
+  const directory = path.join(dir, 'directory.unknown');
+  await fs.mkdir(directory);
+  await assert.rejects(readFilePreview(ref(directory), { representation: 'original' }));
 });
 
 test('PDF, Office and audio preview signatures fail closed independently of original download', async t => {
@@ -137,14 +156,15 @@ test('PDF, Office and audio preview signatures fail closed independently of orig
 test('assistant file scope follows only real absolute local link/media tokens and room-bound token positions', async t => {
   const { put } = await fixture(t), file = await put('report with space.pdf', Buffer.from('%PDF-1.7\nsynthetic'));
   const escaped = file.replaceAll(' ', '%20');
-  const text = `普通路径 ${file}\n\n\`[代码](${escaped})\`\n\n\`\`\`md\n![代码](${escaped})\n\`\`\`\n\n<a href="${escaped}">HTML</a>\n\n[远程](https://example.invalid/a.pdf)\n\n[相对](./a.pdf)\n\n[文件](<${file}>)\n\n![图片](/synthetic/example.png)\n\n![远程](https://example.invalid/a.mp3)\n\n![音频](/synthetic/sample.mp3)\n\n![不支持](/synthetic/sample.exe)\n\n[PDF](${escaped})`;
+  const text = `普通路径 ${file}\n\n\`[代码](${escaped})\`\n\n\`\`\`md\n![代码](${escaped})\n\`\`\`\n\n<a href="${escaped}">HTML</a>\n\n[远程](https://example.invalid/a.pdf)\n\n[相对](./a.pdf)\n\n[文件](<${file}>)\n\n![图片](/synthetic/example.png)\n\n![远程](https://example.invalid/a.mp3)\n\n![音频](/synthetic/sample.mp3)\n\n![二进制](/synthetic/sample.exe)\n\n[PDF](${escaped})`;
   const refs = assistantFileRefs('assistant-message', text, 'room-one');
   assert.deepEqual(refs.map(({ kind, index, syntax }) => ({ kind, index, syntax })), [
-    { kind: 'pdf', index: 2, syntax: 'link' }, { kind: 'audio', index: 2, syntax: 'image' }, { kind: 'pdf', index: 3, syntax: 'link' },
+    { kind: 'pdf', index: 2, syntax: 'link' }, { kind: 'audio', index: 2, syntax: 'image' },
+    { kind: 'download', index: 3, syntax: 'image' }, { kind: 'pdf', index: 3, syntax: 'link' },
   ]);
   assert.equal(refs[0].name, 'report with space.pdf');
   assert.equal(refs[1].name, 'sample.mp3');
-  assert.deepEqual(refs.map(ref => ref.label), ['文件', '音频', 'PDF']);
+  assert.deepEqual(refs.map(ref => ref.label), ['文件', '音频', '二进制', 'PDF']);
   assert.equal((await readFilePreview(refs[0])).mime, 'application/pdf');
   assert.equal(refs[0].id, assistantFileRefs('assistant-message', text, 'room-one')[0].id);
   assert.notEqual(refs[0].id, assistantFileRefs('assistant-message', text, 'room-two')[0].id);
@@ -198,7 +218,7 @@ test('only assistant output may read the synthetic visualizations directory; cre
 });
 
 test('native attachment records project to their own user item; text-only paths and unrelated users grant no file scope', () => {
-  const file = '/synthetic/clip.mp4', record = { label: 'clip.mp4', path: file, fsPath: file, privateField: 'never' };
+  const file = '/synthetic/heap.hprof', record = { label: 'heap.hprof', path: file, fsPath: file, privateField: 'never' };
   const turn = { turnId: 'turn', status: 'completed', params: { clientUserMessageId: 'user', input: [{ type: 'text', text: '看附件' }], attachments: [record] }, items: [] };
   const state = { id: 'thread', hostId: 'local', turns: [turn] };
   const content = projectDesktopThread(state, 'thread').turns[0].items[0].content;
@@ -208,7 +228,7 @@ test('native attachment records project to their own user item; text-only paths 
   assert.equal(projected.find(item => item.id === 'other-user').content.some(p => p.type === 'localFile'), false);
   assert.deepEqual(projected.find(item => item.id === 'user').content, [{ type: 'text', text: '看附件' }, { type: 'localFile', path: file }]);
   turn.items[0].id = 'user'; assert.equal(projectDesktopThread(state, 'thread').turns[0].items[0].content.at(-1).type, 'localFile');
-  turn.items = []; turn.params.attachments = []; turn.params.input = [{ type: 'text', text: `## clip.mp4: ${file}` }];
+  turn.items = []; turn.params.attachments = []; turn.params.input = [{ type: 'text', text: `## heap.hprof: ${file}` }];
   assert.equal(projectDesktopThread(state, 'thread').turns[0].items[0].content.length, 1);
 });
 
@@ -278,7 +298,7 @@ test('both Desktop history formats preserve assistant file scope and bounded sna
   }
 });
 
-test('real relay sends scoped previews and original Office bytes only to admitted guests and rejects extra paths', async t => {
+test('real relay sends scoped previews, unknown attachments and original Office bytes only to admitted guests', async t => {
   const { put } = await fixture(t), file = await put('clip.mp4', Buffer.concat([mp4, Buffer.alloc(70000)]));
   const registrationSecret = secret(), relay = await startRelay({ registrationSecret }); t.after(() => relay.close());
   const rpc = new Rpc(file), room = await new SharedRoom({ relayUrl: relay.url, registrationSecret, threadId: 'selected', rpcFactory: async () => rpc }).start();
@@ -300,24 +320,29 @@ test('real relay sends scoped previews and original Office bytes only to admitte
   const chunks = messages.filter(m => m.payload?.type === 'file-chunk').map(m => m.payload);
   assert.ok(chunks.length > 1); assert.ok(chunks.every(c => c.mime === 'video/mp4' && JSON.stringify(c).length < 48 * 1024));
   assert.deepEqual(Buffer.concat(chunks.map(c => Buffer.from(c.data, 'base64'))), await fs.readFile(file));
-  const originalBytes = Buffer.concat([Buffer.from([255, 254]), Buffer.from('# 合成原件\r\n', 'utf16le')]);
-  const originalPath = await put('original.md', originalBytes); rpc.thread = new Rpc(originalPath).thread;
-  await room.thread.refresh();
-  await until(() => messages.some(m => m.payload?.type === 'snapshot' && m.payload.items[0].files?.[0]?.name === 'original.md'));
-  const originalId = messages.findLast(m => m.payload?.type === 'snapshot').payload.items[0].files[0].id;
-  ws.send(JSON.stringify({ type: 'file-request', fileId: originalId, representation: 'original' }));
-  await until(() => messages.some(m => m.payload?.type === 'file-chunk' && m.payload.fileId === originalId && m.payload.index + 1 === m.payload.total));
-  const originalChunks = messages.filter(m => m.payload?.type === 'file-chunk' && m.payload.fileId === originalId).map(m => m.payload);
-  assert.ok(originalChunks.every(c => c.mime === 'application/octet-stream' && c.representation === 'original'));
-  assert.deepEqual(Buffer.concat(originalChunks.map(c => Buffer.from(c.data, 'base64'))), originalBytes);
+  for (const [name, bytes] of [
+    ['original.md', Buffer.concat([Buffer.from([255, 254]), Buffer.from('# 合成原件\r\n', 'utf16le')])],
+    ['heap.hprof', Buffer.from([0, 255, 0, 128])],
+  ]) {
+    rpc.thread = new Rpc(await put(name, bytes)).thread;
+    await room.thread.refresh();
+    await until(() => messages.some(m => m.payload?.type === 'snapshot' && m.payload.items[0].files?.[0]?.name === name));
+    const originalId = messages.findLast(m => m.payload?.type === 'snapshot').payload.items[0].files[0].id;
+    ws.send(JSON.stringify({ type: 'file-request', fileId: originalId, representation: 'original' }));
+    await until(() => messages.some(m => m.payload?.type === 'file-chunk' && m.payload.fileId === originalId && m.payload.index + 1 === m.payload.total));
+    const originalChunks = messages.filter(m => m.payload?.type === 'file-chunk' && m.payload.fileId === originalId).map(m => m.payload);
+    assert.ok(originalChunks.every(c => c.mime === 'application/octet-stream' && c.representation === 'original'));
+    assert.deepEqual(Buffer.concat(originalChunks.map(c => Buffer.from(c.data, 'base64'))), bytes);
+  }
+  const heapId = messages.findLast(m => m.payload?.type === 'snapshot').payload.items[0].files[0].id;
   const docBytes = Buffer.concat([Buffer.from('{\\rtf1 Synthetic original Office document}'), Buffer.alloc(70000)]);
   const docPath = await put('converted.doc', docBytes);
   rpc.thread.turns = [{ id: 'turn', status: 'completed', items: [{ id: 'reply', type: 'agentMessage', text: `下载 [Word 文档](${docPath})` }] }];
   await room.thread.refresh();
-  await until(() => messages.some(m => m.payload?.type === 'snapshot' && m.payload.items[0].files?.[0]?.kind === 'download'));
+  await until(() => messages.some(m => m.payload?.type === 'snapshot' && m.payload.items[0].files?.[0]?.name === 'converted.doc'));
   const docRef = messages.findLast(m => m.payload?.type === 'snapshot').payload.items[0].files[0];
   assert.equal(docRef.label, 'Word 文档');
-  assert.equal(room.thread.hasFile(originalId), false, 'replacing the message revokes the old attachment');
+  assert.equal(room.thread.hasFile(heapId), false, 'replacing the message revokes the old attachment');
   ws.send(JSON.stringify({ type: 'file-request', fileId: docRef.id, representation: 'original' }));
   await until(() => messages.some(m => m.payload?.type === 'file-chunk' && m.payload.fileId === docRef.id && m.payload.index + 1 === m.payload.total));
   const docChunks = messages.filter(m => m.payload?.type === 'file-chunk' && m.payload.fileId === docRef.id).map(m => m.payload);

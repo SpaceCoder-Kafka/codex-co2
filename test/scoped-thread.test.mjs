@@ -43,7 +43,7 @@ async function fixture(t) {
   return { rpc, bridge };
 }
 
-test('start scopes read and resume; snapshot exposes only named text messages', async t => {
+test('start scopes read and resume; snapshots expose only shared text and opaque attachment references', async t => {
   const rpc = new FakeRpc();
   rpc.thread.cwd = '/secret/workspace';
   rpc.thread.preview = 'secret-preview';
@@ -69,8 +69,10 @@ test('start scopes read and resume; snapshot exposes only named text messages', 
   const turnId = bridge.snapshot.items[0].turnId;
   assert.match(turnId, /^[a-f0-9]{64}$/);
   assert.notEqual(turnId, 'seed');
+  const fileId = bridge.snapshot.items[0].files[0].id;
+  assert.match(fileId, /^[a-f0-9]{64}$/);
   assert.deepEqual(bridge.snapshot.items, [
-    { id: 'user', role: 'user', text: 'Hello', turnId, turnStatus: 'completed' },
+    { id: 'user', role: 'user', text: 'Hello', files: [{ id: fileId, name: 'attachment', kind: 'download' }], turnId, turnStatus: 'completed' },
     { id: 'assistant', role: 'assistant', text: 'Ready', turnId },
   ]);
   assert.equal(bridge.snapshot.status, 'idle');

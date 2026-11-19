@@ -18,7 +18,9 @@ test('Windows attachment boundaries reject case aliases, private state and non-l
 test('POSIX attachment boundaries preserve generated-image exception without exposing private runtime files', () => {
   const options = { platform: 'darwin', home: '/synthetic/person' };
   assert.equal(protectedAttachmentPath('/synthetic/person/.codex/visualizations/image.png', { ...options, allowVisualizations: true }), false);
-  for (const file of ['/synthetic/person/.codex/state_5.sqlite', '/work/.coop/manager-settings.json', '/work/credentials.json']) {
+  assert.equal(protectedAttachmentPath('/synthetic/person/.codex/Visualizations/data.trace', { ...options, allowVisualizations: true }), true);
+  for (const file of ['/synthetic/person/.codex/state_5.sqlite', '/synthetic/Person/.Codex/state_5.sqlite',
+    '/work/.coop/manager-settings.json', '/work/.Coop/private-data', '/work/credentials.json']) {
     assert.equal(protectedAttachmentPath(file, options), true);
   }
   assert.equal(protectedAttachmentPath('/work/project/note.md', options), false);
