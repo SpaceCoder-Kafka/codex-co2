@@ -15,7 +15,7 @@
 </p>
 
 <p align="center">
-  <a href="CHANGELOG.md#041"><img src="https://img.shields.io/badge/release-v0.4.1-2563eb" alt="发布版本 v0.4.1"></a>
+  <a href="CHANGELOG.md#050"><img src="https://img.shields.io/badge/release-v0.5.0-2563eb" alt="发布版本 v0.5.0"></a>
   <img src="https://img.shields.io/badge/host-macOS%2014%2B%20%C2%B7%20arm64%20%2F%20Intel-555555" alt="分享者：macOS 14+，Apple Silicon 与 Intel 分架构包">
   <img src="https://img.shields.io/badge/guest-browser-2563eb" alt="协作者：浏览器">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-22c55e" alt="许可：MIT"></a>
@@ -26,7 +26,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/SpaceCoder-Kafka/codex-co2/releases/tag/v0.4.1">下载</a> ·
+  <a href="https://github.com/SpaceCoder-Kafka/codex-co2/releases/tag/v0.5.0">下载</a> ·
   <a href="#新用户使用homebrew">快速开始</a> ·
   <a href="#应用截图">应用截图</a> ·
   <a href="#共享前需要知道">共享须知</a> ·
@@ -70,7 +70,7 @@ https://github.com/user-attachments/assets/b1c2f544-3684-432e-9e03-f32ac15b9370
 
 ## 安装 Codex Co²
 
-当前发布版本为 **0.4.1**，macOS 分别提供 Apple Silicon（`arm64`）与 Intel（`x86_64`）安装包，并精简服务端依赖。Node 和 cloudflared 继续内置，浏览器预览资源完整保留，安装后的服务端不再携带前端构建依赖和开发文件。详见 [0.4.1 更新说明](docs/release-notes/v0.4.1-zh.md)。
+**0.5.0** 新增共享会话及附件导入、内网共享恢复，并支持下载更多格式的原件。详见 [0.5.0 更新说明](docs/release-notes/v0.5.0-zh.md)。
 
 分享者接入**已经运行的官方 Codex Desktop**，继续使用原有 Agent、登录与工具审批设置。协作者使用支持 JavaScript 和 WebSocket 的浏览器。公网共享需要访问生成的公网地址；显式内网共享需要访问所选私有网络。
 
@@ -99,18 +99,18 @@ brew install --cask SpaceCoder-Kafka/tap/codex-co2 && open "$(brew --repository 
 
 ### 通过 DMG 安装
 
-也可以从 [Releases](https://github.com/SpaceCoder-Kafka/codex-co2/releases/tag/v0.4.1) 下载适合本机架构的 DMG 和对应 `.sha256` 文件，下载后执行相应校验。
+也可以从 [Releases](https://github.com/SpaceCoder-Kafka/codex-co2/releases/tag/v0.5.0) 下载适合本机架构的 DMG 和对应 `.sha256` 文件，下载后执行相应校验。
 
 Apple Silicon（`arm64`）：
 
 ```sh
-shasum -a 256 -c Codex-Co2-0.4.1-build37-arm64.dmg.sha256
+shasum -a 256 -c Codex-Co2-0.5.0-build38-arm64.dmg.sha256
 ```
 
 Intel（`x86_64`）：
 
 ```sh
-shasum -a 256 -c Codex-Co2-0.4.1-build37-x86_64.dmg.sha256
+shasum -a 256 -c Codex-Co2-0.5.0-build38-x86_64.dmg.sha256
 ```
 
 macOS 包采用临时签名，**未经 Apple 公证**，首次打开可能受系统拦截。先尝试从 Applications 打开 Co²，再到「系统设置 → 隐私与安全性 → 仍要打开」确认。Homebrew 会直接安装应用，不会展示 DMG 的安装引导窗口。请参考 [Apple 指引](https://support.apple.com/zh-cn/102445)。
