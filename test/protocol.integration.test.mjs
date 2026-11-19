@@ -7,6 +7,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { RpcClient } from '../lib/rpc.mjs';
 import { resolveCli } from '../lib/runtime.mjs';
 import { importReceiverSnapshot } from '../lib/receiver-import.mjs';
+import { createContentMarkdown } from '../lib/markdown-parser.mjs';
 import { startResponsesFixture } from './fixtures/responses-server.mjs';
 import { GuestUploads } from '../lib/guest-uploads.mjs';
 import { ScopedThread } from '../lib/scoped-thread.mjs';
@@ -241,7 +242,9 @@ test('recipient imports visible dialogue into a new durable thread with the offi
   await assert.rejects(importReceiverSnapshot({ snapshot, runtimeDir }, { ...local, codexHome: path.join(root, 'absent') }),
     error => Boolean(error.safeMessage));
   await assert.rejects(importReceiverSnapshot({ snapshot: { ...snapshot, messages: [] }, runtimeDir }, local));
-  const { threadId } = await importReceiverSnapshot({ snapshot, runtimeDir }, local);
+  const legacyResult = await importReceiverSnapshot({ snapshot, runtimeDir }, local);
+  assert.deepEqual(Object.keys(legacyResult), ['threadId']);
+  const { threadId } = legacyResult;
   assert.match(threadId, /^[a-f0-9-]{36}$/);
   assert.deepEqual(await fs.readdir(runtimeDir), ['imported-projects'], 'staged source cleaned after worker exit');
   assert.equal(fixture.requests.length, 0, 'import performs no generation');
@@ -274,4 +277,70 @@ test('recipient imports visible dialogue into a new durable thread with the offi
   await until(() => completed.has(turn.id), 'synthetic follow-up completion');
   assert.equal(fixture.requests.length, 1);
   assert.equal((await reader.request('thread/read', { threadId, includeTurns: true })).thread.turns.length, 4);
+
+  await t.test('attachment originals and their native history references survive source removal', async () => {
+    const source = path.join(root, 'synthetic-sharing-host');
+    await fs.mkdir(source);
+    // Byte preservation includes text that a preview would decode, and binary
+    // files that the guest can only download. This test never invokes a viewer.
+    const originals = new Map([
+      ['evidence.csv', Buffer.from([255, 254, 97, 0, 44, 0, 98, 0])],
+      ['photo.png', Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAEUlEQVR4nGP4z8DwH4QZYAwAR8oH+WdZbrcAAAAASUVORK5CYII=', 'base64')],
+      ['recording.wav', Buffer.from('RIFF synthetic audio')],
+      ['old.ppt', Buffer.from([0xd0, 0xcf, 0x11, 0xe0])],
+      ['video.mp4', Buffer.from('synthetic video bytes')],
+      ['report.pdf', Buffer.from('%PDF-1.7 synthetic')],
+    ]);
+    const refs = [...originals.keys()].map((name, i) => ({
+      kind: name === 'photo.png' ? 'image' : 'file', name, id: String(i + 1).padStart(64, '0'),
+    }));
+    for (const [name, bytes] of originals) await fs.writeFile(path.join(source, name), bytes);
+    const [csv, photo, audio, ppt, video, pdf] = refs;
+    const missing = { id: 'f'.repeat(64), name: 'missing.docx', kind: 'file' };
+    const withAssets = { version: 2, title: 'Synthetic attachments', truncated: false, messages: [
+      { role: 'user', text: '', attachments: [csv, photo, audio, ppt, video] },
+      { role: 'assistant', text: 'The [PDF report](/sharing-host/report.pdf) is ready.',
+        attachments: [{ ...pdf, syntax: 'link', index: 0 }] },
+      { role: 'user', text: 'Check the files', attachments: [csv, missing] },
+    ] };
+    const downloads = [];
+    const projects = path.join(runtimeDir, 'imported-projects');
+    const before = await fs.readdir(projects);
+    await assert.rejects(importReceiverSnapshot({ runtimeDir, snapshot: withAssets, fetchAsset: ref =>
+      fs.readFile(path.join(source, ref.name)) }, { ...local, executable: path.join(root, 'absent-cli') }));
+    assert.deepEqual(await fs.readdir(projects), before, 'a pre-submission failure discards its private attachment directory');
+    const imported = await importReceiverSnapshot({ runtimeDir, snapshot: withAssets, fetchAsset: ref => {
+      downloads.push(ref.id); return fs.readFile(path.join(source, ref.name));
+    } }, local);
+    assert.notEqual(imported.threadId, threadId);
+    assert.equal(imported.attachments.saved, originals.size);
+    assert.equal(imported.attachments.missing, 1);
+    assert.deepEqual(downloads, [...refs.map(ref => ref.id), missing.id]);
+    await fs.rm(source, { recursive: true });
+    assert.deepEqual(await fs.readdir(runtimeDir), ['imported-projects']);
+    const resumed = await reader.request('thread/resume', { threadId: imported.threadId });
+    const { thread: copy } = await reader.request('thread/read', { threadId: imported.threadId, includeTurns: true });
+    assert.equal(copy.id, resumed.thread.id);
+    assert.equal(copy.turns.length, 2);
+    const first = copy.turns[0].items[0].content[0].text;
+    const reply = copy.turns[0].items[1].text;
+    const last = copy.turns[1].items[0].content[0].text;
+    assert.match(reply, /^The \[PDF report\]\(.*report.pdf\) is ready\.$/);
+    assert.doesNotMatch(reply, /sharing-host/);
+    assert.match(last, /Check the files[\s\S]*missing.docx.*未保存/);
+    const parser = createContentMarkdown();
+    function paths(text) {
+      return parser.parse(text, {}).flatMap(token => token.children ?? [])
+        .filter(t => t.type === 'link_open' || t.type === 'image')
+        .map(t => decodeURIComponent(t.attrGet(t.type === 'image' ? 'src' : 'href')));
+    }
+    const saved = [...paths(first), ...paths(reply)];
+    assert.equal(saved.length, originals.size);
+    assert.deepEqual(paths(last), [saved[0]], 'the next user turn references its original copy');
+    for (const [i, target] of saved.entries()) {
+      assert.equal(path.dirname(target), path.join(resumed.cwd, 'attachments'));
+      assert.deepEqual(await fs.readFile(target), originals.get(refs[i].name));
+    }
+    assert.equal(fixture.requests.length, 1, 'the import and independent readback made no model call');
+  });
 });

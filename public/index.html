@@ -62,10 +62,14 @@
       </header>
       <dialog id="codex-import-dialog" class="codex-import-dialog" aria-labelledby="codex-import-heading">
         <div class="codex-import-heading"><h2 id="codex-import-heading">导入到我的 Codex</h2><button id="close-codex-import" class="close-button" type="button" aria-label="关闭导入窗口">×</button></div>
-        <p id="codex-import-status" role="status"></p>
+        <p>导入需要在电脑上安装 Co² 和 Codex Desktop。安装后回到此页继续。</p>
         <p id="codex-import-scope" class="field-help"></p>
-        <button id="retry-codex-import" class="button" type="button">重新打开 Co²</button>
-        <p class="codex-install">尚未安装？<a id="download-co2" href="https://github.com/SpaceCoder-Kafka/codex-co2" target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer">下载 Co²</a>，安装后回到这里重试。</p>
+        <p class="field-help">分享者和访客都需使用支持附件导入的 Co²。可下载的原件会保存到你的电脑，文件链接会出现在对应消息中。未能保存的附件也会在消息中标明。</p>
+        <div class="codex-import-actions">
+          <a id="download-co2" href="https://github.com/SpaceCoder-Kafka/codex-co2" class="button button-primary" target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer">前往 GitHub 下载 Co²</a>
+          <button id="retry-codex-import" class="button" type="button">已安装，打开 Co²</button>
+        </div>
+        <p id="codex-import-status" role="status"></p>
       </dialog>
       <main class="workspace">
         <div class="context-bar reading-width">

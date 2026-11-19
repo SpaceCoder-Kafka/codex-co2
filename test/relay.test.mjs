@@ -8,7 +8,8 @@ import { once } from 'node:events';
 import { setTimeout as delay } from 'node:timers/promises';
 import { WebSocket } from 'ws';
 import { startRelay } from '../lib/relay.mjs';
-import { claimImportSnapshot, importClaimPath, parseImportLink } from '../lib/import-handoff.mjs';
+import { claimImportSnapshot, importAssetPath, importClaimPath, parseImportLink } from '../lib/import-handoff.mjs';
+import { IMAGE_CHUNK_BYTES } from '../lib/thread-images.mjs';
 
 const secret = () => randomBytes(32).toString('base64url');
 async function fixture(t, overrides = {}) {
@@ -410,6 +411,106 @@ test('receiver claims one admitted snapshot once, with origin and recipient bind
   host.send({ type: 'revoke', guestId });
   assert.equal((await pending).status, 410);
   assert.equal((await claim(withdrawn)).status, 410);
+});
+
+test('a v2 claim streams only its originals to the native recipient while the browser remains connected', async t => {
+  const relay = await fixture(t);
+  const { host, credentials } = await register(relay);
+  const { guest, guestId } = await admit(relay, host, credentials);
+  const other = await admit(relay, host, credentials);
+  const fileId = 'a'.repeat(64), imageId = 'b'.repeat(64), remoteId = 'c'.repeat(64);
+  const snapshot = { type: 'snapshot', title: 'Example', status: 'idle', capabilities: ['file-original'],
+    items: [{ role: 'assistant', text: 'Shared material', files: [{ id: fileId, name: 'report.pdf' }],
+      images: [{ id: imageId, name: 'figure.png' }, { id: remoteId, name: 'external', url: 'https://example.org/figure.png' }] }] };
+  const http = (endpoint, token, extra = {}) => fetch(relay.url + endpoint, { method: 'POST',
+    headers: { Origin: relay.url, Authorization: 'Co2Import ' + token, ...extra } });
+  const issueClaim = async (reply, tagged = true) => {
+    const ticket = randomBytes(32).toString('hex');
+    guest.send({ type: 'import-offer', ticket });
+    guest.send({ type: 'ping' }); await guest.next('pong');
+    const promise = http(importClaimPath, ticket, { 'X-Co2-Import-Version': '2' });
+    const request = await host.next('guest-message');
+    assert.equal(request.guestId, guestId);
+    assert.deepEqual(request.payload, { type: 'snapshot-request' });
+    assert.ok(request.importRequestId);
+    if (tagged) {
+      host.send({ type: 'deliver', guestId, payload: { ...reply, importVersion: 2 } });
+      await guest.next('data');
+    }
+    host.send({ type: 'deliver', guestId, ...(tagged ? { importRequestId: request.importRequestId } : {}), payload: reply });
+    assert.equal((await http(importClaimPath, ticket)).status, 410);
+    const result = await promise;
+    assert.equal(result.status, 200);
+    return result.json();
+  };
+  const manifest = await issueClaim(snapshot);
+  assert.equal(manifest.version, 2);
+  assert.deepEqual(manifest.messages[0].attachments.map(ref => ref.id).sort(), [fileId, imageId, remoteId]);
+  assert.match(manifest.transferToken, /^[0-9a-f]{64}$/);
+  const read = (id, extra) => http(importAssetPath, manifest.transferToken, { 'X-Co2-Asset': id, ...extra });
+  assert.equal((await read(remoteId)).status, 404);
+  assert.equal((await read('/tmp/report.pdf')).status, 404);
+  assert.equal((await read(imageId, { Origin: 'https://unrelated.example' })).status, 403);
+  assert.equal((await http(importClaimPath, manifest.transferToken)).status, 410);
+  const requestFile = async () => {
+    const body = read(fileId);
+    const msg = await host.next('guest-message');
+    assert.equal(msg.guestId, guestId);
+    assert.deepEqual(msg.payload, { type: 'file-request', fileId, representation: 'original' });
+    assert.ok(msg.importRequestId);
+    return { body, tag: msg.importRequestId };
+  };
+  const deliver = (tag, payload, target = guestId) => host.send({ type: 'deliver', guestId: target, importRequestId: tag, payload });
+  const fileChunk = (index, total, bytes) => ({ type: 'file-chunk', fileId, representation: 'original', index, total,
+    mime: 'application/octet-stream', data: bytes.toString('base64') });
+  let job = await requestFile();
+  assert.equal((await read(imageId)).status, 409);
+  deliver(job.tag, fileChunk(0, 1, Buffer.from('wrong guest')), other.guestId);
+  deliver(randomUUID(), fileChunk(0, 1, Buffer.from('stale request')));
+  // Untagged preview data with exactly the same id belongs only to the browser.
+  host.send({ type: 'deliver', guestId, payload: fileChunk(0, 1, Buffer.from('browser')) });
+  assert.equal((await guest.next('data')).payload.data, Buffer.from('browser').toString('base64'));
+  deliver(job.tag, fileChunk(1, 2, Buffer.from('out of order')));
+  assert.equal((await job.body).status, 502);
+
+  job = await requestFile();
+  const first = Buffer.alloc(IMAGE_CHUNK_BYTES, 3), last = Buffer.from([0, 255, 13, 10]);
+  deliver(job.tag, fileChunk(0, 2, first));
+  const response = await job.body;
+  assert.equal(response.headers.get('content-type'), 'application/octet-stream');
+  deliver(job.tag, fileChunk(1, 2, last));
+  assert.deepEqual(Buffer.from(await response.arrayBuffer()), Buffer.concat([first, last]));
+  assert.ok(!guest.messages.some(m => m.payload?.type === 'file-chunk'));
+  const picture = read(imageId);
+  const imageRequest = await host.next('guest-message');
+  assert.deepEqual(imageRequest.payload, { type: 'image-request', imageId });
+  deliver(imageRequest.importRequestId, { type: 'image-chunk', imageId, index: 0, total: 2,
+    mime: 'image/png', data: first.toString('base64') });
+  const partial = await picture;
+  host.send({ type: 'revoke', guestId });
+  await assert.rejects(partial.arrayBuffer());
+  assert.equal((await read(fileId)).status, 410);
+});
+
+test('a v2 claim can fall back to an older host and excludes unavailable file originals', async t => {
+  const relay = await fixture(t);
+  const { host, credentials } = await register(relay);
+  const { guest, guestId } = await admit(relay, host, credentials);
+  for (const version of [1, 2]) {
+    const ticket = randomBytes(32).toString('hex');
+    guest.send({ type: 'import-offer', ticket });
+    guest.send({ type: 'ping' }); await guest.next('pong');
+    const result = fetch(relay.url + importClaimPath, { method: 'POST', headers: {
+      Origin: relay.url, Authorization: 'Co2Import ' + ticket, 'X-Co2-Import-Version': '2' } });
+    const { importRequestId } = await host.next('guest-message');
+    host.send({ type: 'deliver', guestId, ...(version === 2 ? { importRequestId } : {}),
+      payload: { type: 'snapshot', title: 'Example', status: 'idle',
+        items: [{ role: 'user', text: 'Example', files: [{ id: 'a'.repeat(64), name: 'report.pdf' }] }] } });
+    const manifest = await (await result).json();
+    assert.equal(manifest.version, version);
+    assert.equal(manifest.transferToken, undefined);
+    if (version === 2) assert.equal(manifest.messages[0].attachments[0].unavailable, true);
+  }
 });
 
 test('native receiver rejects non-share destinations and extra URL data', () => {

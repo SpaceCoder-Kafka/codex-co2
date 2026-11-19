@@ -75,7 +75,7 @@ internal static class Program
             {
                 MessageBox.Show("无法读取会话导入链接。", "Codex Co²"); return 1;
             }
-            if (MessageBox.Show($"将来自 {origin} 的对话保存为本机 Codex 的新会话，并打开它。", "导入到我的 Codex",
+            if (MessageBox.Show($"将来自 {origin} 的提问和回复导入新会话。Co² 会将可下载的附件保存到本机，并在 Codex 中打开会话。", "导入到我的 Codex",
                 MessageBoxButtons.OKCancel, MessageBoxIcon.Question) != DialogResult.OK) return 0;
             PlatformBridge.SecureDirectory(runtime);
             var reply = Request("import");
@@ -83,11 +83,32 @@ internal static class Program
             {
                 MessageBox.Show(reply.GetValueOrDefault("error", "导入未完成，请检查本机 Codex 是否正在运行。"), "Codex Co²"); return 1;
             }
+            var summary = reply.GetValueOrDefault("attachmentSummary", "");
             try { Process.Start(new ProcessStartInfo("codex://threads/" + id.ToString("D")) { UseShellExecute = true }); }
-            catch { MessageBox.Show("会话已导入，无法打开 Codex。", "Codex Co²"); return 1; }
+            catch { MessageBox.Show(("会话已导入，无法打开 Codex。 " + summary).TrimEnd(), "Codex Co²"); return 1; }
+            if (summary.Length > 0)
+            {
+                try { ShowAttachmentSummary(summary); }
+                catch { MessageBox.Show(summary, "会话已导入到 Codex"); }
+            }
             return 0;
         }
         catch { MessageBox.Show("无法完成会话导入。请检查本机 Co² 和 Codex 是否可用。", "Codex Co²"); return 1; }
+    }
+
+    private static void ShowAttachmentSummary(string summary)
+    {
+        // The protocol handler has no manager window. Keep its tray notification
+        // alive briefly while the imported chat opens in the foreground.
+        using var context = new ApplicationContext();
+        using var tray = new NotifyIcon { Icon = SystemIcons.Information, Text = "Codex Co²", Visible = true };
+        using var timeout = new System.Windows.Forms.Timer { Interval = 8000 };
+        timeout.Tick += (_, _) => context.ExitThread();
+        tray.BalloonTipClosed += (_, _) => context.ExitThread();
+        tray.BalloonTipClicked += (_, _) => context.ExitThread();
+        tray.ShowBalloonTip(6000, "会话已导入到 Codex", summary, ToolTipIcon.Info);
+        timeout.Start();
+        Application.Run(context);
     }
 }
 

@@ -176,7 +176,7 @@ function snapshot(socket, revision, items, status = 'running') {
 const prompt = { id: 'u-1', role: 'user', text: '只回复 desktop-to-phone-ok，不使用工具' };
 const reply = text => ({ id: 'a-1', role: 'assistant', text });
 
-test('local import launches with a fresh, scoped ticket only after admission and a readable snapshot', () => {
+test('download is available before an explicit native launch, which requires a fresh scoped ticket', () => {
   const page = browser(), ui = page.elements;
   const button = ui['import-to-codex'];
   assert.equal(button.hidden, true);
@@ -189,6 +189,18 @@ test('local import launches with a fresh, scoped ticket only after admission and
     title: '合成会话', items: [prompt, reply('synthetic private response')], historyTruncated: true } });
   assert.equal(button.disabled, false);
   button.click();
+  assert.equal(ui['codex-import-dialog'].open, true);
+  assert.match(ui['codex-import-scope'].textContent, /截断/);
+  assert.match(html, /id="download-co2" href="https:\/\/github\.com\/SpaceCoder-Kafka\/codex-co2"[^>]*>前往 GitHub 下载 Co²<\/a>/);
+  ui['download-co2'].click();
+  page.tick(3000);
+  ui['close-codex-import'].click();
+  ui['retry-codex-import'].click();
+  button.click();
+  assert.equal(page.appLaunches.length, 0);
+  assert.equal(socket.sent.filter(message => message.type === 'import-offer').length, 0);
+
+  ui['retry-codex-import'].click();
   const ticket = socket.sent.at(-1).ticket;
   assert.deepEqual(socket.sent.at(-1), { type: 'import-offer', ticket });
   assert.match(ticket, /^[a-f0-9]{64}$/);
@@ -197,9 +209,6 @@ test('local import launches with a fresh, scoped ticket only after admission and
   assert.equal(target.hostname, 'import');
   assert.deepEqual([...target.searchParams], [['origin', 'https://synthetic.invalid'], ['ticket', ticket]]);
   assert.equal(target.hash, '');
-  assert.equal(ui['codex-import-dialog'].open, true);
-  assert.match(ui['codex-import-scope'].textContent, /截断/);
-  assert.match(html, /id="download-co2" href="https:\/\/github\.com\/SpaceCoder-Kafka\/codex-co2"/);
   ui['retry-codex-import'].click();
   const next = socket.sent.at(-1).ticket;
   assert.notEqual(next, ticket);
@@ -213,6 +222,33 @@ test('local import launches with a fresh, scoped ticket only after admission and
   assert.equal(button.hidden, true);
   button.click();
   assert.equal(page.appLaunches.length, 2);
+});
+
+test('import includes attachment-only conversation messages and excludes activity and external image previews', () => {
+  const page = browser(), socket = page.join(), ui = page.elements;
+  const ref = { id: '7'.repeat(64), name: '合成附件.pdf', kind: 'pdf' };
+  let revision = 0;
+  const show = (items, capabilities = []) => socket.receive({ type: 'data', payload: {
+    type: 'snapshot', status: 'idle', revision: ++revision, title: '合成附件会话', items, capabilities,
+  } });
+  const button = ui['import-to-codex'];
+  show([{ id: 'a', role: 'activity', text: '工具结果', files: [ref] }], ['activity-details', 'file-original']);
+  assert.equal(button.disabled, true);
+  const image = { id: '8'.repeat(64), name: '合成图片.png' };
+  show([{ id: 'a', role: 'assistant', text: '', images: [{ ...image, url: 'https://example.invalid/image' }] }]);
+  assert.equal(button.disabled, true);
+  show([{ id: 'a', role: 'assistant', text: '', images: [image] }]);
+  assert.equal(button.disabled, false);
+  for (const capabilities of [[], ['file-original']]) {
+    show([{ id: 'u', role: 'user', text: '', files: [ref] }], capabilities);
+    assert.equal(button.disabled, false);
+    button.click();
+    assert.equal(ui['codex-import-dialog'].open, true);
+    assert.match(ui['codex-import-scope'].textContent, /附件/);
+    ui['close-codex-import'].click();
+  }
+  assert.equal(page.appLaunches.length, 0);
+  assert.equal(socket.sent.some(message => message.type === 'import-offer'), false);
 });
 
 function offerInviteRecovery(page, reason = 'expired') {

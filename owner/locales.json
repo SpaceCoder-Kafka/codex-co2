@@ -2,7 +2,7 @@
   "zh-CN": {
     "导入到我的 Codex": "导入到我的 Codex",
     "导入": "导入",
-    "将来自 {origin} 的对话保存为本机 Codex 的新会话，并打开它。": "将来自 {origin} 的对话保存为本机 Codex 的新会话，并打开它。",
+    "将来自 {origin} 的提问和回复导入新会话。Co² 会将可下载的附件保存到本机，并在 Codex 中打开会话。": "将来自 {origin} 的提问和回复导入新会话。Co² 会将可下载的附件保存到本机，并在 Codex 中打开会话。",
     "请先完成当前导入。": "请先完成当前导入。",
     "正在导入会话…": "正在导入会话…",
     "无法读取会话导入链接。": "无法读取会话导入链接。",
@@ -493,7 +493,7 @@
   "zh-TW": {
     "导入到我的 Codex": "匯入到我的 Codex",
     "导入": "匯入",
-    "将来自 {origin} 的对话保存为本机 Codex 的新会话，并打开它。": "將來自 {origin} 的對話儲存為本機 Codex 的新對話，並開啟它。",
+    "将来自 {origin} 的提问和回复导入新会话。Co² 会将可下载的附件保存到本机，并在 Codex 中打开会话。": "將來自 {origin} 的提問和回覆匯入新對話。Co² 會將可下載的附件儲存到本機，並在 Codex 中開啟對話。",
     "请先完成当前导入。": "請先完成目前的匯入作業。",
     "正在导入会话…": "正在匯入對話…",
     "无法读取会话导入链接。": "無法讀取對話匯入連結。",
@@ -984,7 +984,7 @@
   "en": {
     "导入到我的 Codex": "Import into my Codex",
     "导入": "Import",
-    "将来自 {origin} 的对话保存为本机 Codex 的新会话，并打开它。": "Save the conversation from {origin} as a new chat in your local Codex and open it.",
+    "将来自 {origin} 的提问和回复导入新会话。Co² 会将可下载的附件保存到本机，并在 Codex 中打开会话。": "Import the messages from {origin} into a new chat. Co² will save the available attachments to this computer and open the chat in Codex.",
     "请先完成当前导入。": "An import is already in progress.",
     "正在导入会话…": "Importing chat…",
     "无法读取会话导入链接。": "Could not read the chat import link.",

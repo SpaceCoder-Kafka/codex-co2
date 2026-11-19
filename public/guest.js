@@ -56,7 +56,7 @@ let recoveryRecord = null;
 let displayName = '';
 let lastRevision = null;
 let receivedSnapshot = false;
-let hasImportableText = false, truncatedImport = false, activeImportTicket = null;
+let hasImportableContent = false, truncatedImport = false, activeImportTicket = null;
 let policyKnown = false;
 let requireApproval = true; // Until the host reports its policy (compatible with older hosts).
 let assistantTexts = new Map();
@@ -257,10 +257,10 @@ function canPropose() {
 
 function updateControls() {
   refreshCollaboration();
-  if (!canPropose()) hasImportableText = false;
+  if (!canPropose()) hasImportableContent = false;
   ui['import-to-codex'].hidden = !admitted;
-  ui['import-to-codex'].disabled = !hasImportableText;
-  if (!hasImportableText && ui['codex-import-dialog'].open) ui['codex-import-dialog'].close();
+  ui['import-to-codex'].disabled = !hasImportableContent;
+  if (!hasImportableContent && ui['codex-import-dialog'].open) ui['codex-import-dialog'].close();
   ui['proposal-text'].disabled = !canPropose();
   ui['send-button'].disabled = !canPropose() || (!ui['proposal-text'].value.trim() && !selectedUploads.length)
     || selectedUploads.some(a => a.status !== 'ready');
@@ -770,8 +770,10 @@ function renderSnapshot(payload) {
   emptyState('已加入，等待第一条消息', '分享者的对话内容会同步到这里。你也可以先提交一条建议。');
   ui['thread-title'].textContent = typeof payload.title === 'string' && payload.title.trim()
     ? payload.title.slice(0, 240) : '共享会话';
-  hasImportableText = allItems.some(item => (item.role === 'user' || item.role === 'assistant') && item.text.trim());
-  truncatedImport = payload.historyTruncated === true;
+  const hasRoomAttachment = ref => ref && typeof ref.name === 'string' && /^[a-f0-9]{64}$/.test(ref.id) && ref.url === undefined;
+  hasImportableContent = items.some(item => item.role !== 'activity' && (item.text.trim()
+    || item.files?.some(hasRoomAttachment) || item.images?.some(hasRoomAttachment)));
+  truncatedImport = payload.historyTruncated === true || allItems.length > items.length;
   ui['history-note'].hidden = allItems.length <= 500 && payload.historyTruncated !== true;
   ui['history-note'].textContent = allItems.length > 500
     ? '当前展示最近 500 条文字消息，较早内容未包含在此视图中。'
@@ -1142,14 +1144,17 @@ ui['collaboration-toggle'].addEventListener('click', () => {
   if (ui['collaboration-panel'].hidden) { refreshCollaboration(); showCollaboration(); }
   else closeCollaboration();
 });
-function launchCodexImport() {
-  if (!canPropose() || !hasImportableText) return;
-  const dialog = ui['codex-import-dialog'];
-  if (!dialog.open) dialog.showModal();
+ui['import-to-codex'].addEventListener('click', () => {
+  if (!canPropose() || !hasImportableContent) return;
   ui['retry-codex-import'].hidden = false;
+  ui['codex-import-status'].textContent = '';
   ui['codex-import-scope'].textContent = truncatedImport
-    ? '共享记录已截断，仅导入当前可用的对话文字。'
-    : '导入用户和助手的对话文字，在你自己的 Codex 中继续。';
+    ? '共享记录已截断，仅导入当前共享范围内的提问、回复和附件。'
+    : '导入当前共享的提问、回复和附件，在你自己的 Codex 中继续。';
+  ui['codex-import-dialog'].showModal();
+});
+ui['retry-codex-import'].addEventListener('click', () => {
+  if (!ui['codex-import-dialog'].open || !canPropose() || !hasImportableContent) return;
   const ticket = Array.from(crypto.getRandomValues(new Uint8Array(32)), byte => byte.toString(16).padStart(2, '0')).join('');
   activeImportTicket = ticket;
   if (!send({ type: 'import-offer', ticket })) {
@@ -1166,11 +1171,9 @@ function launchCodexImport() {
   try {
     window.location.assign(target.href);
   } catch {
-    ui['codex-import-status'].textContent = '浏览器未能打开 Co²。请确认本机已安装，再点击“重新打开 Co²”。';
+    ui['codex-import-status'].textContent = '浏览器未能打开 Co²。请先下载并安装，再点击「已安装，打开 Co²」。';
   }
-}
-ui['import-to-codex'].addEventListener('click', launchCodexImport);
-ui['retry-codex-import'].addEventListener('click', launchCodexImport);
+});
 ui['close-codex-import'].addEventListener('click', () => ui['codex-import-dialog'].close());
 ui['codex-import-dialog'].addEventListener('close', () => { activeImportTicket = null; });
 ui['collaboration-back'].addEventListener('click', () => showCollaboration());

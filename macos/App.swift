@@ -263,6 +263,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
     private func runImportHelper(_ action: String, link: String, completion: @escaping ([String: String]) -> Void) {
         guard let resources = Bundle.main.resourceURL else { completion([:]); return }
         let runtime = runtimeDir
+        let receiverLanguage = language
         let official = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.openai.codex")
         DispatchQueue.global(qos: .userInitiated).async {
             let process = Process(), input = Pipe(), output = Pipe()
@@ -270,7 +271,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
             process.arguments = [resources.appendingPathComponent("service/bin/receiver-import.mjs").path, action, runtime]
             process.currentDirectoryURL = resources
             var environment = BackgroundConfiguration.environment(resources: resources)
-            if action == "import" { environment["CO2_RECEIVER_DESKTOP_APP"] = official?.path }
+            if action == "import" {
+                environment["CO2_RECEIVER_DESKTOP_APP"] = official?.path
+                environment["CO2_RECEIVER_LANGUAGE"] = receiverLanguage
+            }
             process.environment = environment
             process.standardInput = input; process.standardOutput = output; process.standardError = FileHandle.nullDevice
             var reply: [String: String] = [:]
@@ -300,7 +304,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
                 self.importingLink = false; self.message(reply["error"] ?? "无法读取会话导入链接。"); return
             }
             let alert = NSAlert(); alert.messageText = self.localized("导入到我的 Codex")
-            alert.informativeText = self.localized("将来自 {origin} 的对话保存为本机 Codex 的新会话，并打开它。").replacingOccurrences(of: "{origin}", with: origin)
+            alert.informativeText = self.localized("将来自 {origin} 的提问和回复导入新会话。Co² 会将可下载的附件保存到本机，并在 Codex 中打开会话。").replacingOccurrences(of: "{origin}", with: origin)
             alert.addButton(withTitle: self.localized("导入")); alert.addButton(withTitle: self.localized("取消"))
             guard alert.runModal() == .alertFirstButtonReturn else { self.importingLink = false; return }
             self.setStatus("正在导入会话…")
@@ -309,14 +313,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
                 guard let value = result["threadId"], let id = UUID(uuidString: value) else {
                     self.message(result["error"] ?? "导入未完成，请检查本机 Codex 是否正在运行。"); return
                 }
+                let summary = result["attachmentSummary"] ?? ""
+                func statusWithAttachments(_ source: String) -> String {
+                    return summary.isEmpty ? source : self.localized(source) + " " + summary
+                }
                 let target = URL(string: "codex://threads/" + id.uuidString.lowercased())!
                 guard let app = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.openai.codex") else {
-                    self.message("会话已导入，无法打开 Codex。"); return
+                    self.message(statusWithAttachments("会话已导入，无法打开 Codex。")); return
                 }
                 NSWorkspace.shared.open([target], withApplicationAt: app, configuration: .init()) { _, error in
                     DispatchQueue.main.async {
-                        if error != nil { self.message("会话已导入，无法打开 Codex。") }
-                        else { self.setStatus("会话已导入，正在打开 Codex。") }
+                        if error != nil { self.message(statusWithAttachments("会话已导入，无法打开 Codex。")); return }
+                        self.setStatus(statusWithAttachments("会话已导入，正在打开 Codex。"))
+                        if !summary.isEmpty && self.notificationsAllowed {
+                            let content = UNMutableNotificationContent()
+                            content.title = self.localized("会话已导入，正在打开 Codex。")
+                            content.body = summary
+                            UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: id.uuidString, content: content, trigger: nil))
+                        }
                     }
                 }
             }

@@ -4,13 +4,15 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { EventEmitter, once } from 'node:events';
-import { createHash, randomUUID } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
 import WebSocket from 'ws';
 import { ScopedThread } from '../lib/scoped-thread.mjs';
 import { DesktopRpcClient } from '../lib/desktop-ipc.mjs';
 import { SharedRoom, secret } from '../lib/host.mjs';
 import { startRelay } from '../lib/relay.mjs';
+import { claimReceiverImport, importWindowChunks } from '../lib/import-handoff.mjs';
+import { IMAGE_CHUNK_BYTES } from '../lib/thread-images.mjs';
 
 // Synthetic protocol boundaries only. No default Codex profile, real index,
 // account credentials, native conversation or external model is involved.
@@ -185,6 +187,53 @@ test('real admitted relay sends only current room activity details in bounded ch
   other.send({ type: 'file-request', fileId, representation: 'original' });
   await until(() => other.messages.find(m => m.payload?.type === 'file-unavailable' && m.payload.fileId === fileId));
   assert.equal(other.messages.some(m => m.payload?.type === 'file-chunk'), false);
+});
+
+test('native import waits for an active browser image, reads a multi-window original, and stops on disconnect', async t => {
+  const h = await relayFixture(t);
+  const file = path.join(h.dir, 'example.pdf'), original = Buffer.alloc(IMAGE_CHUNK_BYTES * (importWindowChunks + 1), 0xe9);
+  Buffer.from('%PDF-1.7\n').copy(original);
+  await fs.writeFile(file, original);
+  const photo = path.join(h.dir, 'example.png');
+  await fs.writeFile(photo, Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAEUlEQVR4nGP4z8DwH4QZYAwAR8oH+WdZbrcAAAAASUVORK5CYII=', 'base64'));
+  const { room } = await h.makeRoom(seed([
+    { id: 'user', type: 'userMessage', content: [{ type: 'localImage', path: photo }] },
+    { id: 'answer', type: 'agentMessage', text: `[原件](${file})` },
+  ]));
+  const peer = await h.join(room);
+  async function claim() {
+    const ticket = randomBytes(32).toString('hex');
+    peer.send({ type: 'import-offer', ticket });
+    peer.messages.length = 0;
+    peer.send({ type: 'ping' }); await until(() => peer.messages.some(m => m.type === 'pong'));
+    return claimReceiverImport('codex-co2://import?' + new URLSearchParams({ origin: h.relay.url, ticket }));
+  }
+  const readImage = room.thread.readImage.bind(room.thread);
+  let releasePreview;
+  room.thread.readImage = async id => {
+    await new Promise(resolve => { releasePreview = resolve; });
+    return readImage(id);
+  };
+  peer.send({ type: 'image-request', imageId: peer.snapshot.items[0].images[0].id });
+  await until(() => releasePreview);
+  let transfer = await claim();
+  const waiting = transfer.fetchAsset(transfer.snapshot.messages[1].attachments[0]);
+  await until(() => room.previewWaiters.size === 1);
+  assert.equal(room.imageTransfers.size, 1);
+  releasePreview();
+  assert.deepEqual(await waiting, original);
+  assert.equal(peer.messages.some(m => m.payload?.type === 'image-chunk'), true);
+  assert.equal(peer.messages.some(m => m.payload?.type === 'file-chunk'), false);
+
+  transfer = await claim();
+  const deliver = room.deliver.bind(room);
+  room.deliver = (payload, ...rest) => {
+    const sent = deliver(payload, ...rest);
+    if (payload.type === 'file-chunk' && payload.index === 0) peer.ws.terminate();
+    return sent;
+  };
+  await assert.rejects(transfer.fetchAsset(transfer.snapshot.messages[1].attachments[0]));
+  await until(() => room.imageTransfers.size === 0);
 });
 
 test('relay rejects unknown activity/file capabilities, extra fields and unsupported representations before host dispatch', async t => {

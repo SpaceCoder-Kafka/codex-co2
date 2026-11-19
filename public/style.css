@@ -24,8 +24,9 @@ button:disabled { cursor: not-allowed; opacity: .4; }
 .codex-import-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .codex-import-heading h2 { margin: 0; }
 .codex-import-dialog p { font-size: 13px; line-height: 1.6; }
-.codex-import-dialog .codex-install { margin: 16px 0 0; border-top: 1px solid var(--border); padding-top: 12px; }
-.codex-install a { color: inherit; text-underline-offset: 3px; }
+.codex-import-actions { display: grid; gap: 8px; margin-top: 16px; }
+.codex-import-actions .button { display: grid; place-items: center; min-height: 44px; text-decoration: none; }
+#codex-import-status:empty { margin: 0; }
 .heading { flex: 1; min-width: 0; display: flex; align-items: center; gap: 16px; }
 h1 { font-size: 16px; line-height: 1.5; font-weight: 600; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 h2 { font-size: 18px; font-weight: 600; margin: 0 0 8px; }
