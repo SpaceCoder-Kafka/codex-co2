@@ -337,7 +337,6 @@
     "当前：仅内网可访问": "当前：仅内网可访问",
     "当前：公网分享": "当前：公网分享",
     "正在读取访问范围…": "正在读取访问范围…",
-    "同事通过内网 IP 加入，不创建公网入口。HTTP 未加密，访客系统通知不可用。": "同事通过内网 IP 加入，不创建公网入口。HTTP 未加密，访客系统通知不可用。",
     "使用现有公网分享方式，同事可通过公网邀请加入。": "使用现有公网分享方式，同事可通过公网邀请加入。",
     "访问范围由启动参数管理，请退出后调整启动参数。": "访问范围由启动参数管理，请退出后调整启动参数。",
     "网络操作进行中，请稍候…": "网络操作进行中，请稍候…",
@@ -471,9 +470,14 @@
     "开启后，已获准的访客可用原浏览器和有效的内网邀请返回。关闭会撤销已保存的恢复资格。": "开启后，已获准的访客可用原浏览器和有效的内网邀请返回。关闭会撤销已保存的恢复资格。",
     "恢复记录已关闭，退出应用后停止共享。": "恢复记录已关闭，退出应用后停止共享。",
     "在新地址继续共享": "在新地址继续共享",
-    "换址后请发送新邀请。原批准仍有效，访客可导入身份恢复文件。": "换址后请发送新邀请。原批准仍有效，访客可导入身份恢复文件。",
     "内网地址已更新，请复制新邀请发给访客。": "内网地址已更新，请复制新邀请发给访客。",
-    "共享已暂停，正在等待内网地址和 Desktop 可用。": "共享已暂停，正在等待内网地址和 Desktop 可用。"
+    "共享已暂停，正在等待内网地址和 Desktop 可用。": "共享已暂停，正在等待内网地址和 Desktop 可用。",
+    "访客通过内网主机名或 IP 加入。HTTP 未加密，访客系统通知不可用。": "访客通过内网主机名或 IP 加入。HTTP 未加密，访客系统通知不可用。",
+    "换址后请发送新邀请。同一浏览器用原主机名打开新邀请，会自动核验已保存的身份。": "换址后请发送新邀请。同一浏览器用原主机名打开新邀请，会自动核验已保存的身份。",
+    "复制 IP 邀请": "复制 IP 邀请",
+    "访客打不开主机名时使用 IP 邀请": "访客打不开主机名时使用 IP 邀请",
+    "数字 IP 改变后，访客需导入原身份或重新申请。": "数字 IP 改变后，访客需导入原身份或重新申请。",
+    "原浏览器通过同一主机名回访时会自动核验身份。只用过 IP 邀请的访客，首次需恢复身份或申请加入。": "原浏览器通过同一主机名回访时会自动核验身份。只用过 IP 邀请的访客，首次需恢复身份或申请加入。"
   },
   "zh-TW": {
     "应用导航": "應用程式導覽",
@@ -813,7 +817,6 @@
     "当前：仅内网可访问": "目前：僅內網可存取",
     "当前：公网分享": "目前：公網分享",
     "正在读取访问范围…": "正在讀取存取範圍…",
-    "同事通过内网 IP 加入，不创建公网入口。HTTP 未加密，访客系统通知不可用。": "同事透過內網 IP 加入，不建立公網入口。HTTP 未加密，訪客系統通知無法使用。",
     "使用现有公网分享方式，同事可通过公网邀请加入。": "使用現有公網分享方式，同事可透過公網邀請加入。",
     "访问范围由启动参数管理，请退出后调整启动参数。": "存取範圍由啟動參數管理，請結束後調整啟動參數。",
     "网络操作进行中，请稍候…": "網路操作進行中，請稍候…",
@@ -947,9 +950,14 @@
     "开启后，已获准的访客可用原浏览器和有效的内网邀请返回。关闭会撤销已保存的恢复资格。": "開啟後，已獲准的訪客可用原瀏覽器和有效的內網邀請返回。關閉會撤銷已儲存的恢復資格。",
     "恢复记录已关闭，退出应用后停止共享。": "恢復記錄已關閉，退出應用程式後停止共享。",
     "在新地址继续共享": "在新位址繼續分享",
-    "换址后请发送新邀请。原批准仍有效，访客可导入身份恢复文件。": "換址後請傳送新的邀請。原核准仍有效，訪客可匯入身分復原檔案。",
     "内网地址已更新，请复制新邀请发给访客。": "內網位址已更新，請複製新邀請並傳給訪客。",
-    "共享已暂停，正在等待内网地址和 Desktop 可用。": "分享已暫停，正在等待內網位址和 Desktop 可用。"
+    "共享已暂停，正在等待内网地址和 Desktop 可用。": "分享已暫停，正在等待內網位址和 Desktop 可用。",
+    "访客通过内网主机名或 IP 加入。HTTP 未加密，访客系统通知不可用。": "訪客透過內網主機名稱或 IP 加入。HTTP 未加密，訪客系統通知無法使用。",
+    "换址后请发送新邀请。同一浏览器用原主机名打开新邀请，会自动核验已保存的身份。": "換址後請傳送新邀請。同一瀏覽器以原主機名稱開啟新邀請，會自動核驗已儲存的身分。",
+    "复制 IP 邀请": "複製 IP 邀請",
+    "访客打不开主机名时使用 IP 邀请": "訪客無法開啟主機名稱時使用 IP 邀請",
+    "数字 IP 改变后，访客需导入原身份或重新申请。": "數字 IP 改變後，訪客需匯入原身分或重新申請。",
+    "原浏览器通过同一主机名回访时会自动核验身份。只用过 IP 邀请的访客，首次需恢复身份或申请加入。": "原瀏覽器透過同一主機名稱回訪時會自動核驗身分。只用過 IP 邀請的訪客，首次需復原身分或申請加入。"
   },
   "en": {
     "应用导航": "App navigation",
@@ -1289,7 +1297,6 @@
     "当前：仅内网可访问": "Current: intranet access only",
     "当前：公网分享": "Current: public sharing",
     "正在读取访问范围…": "Loading access scope…",
-    "同事通过内网 IP 加入，不创建公网入口。HTTP 未加密，访客系统通知不可用。": "Teammates join through an intranet IP, without a public entry point. HTTP is unencrypted, and guest system notifications are unavailable.",
     "使用现有公网分享方式，同事可通过公网邀请加入。": "Use the existing public sharing method so teammates can join with a public invitation.",
     "访问范围由启动参数管理，请退出后调整启动参数。": "Access scope is managed by startup options. Quit and adjust those options to change it.",
     "网络操作进行中，请稍候…": "A network operation is in progress. Please wait…",
@@ -1423,8 +1430,13 @@
     "开启后，已获准的访客可用原浏览器和有效的内网邀请返回。关闭会撤销已保存的恢复资格。": "Approved visitors can return using their original browser and a valid LAN invitation. Turning this off revokes saved recovery eligibility.",
     "恢复记录已关闭，退出应用后停止共享。": "Recovery records are off. Quitting the app stops sharing.",
     "在新地址继续共享": "Continue sharing at the new address",
-    "换址后请发送新邀请。原批准仍有效，访客可导入身份恢复文件。": "Send the new invitation after moving. Previously approved guests can import their identity backup while their access remains valid.",
     "内网地址已更新，请复制新邀请发给访客。": "The intranet address has changed. Copy the new invitation and send it to your guests.",
-    "共享已暂停，正在等待内网地址和 Desktop 可用。": "Sharing is paused until the intranet address and Desktop are available."
+    "共享已暂停，正在等待内网地址和 Desktop 可用。": "Sharing is paused until the intranet address and Desktop are available.",
+    "访客通过内网主机名或 IP 加入。HTTP 未加密，访客系统通知不可用。": "Guests join through an intranet hostname or IP. HTTP is unencrypted and guest system notifications are unavailable.",
+    "换址后请发送新邀请。同一浏览器用原主机名打开新邀请，会自动核验已保存的身份。": "Send a new invitation after the address changes. Opening it with the same hostname and browser automatically checks the saved identity.",
+    "复制 IP 邀请": "Copy IP invitation",
+    "访客打不开主机名时使用 IP 邀请": "Use an IP invitation if the hostname cannot be reached",
+    "数字 IP 改变后，访客需导入原身份或重新申请。": "If the numeric IP changes, guests need to import their identity or request access again.",
+    "原浏览器通过同一主机名回访时会自动核验身份。只用过 IP 邀请的访客，首次需恢复身份或申请加入。": "The same browser automatically verifies your identity when you return through the same hostname. Guests who previously used only the IP must restore their identity or request access the first time."
   }
 }

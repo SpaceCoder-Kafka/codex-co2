@@ -41,7 +41,8 @@ internal static class Policy
         var authority = raw.Split(new[] { "://" }, StringSplitOptions.None).ElementAtOrDefault(1)?.Split('/')[0].Split('#')[0];
         if (url.Scheme == "http")
         {
-            if (!PrivateIPv4(url.Host) || authority != url.Host + ":" + url.Port) return false;
+            var localName = url.Host != "localhost.local" && Regex.IsMatch(url.Host, @"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.local$");
+            if ((!PrivateIPv4(url.Host) && !localName) || authority != url.Host + ":" + url.Port) return false;
         }
         else if (url.Scheme != "https") return false;
         var fields = new Dictionary<string, string>();

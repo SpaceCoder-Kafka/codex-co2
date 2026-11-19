@@ -30,23 +30,24 @@ async function peer(t, origin, route, lan = false) {
   t.after(() => ws.terminate()); await once(ws, 'open');
   return { ws, messages, send: value => ws.send(JSON.stringify(value)) };
 }
-async function fixture(t) {
+async function fixture(t, { hostname = null } = {}) {
   const root = await fs.mkdtemp('/tmp/co2-lan-restart-'), runtimeDir = path.join(root, '.coop');
   const services = [], daemons = [], calls = [];
   let available = true, desktop = true, occupied = false, healthy = true, currentAddress = address;
   const dependencies = {
+    resolveLanHostname: async () => hostname,
     lanInterfaces: () => available ? [{ name: 'synthetic', address: currentAddress }] : [],
     selectLanAddress: selected => {
       if (!available || (selected && selected !== currentAddress)) throw new Error('所选内网地址已不可用，请重新选择当前网络地址。');
       return currentAddress;
     },
     startTunnel: () => { throw new Error('LAN must never start a public tunnel'); },
-    checkHealth: (origin, { direct, signal }) => {
+    checkHealth: (origin, { direct, signal, guestHost }) => {
       assert.equal(direct, true);
       const target = new URL(origin);
       if (!healthy) return Promise.resolve({ ok: false });
       return new Promise((resolve, reject) => {
-        http.get({ host: '127.0.0.1', port: target.port, path: '/health', headers: { Host: target.host }, agent: false, signal }, response => {
+        http.get({ host: '127.0.0.1', port: target.port, path: '/health', headers: { Host: guestHost ?? target.host }, agent: false, signal }, response => {
           let body = '';
           response.on('data', chunk => { body += chunk; });
           response.on('end', () => resolve({ ok: response.statusCode === 200 && body === '{"ok":true}' }));
@@ -397,10 +398,16 @@ test('failed erasure of a waiting checkpoint blocks ON until a new disabled star
 });
 
 for (const cold of [false, true]) test(`explicit DHCP address migration preserves scoped grants and the deadline (${cold ? 'cold start' : 'memory only'})`, async t => {
-  const f = await fixture(t);
+  const hostname = cold ? 'synthetic-host.local' : null;
+  const f = await fixture(t, { hostname });
   const first = await f.start({ persistentLan: cold });
   const { room, local } = await share(f, first, '1h');
-  const sessionId = secret(), guest = await peer(t, first.inviteOrigin, '/guest', true);
+  const advertised = name => local.messages.filter(m => m.type === 'state').flatMap(m => m.rooms)
+    .find(r => r.roomId === room.roomId && r.inviteUrl && new URL(r.inviteUrl).hostname === name);
+  const before = await until(() => advertised(hostname ?? address));
+  const browserOrigin = new URL(before.inviteUrl).origin;
+  if (hostname) assert.equal(before.ipInviteUrl, room.view().inviteUrl);
+  const sessionId = secret(), guest = await peer(t, browserOrigin, '/guest', true);
   const original = { roomId: room.roomId, inviteToken: room.inviteToken };
   guest.send({ type: 'join', ...original, sessionId, name: 'Migrating visitor' });
   const { guestId } = await until(() => guest.messages.find(m => m.type === 'pending'));
@@ -426,8 +433,16 @@ for (const cold of [false, true]) test(`explicit DHCP address migration preserve
   assert.notEqual(target.inviteToken, room.inviteToken);
   assert.equal(target.admissionScope, proof.payload.scopeId);
   assert.equal(target.inviteExpiresAt, room.inviteExpiresAt);
+  const offered = await until(() => manager.messages.filter(m => m.type === 'state').flatMap(m => m.rooms)
+    .find(r => r.roomId === target.roomId && r.inviteUrl));
+  const afterOrigin = new URL(offered.inviteUrl).origin;
+  if (hostname) {
+    assert.equal(afterOrigin, browserOrigin);
+    assert.equal(offered.ipInviteUrl, target.view().inviteUrl);
+    assert.notEqual(offered.ipInviteUrl, before.ipInviteUrl);
+  } else assert.equal(afterOrigin, service.inviteOrigin);
   const join = async (roomId, inviteToken, member) => {
-    const client = await peer(t, service.inviteOrigin, '/guest', true);
+    const client = await peer(t, afterOrigin, '/guest', true);
     client.send({ type: 'join', roomId, inviteToken, sessionId: member, name: 'New tab' });
     return client;
   };

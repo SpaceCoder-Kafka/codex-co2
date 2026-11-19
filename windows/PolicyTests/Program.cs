@@ -4,11 +4,15 @@ using CodexCo2;
 void Check(bool value) { if (!value) throw new Exception("Synthetic Windows policy test failed"); }
 var token = new string('A', 43);
 var fragment = "#room=synthetic-room&invite=" + token;
-foreach (var host in new[] { "https://synthetic.example/", "http://10.1.2.3:8080/", "http://172.16.2.3:8080/", "http://192.168.1.2:8090/" })
+foreach (var host in new[] { "https://synthetic.example/", "http://10.1.2.3:8080/", "http://172.16.2.3:8080/", "http://192.168.1.2:8090/",
+    "http://synthetic-mac.local:35001/", "http://a.local:8080/" })
     Check(Policy.Invitation(host + fragment));
 foreach (var raw in new[] {
     "http://127.0.0.1:8080/", "http://203.0.113.1:8080/", "http://100.64.0.1:8080/", "http://172.32.1.2:8080/",
     "http://192.168.001.2:8080/", "http://%31%30.1.2.3:8080/", "http://10.1.2.3/", "http://internal.example:8080/",
+    "http://localhost.local:8080/", "http://synthetic.local/", "http://synthetic.local:65536/", "http://sub.synthetic.local:8080/", "http://synthetic.local.example:8080/",
+    "http://synthetic.local.:8080/", "http://-synthetic.local:8080/", "http://synthetic-.local:8080/", "http://syn_thetic.local:8080/",
+    "http://%73ynthetic.local:8080/", "http://" + new string('x', 64) + ".local:8080/",
     "https://synthetic.example/path/", "https://synthetic.example/?unexpected=1", "file:///tmp/" }) Check(!Policy.Invitation(raw + fragment));
 Check(!Policy.Invitation("https://synthetic.example/" + fragment + "&invite=" + token));
 Check(!Policy.Invitation("https://synthetic.example/" + fragment + "&scope="));

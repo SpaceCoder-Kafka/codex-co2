@@ -964,7 +964,7 @@ function handleMessage(message) {
         ui['recovery-input'].value = '';
         ui['identity-notice'].hidden = false;
         ui['identity-notice'].textContent = persistent
-          ? `${payload.resumed ? '已自动恢复身份。' : '已在此浏览器自动保存身份。'}换浏览器或域名前，请下载一份恢复文件。`
+          ? `${payload.resumed ? '已自动恢复身份。' : '已在此浏览器自动保存身份。'}同一网站的新邀请会自动使用这份身份。`
           : '浏览器未能长期保存身份。请下载恢复文件，下次打开邀请时选择该文件即可恢复。';
         ui['identity-warning'].hidden = persistent;
         ui['recovery-panel'].hidden = false; ui['recovery-code'].value = visitorToken;

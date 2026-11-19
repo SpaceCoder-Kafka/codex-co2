@@ -300,13 +300,13 @@ function renderNetwork() {
   $('#save-network').textContent = t(networkSaving ? '正在保存…' : moving ? '在新地址继续共享' : '保存访问范围');
   $('#network-current').textContent = t(!network ? '正在读取访问范围…' : network.intranetOnly ? '当前：仅内网可访问' : '当前：公网分享');
   $('#network-hint').textContent = t(networkDraft.intranetOnly
-    ? '同事通过内网 IP 加入，不创建公网入口。HTTP 未加密，访客系统通知不可用。'
+    ? '访客通过内网主机名或 IP 加入。HTTP 未加密，访客系统通知不可用。'
     : '使用现有公网分享方式，同事可通过公网邀请加入。');
   const note = !network ? '正在读取访问范围…'
     : !network.configurable ? '访问范围由启动参数管理，请退出后调整启动参数。'
     : networkWorkBusy() || connectionAction || lastState.connection?.state === 'connecting' ? '网络操作进行中，请稍候…'
     : moving || (network.intranetOnly && network.lanAddress && !candidates.has(network.lanAddress))
-      ? '换址后请发送新邀请。原批准仍有效，访客可导入身份恢复文件。'
+      ? '换址后请发送新邀请。同一浏览器用原主机名打开新邀请，会自动核验已保存的身份。'
     : busyThreadId || lastState.rooms.some(room => room.state !== 'revoked') ? '请先结束所有共享，再更改访问范围。'
     : networkDirty ? '尚未保存，当前邀请仍沿用已保存的访问范围。'
     : '保存后用于新邀请并保留。模型与工具的网络访问沿用原会话。';
@@ -482,7 +482,11 @@ let copySequence = 0, pendingInviteCopy = null;
 const currentInviteInput = url => [...invitationInputs.values()].find(input => input.value === url);
 function manualInviteCopy(url) {
   const current = currentInviteInput(url);
-  if (current) { current.focus(); current.select(); notice('请手动复制链接'); }
+  if (current) {
+    const details = current.closest?.('details');
+    if (details) details.open = true;
+    current.focus(); current.select(); notice('请手动复制链接');
+  }
 }
 window.co2InviteCopyResult = result => {
   if (!result || typeof result.requestId !== 'string' || typeof result.ok !== 'boolean'
@@ -492,6 +496,22 @@ window.co2InviteCopyResult = result => {
   if (result.ok) notice('邀请链接已复制');
   else manualInviteCopy(pending.url);
 };
+function inviteInput(id, url) {
+  const input = el('input', null, 'link');
+  input.value = url; input.readOnly = true; input.setAttribute('aria-label', t('访客邀请链接'));
+  invitationInputs.set(id, input);
+  return input;
+}
+function currentLanInvite(room, state) {
+  const network = state.network;
+  if (room.state !== 'online' || state.connection?.state !== 'local' || !network?.intranetOnly
+    || !network.interfaces?.some(item => item.address === network.lanAddress)) return false;
+  try {
+    const url = new URL(room.inviteUrl);
+    if (url.protocol !== 'http:' || url.username || url.password || !url.port || url.pathname !== '/' || url.search || !url.hash) return false;
+    return Object.hasOwn(network, 'guestOrigin') ? url.origin === network.guestOrigin : url.hostname === network.lanAddress;
+  } catch { return false; }
+}
 function copyInvite(url) {
   if (!currentInviteInput(url)) return;
   if (pendingInviteCopy) { clearTimeout(pendingInviteCopy.timer); pendingInviteCopy = null; }
@@ -818,9 +838,7 @@ function renderRooms(m) {
     const mark = el('span', '↗', 'session-icon'); mark.setAttribute('aria-hidden', 'true');
     title.append(el('h2', room.title), el('p', t('分享者：{name}', { name: room.ownerName || t('分享者') }), 'muted'));
     identity.append(mark, title); heading.append(identity);
-    const lanReady = room.intranetOnly !== true || (room.state === 'online' && m.connection?.state === 'local'
-      && m.network?.intranetOnly && m.network.interfaces?.some(item => item.address === m.network.lanAddress)
-      && room.inviteUrl?.startsWith(`http://${m.network.lanAddress}:`));
+    const lanReady = room.intranetOnly !== true || currentLanInvite(room, m);
     if (room.state === 'revoked') {
       const actions = el('div', null, 'row');
       actions.append(badge(room.state), button('我知道了', () => send({ type: 'dismiss-room', roomId: room.roomId })));
@@ -830,9 +848,7 @@ function renderRooms(m) {
     if (room.state !== 'revoked') {
       const invite = el('div', null, 'invite'), row = el('div', null, 'invite-row');
       if (lanReady) {
-        const link = el('input', null, 'link'); link.value = room.inviteUrl; link.readOnly = true; link.setAttribute('aria-label', t('访客邀请链接'));
-        invitationInputs.set(room.roomId, link);
-        row.append(link, button('复制邀请', () => copyInvite(room.inviteUrl)));
+        row.append(inviteInput(room.roomId, room.inviteUrl), button('复制邀请', () => copyInvite(room.inviteUrl)));
       } else {
         invite.append(el('p', t('共享已暂停，正在等待内网地址和 Desktop 可用。'), 'muted'));
         row.append(button('选择内网地址', () => { selectTab('settings'); $('#lan-address').focus(); }));
@@ -852,6 +868,20 @@ function renderRooms(m) {
       policy.disabled = room.state !== 'online';
       policyRow.append(policyTitle, policy); $('#room-policies').append(policyRow);
       invite.append(row);
+      if (room.intranetOnly === true && lanReady && room.ipInviteUrl) {
+        const numeric = new URL(room.inviteUrl);
+        numeric.hostname = m.network.lanAddress;
+        if (numeric.href === room.ipInviteUrl && numeric.href !== room.inviteUrl) {
+          invite.append(el('p', t('原浏览器通过同一主机名回访时会自动核验身份。只用过 IP 邀请的访客，首次需恢复身份或申请加入。'), 'muted'));
+          const alternate = el('details'), ipRow = el('div', null, 'invite-row');
+          ipRow.append(inviteInput(room.roomId + ':ip', room.ipInviteUrl), button('复制 IP 邀请', () => copyInvite(room.ipInviteUrl)));
+          alternate.append(el('summary', t('访客打不开主机名时使用 IP 邀请')), ipRow,
+            el('p', t('数字 IP 改变后，访客需导入原身份或重新申请。'), 'muted'));
+          invite.append(alternate);
+        }
+      } else if (room.intranetOnly === true && lanReady && m.network.guestOrigin) {
+        invite.append(el('p', t('数字 IP 改变后，访客需导入原身份或重新申请。'), 'muted'));
+      }
       if (room.intranetOnly === true) {
         invite.append(el('p', room.inviteExpiresAt === null
           ? t('不设固定到期时间 · 包含本会话中已展示的文本记录')

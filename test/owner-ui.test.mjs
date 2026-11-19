@@ -77,7 +77,7 @@ function browser({ storage = new Map(), nativeLanguage, nativeCopy = 'success', 
   if (nativeBackground) window.webkit.messageHandlers.backgroundService = { postMessage: value => background.push(JSON.parse(JSON.stringify(value))) };
   vm.runInNewContext(languageScript + '\n' + script, {
     document,
-    WebSocket: Socket, URLSearchParams, location: { hash: '#owner=synthetic-only', pathname: '/' },
+    WebSocket: Socket, URL, URLSearchParams, location: { hash: '#owner=synthetic-only', pathname: '/' },
     history: { replaceState(_state, _title, url) { redacted = url; } },
     window, navigator: browserClipboard ? { clipboard: browserClipboard } : {},
     setTimeout: (fn, delay) => {
@@ -308,6 +308,23 @@ test('LAN invites are offered only for an online room on the current reachable g
   page.receive(lanState({ rooms: [shared] }));
   page.click('复制邀请');
   assert.equal(page.copyRequests.length, 2);
+});
+
+test('LAN invitations copy the current stable hostname by default and offer the exact numeric alternative', () => {
+  const page = browser(), guestOrigin = 'http://co2-lab.local:47830', fragment = '/#room=synthetic';
+  const shared = { ...room(), intranetOnly: true, inviteUrl: guestOrigin + fragment,
+    ipInviteUrl: 'http://192.168.40.20:47830' + fragment };
+  const networkState = network({ intranetOnly: true, lanAddress: '192.168.40.20', guestOrigin });
+  page.receive(lanState({ rooms: [shared], network: networkState }));
+  page.receive({ type: 'share-result', roomId: shared.roomId, restored: true });
+  page.click('复制 IP 邀请'); page.click('复制邀请');
+  assert.deepEqual(page.copies, [shared.inviteUrl, shared.ipInviteUrl, shared.inviteUrl]);
+  page.receive(lanState({ rooms: [{ ...shared, ipInviteUrl: 'http://192.168.40.21:47830' + fragment }], network: networkState }));
+  assert.ok(!page.nodes().some(node => node.textContent === '复制 IP 邀请'));
+  for (const origin of [null, 'http://other.local:47830', 'http://co2-lab.local:47831', 'http://192.168.40.20:47830']) {
+    page.receive(lanState({ rooms: [shared], network: { ...networkState, guestOrigin: origin } }));
+    assert.ok(!page.nodes().some(node => node.textContent === '复制邀请' || node.textContent === '复制 IP 邀请'));
+  }
 });
 
 test('native copy rejection selects the currently rendered invitation for manual copying', () => {

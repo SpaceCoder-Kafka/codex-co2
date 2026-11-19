@@ -22,8 +22,10 @@ async function fixture(t, { saved, interfaces = { en0: [privateInterface('192.16
     start: async () => { throw new Error('LAN tests must not start a backend'); },
     startOwner: async value => { ownerOptions = value; return owner; },
     lanInterfaces: () => lanInterfaces(interfaces), selectLanAddress: address => selectLanAddress(address, interfaces),
+    resolveLanHostname: async () => null,
     startRelay: async value => {
       const relay = { options: value, url: 'http://127.0.0.1:35000', inviteOrigin: value.lanAddress ? `http://${value.lanAddress}:35001` : 'http://127.0.0.1:35000',
+        setLanHostname: name => { relay.guestOrigin = name ? `http://${name}:35001` : relay.inviteOrigin; },
         setAllowedOrigins: origins => { relay.origins = origins; }, close: async () => { relay.closed = true; calls.push('relay-close'); } };
       relays.push(relay); calls.push('relay'); return relay;
     },
@@ -46,6 +48,31 @@ test('persisted LAN mode survives restart without public access, and host transp
   assert.equal(f.relays[0].options.lanAddress, '192.168.40.2');
   assert.deepEqual(f.relays[0].origins, ['http://192.168.40.2:35001']);
   assert.equal(f.counts.health, 1); assert.equal(f.counts.tunnel, 0);
+});
+
+test('only a verified hostname is offered alongside the numeric LAN origin, including after DNS catches up', async t => {
+  const address = '192.168.40.2', numeric = 'http://' + address + ':35001', hostname = 'co2-lab.local';
+  let name = null, aliasHealthy = true;
+  const probes = [];
+  const f = await fixture(t, { saved: { intranetOnly: true, lanAddress: address }, dependencies: {
+    resolveLanHostname: async selected => { assert.equal(selected, address); return name; },
+    checkHealth: async (origin, { direct, guestHost }) => {
+      assert.equal(origin, numeric); assert.equal(direct, true);
+      probes.push(guestHost); return { ok: !guestHost || aliasHealthy };
+    },
+  } });
+  await f.service.start(); await f.service.ensureRelay();
+  assert.equal(f.ownerOptions.getNetwork().guestOrigin, numeric);
+  name = hostname; aliasHealthy = false; await f.service.checkConnection();
+  assert.equal(f.ownerOptions.getNetwork().guestOrigin, numeric);
+  aliasHealthy = true; await f.service.checkConnection();
+  assert.equal(f.ownerOptions.getNetwork().guestOrigin, 'http://' + hostname + ':35001');
+  assert.equal(f.ownerOptions.getInviteOrigin(), numeric);
+  assert.equal(probes.at(-1), hostname + ':35001');
+  name = null; await f.service.checkConnection();
+  assert.equal(f.ownerOptions.getNetwork().guestOrigin, numeric);
+  assert.equal(f.relays.length, 1);
+  assert.equal(f.counts.tunnel, 0);
 });
 
 test('missing or changed LAN addresses keep management available and fail closed without a tunnel', async t => {

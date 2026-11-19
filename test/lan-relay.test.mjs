@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
-import { once } from 'node:events';
+import { EventEmitter, once } from 'node:events';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { WebSocket } from 'ws';
 import { startRelay } from '../lib/relay.mjs';
@@ -14,11 +14,11 @@ const status = (url, headers = {}) => new Promise((resolve, reject) => {
 
 // All real sockets stay on loopback. Synthetic socket metadata exercises the
 // production LAN guard without discovering or exposing the operator's network.
-async function fixture(t) {
+async function fixture(t, options = {}) {
   let count = 0;
   const network = { peer: '192.168.20.11', local: lanAddress };
   const registrationSecret = secret();
-  const relay = await startRelay({ lanAddress, registrationSecret,
+  const relay = await startRelay({ lanAddress, registrationSecret, ...options,
     publicDir: new URL('../public', import.meta.url).pathname,
     createHttpServer(handler) {
       const server = http.createServer(handler);
@@ -86,6 +86,64 @@ test('LAN guest listener enforces actual private peer, exact Host and local addr
   assert.equal(await status(f.relay.url), 403, 'LAN mode does not serve guest assets on the host listener');
   assert.equal(await status(f.relay.url + '/health'), 200);
   assert.throws(() => f.relay.setAllowedOrigins(['https://attacker.example']), /fixed/);
+});
+
+test('the verified Bonjour hostname and raw IP require their own matching browser origin', async t => {
+  const hostname = 'co2-test.local', f = await fixture(t, { lanHostname: hostname });
+  const port = new URL(f.url).port;
+  assert.equal(f.relay.guestOrigin, `http://${hostname}:${port}`);
+  const aliasOrigin = f.relay.guestOrigin, alias = { Host: `${hostname}:${port}` };
+  f.relay.setAllowedOrigins([f.relay.inviteOrigin]);
+  assert.equal(await status(f.url + '/health', alias), 200);
+  assert.equal(await status(f.url + '/health', { Host: `another.local:${port}` }), 403);
+  assert.equal(await status(f.relay.url + '/health', alias), 403);
+  await assert.rejects(connection(f.url + '/host', { headers: alias }), /403/);
+  await assert.rejects(connection(f.url + '/guest', { headers: alias, origin: f.relay.inviteOrigin }), /403/);
+  await assert.rejects(connection(f.url + '/guest', { headers: f.headers, origin: aliasOrigin }), /403/);
+  await assert.rejects(connection(f.url + '/guest', { headers: alias, origin: `http://another.local:${port}` }), /403/);
+  await assert.rejects(connection(f.url + '/guest', { headers: alias }), /403/);
+  for (const name of ['another.example', 'x.co2-test.local', '*.local', 'co2-test.local:80', '192.168.20.10']) {
+    assert.throws(() => f.relay.setLanHostname(name), /hostname/);
+  }
+  f.network.peer = '127.0.0.1'; assert.equal(await status(f.url, alias), 403);
+  f.network.peer = '10.0.0.2'; f.network.local = '192.168.30.10'; assert.equal(await status(f.url, alias), 403);
+  f.network.local = lanAddress;
+  f.relay.setLanHostname(null);
+  assert.equal(f.relay.guestOrigin, f.relay.inviteOrigin);
+  assert.equal(await status(f.url, alias), 403); assert.equal(await status(f.url, f.headers), 200);
+  f.relay.setLanHostname(hostname);
+  const guest = await connection(f.url + '/guest', { headers: alias, origin: aliasOrigin });
+  guest.ws.close();
+});
+
+test('LAN recovery uses the numeric checkpoint on both origins and returns approved links on the guest’s own origin', async t => {
+  const recovery = new EventEmitter(), requestId = randomUUID(), receiptToken = secret();
+  const restarts = [];
+  const f = await fixture(t, { lanHostname: 'co2-test.local', recovery, resumeLanRoom: (_proof, origin) => { restarts.push(origin); return false; } });
+  const physical = f.relay.inviteOrigin, alias = f.relay.guestOrigin;
+  const fragment = '/#room=' + randomUUID() + '&invite=' + secret() + '&scope=' + randomUUID();
+  let outcome = { type: 'recovery-request', requestId, status: 'pending' };
+  recovery.getRestartAuthorization = (_proof, origin) => { assert.equal(origin, physical); return true; };
+  const reopened = await connection(f.url + '/guest', { headers: { Host: new URL(alias).host }, origin: alias });
+  reopened.send({ type: 'join', roomId: randomUUID(), inviteToken: secret(), name: 'Synthetic guest' });
+  await reopened.next('join-rejected');
+  assert.deepEqual(restarts, [physical]);
+  recovery.watch = (_message, origin) => { assert.equal(origin, physical); return outcome; };
+  recovery.watcher = (_message, origin) => { assert.equal(origin, physical); return () => outcome; };
+  const visitor = await connection(f.url + '/recovery', { headers: { Host: new URL(alias).host }, origin: alias });
+  visitor.send({ type: 'watch', requestId, receiptToken });
+  assert.equal((await visitor.next('recovery-request')).status, 'pending');
+  const direct = await connection(f.url + '/recovery', { headers: f.headers, origin: physical });
+  direct.send({ type: 'watch', requestId, receiptToken }); await direct.next('recovery-request');
+  f.relay.setLanHostname(null); // DNS change does not disconnect either authenticated, already-open socket.
+  outcome = { ...outcome, status: 'approved', inviteUrl: physical + fragment }; recovery.emit('change');
+  assert.equal((await visitor.next('recovery-request')).inviteUrl, alias + fragment);
+  assert.equal((await direct.next('recovery-request')).inviteUrl, physical + fragment);
+  visitor.send({ type: 'watch', requestId, receiptToken });
+  assert.equal((await visitor.next('recovery-request')).inviteUrl, alias + fragment);
+  outcome = { ...outcome, inviteUrl: 'http://another.local:8787' + fragment };
+  visitor.send({ type: 'watch', requestId, receiptToken });
+  await visitor.next('recovery-unavailable');
 });
 
 test('LAN invitation preserves explicit admission, scoped messages and revocation while /host stays loopback', async t => {

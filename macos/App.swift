@@ -21,7 +21,8 @@ struct InvitationClipboard {
               url.user == nil, url.password == nil, url.query == nil, ["", "/"].contains(url.path),
               url.port == nil || (1...65535).contains(url.port!), let fragment = url.percentEncodedFragment else { return false }
         if url.scheme?.lowercased() == "http" {
-            guard isPrivateIPv4(host), url.percentEncodedHost == host, url.port != nil else { return false }
+            let localName = host != "localhost.local" && host.range(of: #"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.local$"#, options: .regularExpression) != nil
+            guard (isPrivateIPv4(host) || localName), url.percentEncodedHost == host, url.port != nil else { return false }
         } else if url.scheme?.lowercased() != "https" { return false }
         var fields: [String: String] = [:]
         for field in fragment.split(separator: "&", omittingEmptySubsequences: false) {
