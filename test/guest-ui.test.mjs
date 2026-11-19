@@ -77,7 +77,6 @@ function browser({ storage = new Map(), persistentStorage = new Map(), storageBl
     close() { this.readyState = 3; this.listeners.get('close')?.(); }
   }
   const hash = invitation;
-  let redactedUrl;
   let reloadCount = 0;
   const windowListeners = new Map();
   const location = {
@@ -111,7 +110,10 @@ function browser({ storage = new Map(), persistentStorage = new Map(), storageBl
       ...(viewport ? { visualViewport: viewport } : {}),
       ...(notification ? { Notification: notification } : {}),
       location, focus() {}, co2PreviewLoader: previewLoader,
-      history: { replaceState(_state, _title, url) { redactedUrl = url; location.hash = ''; } },
+      history: { replaceState(_state, _title, url) {
+        const next = new URL(url, location.href);
+        location.href = next.href; location.hash = next.hash;
+      } },
       addEventListener(name, listener) { windowListeners.set(name, listener); },
       setTimeout: (fn, ms) => schedule(fn, ms), clearTimeout: id => timers.delete(id),
       setInterval: (fn, ms) => schedule(fn, ms, true), clearInterval: id => timers.delete(id),
@@ -127,7 +129,7 @@ function browser({ storage = new Map(), persistentStorage = new Map(), storageBl
   vm.runInNewContext(notificationScript, context);
   if (inviteRecovery) vm.runInNewContext(inviteRecoveryScript, context);
   vm.runInNewContext(script, context);
-  assert.equal(redactedUrl, '/');
+  assert.equal(location.hash, invitation);
   return {
     elements, sockets, document, urls, storage, persistentStorage,
     documentEvent(name, event) { documentListeners.get(name)?.(event); },
@@ -351,7 +353,11 @@ test('approval changes only the invitation and applicant credential; admission a
   page.elements['proposal-text'].trigger('input'); assert.equal(page.elements['send-button'].disabled, true);
   snapshot(joined, 1, [], 'idle'); assert.equal(page.elements['send-button'].disabled, false);
   assert.equal(joined.sent.filter(message => message.type === 'proposal').length, 0);
-  assert.equal(page.hash, '');
+  // Refresh before confirmation must still find the original recovery receipt.
+  assert.equal(new URLSearchParams(page.hash.slice(1)).get('room'), 'synthetic-room');
+  confirmIdentity(joined, 'updated-scope');
+  assert.equal(page.hash, new URL(updatedInvitation).hash);
+  assert.ok(!page.hash.includes(request.visitorToken));
 });
 
 test('approved recovery remains claimable on reopen and waits for a background page to become visible', () => {
@@ -605,7 +611,7 @@ test('a valid same-document invitation reloads once without sending or mixing ol
   socket.receive({ type: 'revoked' });
   const sent = socket.sent.length;
   const nextHash = `#room=new-synthetic-room&invite=${'n'.repeat(43)}`;
-  assert.equal(page.hash, '', 'startup must scrub the original invitation');
+  assert.equal(new URLSearchParams(page.hash.slice(1)).get('room'), 'synthetic-room');
   page.navigateHash(nextHash);
   assert.equal(page.reloadCount, 1);
   assert.equal(page.hash, nextHash, 'the new page must be able to consume the new invitation');
@@ -965,7 +971,9 @@ test('new temporary origin accepts an explicit recovery credential; it remains s
   page.elements['recovery-input'].trigger('input'); assert.equal(page.elements['display-name'].required, false);
   page.elements['join-form'].trigger('submit'); page.sockets[0].open();
   const join = page.sockets[0].sent[0]; assert.equal(join.sessionId, credential);
-  assert.equal(join.name, '恢复中的同伴'); assert.equal(page.hash, '');
+  assert.equal(join.name, '恢复中的同伴');
+  assert.equal(new URLSearchParams(page.hash.slice(1)).get('room'), 'synthetic-room');
+  assert.ok(!page.hash.includes(credential));
   assert.equal(page.elements['recovery-input'].value, '');
   const bad = browser(); bad.elements['recovery-input'].value = 'invalid'; bad.elements['join-form'].trigger('submit');
   assert.equal(bad.sockets.length, 0);
@@ -995,6 +1003,10 @@ test('approved identity survives a closed tab and matches a replacement room by 
   assert.equal(next.sockets[0].sent[0].roomId, 'replacement-room');
   assert.deepEqual(next.sockets[0].sent.map(m => m.type), ['join']);
   assert.equal(next.elements['send-button'].disabled, true, 'local identity is not local admission');
+  next.sockets[0].receive({ type: 'pending', guestId: 'returning' });
+  assert.equal(next.elements['connection-label'].textContent, '正在恢复访问');
+  next.sockets[0].receive({ type: 'pending', guestId: 'returning', approvalRequired: true });
+  assert.equal(next.elements['connection-label'].textContent, '等待分享者确认');
 });
 
 test('multiple sharing scopes keep separate identities; unknown, stopped and expired scopes do not auto-join', () => {

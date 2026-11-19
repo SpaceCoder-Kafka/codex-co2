@@ -1,5 +1,5 @@
 // This channel can request a new invitation, never read or operate a conversation.
-// Receipts identify one request; invitation credentials remain in page memory.
+// Receipts identify one request. They never include the shareable invitation.
 (() => {
   const recordsKey = 'co2.invitation-requests';
   const pointerKey = 'co2.invitation-request';

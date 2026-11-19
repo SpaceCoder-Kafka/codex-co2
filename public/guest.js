@@ -1,12 +1,10 @@
-// Invitation credentials stay in this module's memory for the life of this page.
+// Keep the invitation in the fragment so a reload or bookmark can reopen it.
+// The visitor's personal credential is never part of the URL.
 const fragment = new URLSearchParams(window.location.hash.slice(1));
 let roomId = fragment.get('room') || '';
 let inviteToken = fragment.get('invite') || '';
 const validScope = value => typeof value === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(value);
 let scopeId = validScope(fragment.get('scope')) ? fragment.get('scope') : '';
-fragment.delete('room');
-fragment.delete('invite');
-window.history.replaceState(null, '', window.location.pathname);
 
 const byId = (id) => document.getElementById(id);
 const ui = Object.fromEntries([
@@ -39,6 +37,7 @@ function isValidInvitation(room, token) {
 let validInvitation = isValidInvitation(roomId, inviteToken);
 let invitationRecovery = null;
 let invitationReloadPending = false;
+let recoveredInvitationPending = false;
 let socket = null;
 let connectTimer = null;
 let admitted = false;
@@ -496,6 +495,7 @@ function useRecoveredInvitation(next, request) {
   cancelReconnect(); detachSocket(); taskNotifications?.reset();
   forgetIdentity();
   roomId = next.roomId; inviteToken = next.inviteToken; scopeId = next.scopeId;
+  recoveredInvitationPending = true;
   validInvitation = isValidInvitation(roomId, inviteToken);
   terminal = false; connecting = false; admitted = false; hostOnline = false;
   savedVisitor = false; visitorToken = request.visitorToken; displayName = request.name;
@@ -834,20 +834,22 @@ function handleMessage(message) {
   switch (message.type) {
     case 'pong':
       break;
-    case 'pending':
+    case 'pending': {
       if (message.heartbeat === true && heartbeatTimer === null) {
         heartbeatTimer = window.setInterval(checkHeartbeat, 25000);
       }
       connecting = false;
       admitted = false;
-      setStatus('等待分享者确认', 'pending');
+      const restoring = savedVisitor && message.approvalRequired !== true;
+      setStatus(restoring ? '正在恢复访问' : '等待分享者确认', 'pending');
       ui['join-panel'].hidden = true;
       ui['member-panel'].hidden = false;
-      ui['member-title'].textContent = '申请已送达';
-      ui['member-description'].textContent = savedVisitor ? '正在核对原准入；未匹配时需分享者确认。' : '分享者确认后，你就能查看对话并提交建议。';
-      if (!receivedSnapshot) emptyState('等待分享者确认', '申请已送达。确认后，共享对话会自动显示在这里。');
+      ui['member-title'].textContent = restoring ? '正在核对访客身份' : '申请已送达';
+      ui['member-description'].textContent = restoring ? '有效授权会自动恢复。如果授权已失效，分享者会收到加入申请。' : '分享者确认后，你就能查看对话并提交建议。';
+      if (!receivedSnapshot) emptyState(ui['member-title'].textContent, ui['member-description'].textContent);
       updateControls();
       break;
+    }
     case 'admitted':
       reconnectAttempts = 0; cancelReconnect();
       connecting = false;
@@ -949,6 +951,12 @@ function handleMessage(message) {
         recoveryRecord = { scopeId: validScope(payload.scopeId) ? payload.scopeId : '', roomId,
           token: visitorToken, name: displayName, approved: true, expiresAt: payload.expiresAt };
         const persistent = rememberIdentity(recoveryRecord);
+        if (recoveredInvitationPending && persistent) {
+          const params = new URLSearchParams({ room: roomId, invite: inviteToken });
+          if (recoveryRecord.scopeId) params.set('scope', recoveryRecord.scopeId);
+          window.history.replaceState(null, '', '#' + params.toString());
+          recoveredInvitationPending = false;
+        }
         ui['recovery-input'].value = '';
         ui['identity-notice'].hidden = false;
         ui['identity-notice'].textContent = persistent
@@ -997,7 +1005,7 @@ function connect() {
   ui['join-feedback'].textContent = '';
   ui['member-name'].textContent = displayName;
   ui['member-avatar'].textContent = [...displayName][0] || '访';
-  ui['member-title'].textContent = '正在申请加入';
+  ui['member-title'].textContent = savedVisitor ? '正在恢复访问' : '正在申请加入';
   updateControls();
 
   const url = new URL('/guest', window.location.href);
@@ -1022,7 +1030,7 @@ function connect() {
     clearConnectionTimer();
     lastActivity = Date.now();
     send({ type: 'join', roomId, inviteToken, name: displayName, sessionId: visitorToken });
-    setStatus('等待分享者确认', 'pending');
+    setStatus(savedVisitor ? '正在恢复访问' : '等待分享者确认', 'pending');
   });
   current.addEventListener('message', (event) => {
     if (socket !== current || typeof event.data !== 'string') return;
@@ -1238,7 +1246,7 @@ if (!returningVisitor && invitationRecovery?.hasRequest) {
   roomId = '';
   inviteToken = '';
   setStatus('需要邀请链接', 'neutral');
-  notice('请从分享者发来的完整邀请链接打开此页面。刷新后的页面不会保留邀请凭据。');
+  notice('请从分享者发来的完整邀请链接打开此页面。');
   emptyState('这里需要一份邀请', '请让分享者发送邀请链接，打开后即可申请加入。');
   ui['join-feedback'].textContent = '当前链接没有有效的邀请信息。';
 }
