@@ -98,7 +98,8 @@ for (const [name, bytes] of source.contents) {
   const target = path.join(service, name); await fs.mkdir(path.dirname(target), { recursive: true }); await fs.writeFile(target, bytes);
 }
 await fs.mkdir(path.join(service, 'bin'));
-await fs.copyFile(path.join(root, 'bin/desktop-service.mjs'), path.join(service, 'bin/desktop-service.mjs'));
+for (const file of ['desktop-service.mjs', 'receiver-import.mjs'])
+  await fs.copyFile(path.join(root, 'bin', file), path.join(service, 'bin', file));
 await fs.copyFile(path.join(root, 'package.json'), path.join(service, 'package.json'));
 await fs.copyFile(path.join(root, 'macos/AppIcon.png'), path.join(service, 'owner/app-icon.png'));
 const dependencies = await fs.mkdtemp(path.join(cache, 'dependencies-'));

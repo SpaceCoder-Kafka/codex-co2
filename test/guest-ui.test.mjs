@@ -77,10 +77,12 @@ function browser({ storage = new Map(), persistentStorage = new Map(), storageBl
     close() { this.readyState = 3; this.listeners.get('close')?.(); }
   }
   const hash = invitation;
+  const appLaunches = [];
   let reloadCount = 0;
   const windowListeners = new Map();
   const location = {
     hash, pathname: '/', href: `https://synthetic.invalid/${hash}`, protocol: 'https:',
+    assign(url) { appLaunches.push(url); },
     reload() { reloadCount++; },
   };
   const documentListeners = new Map();
@@ -131,7 +133,7 @@ function browser({ storage = new Map(), persistentStorage = new Map(), storageBl
   vm.runInNewContext(script, context);
   assert.equal(location.hash, invitation);
   return {
-    elements, sockets, document, urls, storage, persistentStorage,
+    elements, sockets, document, urls, storage, persistentStorage, appLaunches,
     documentEvent(name, event) { documentListeners.get(name)?.(event); },
     tick(ms) {
       const until = clockNow + ms;
@@ -173,6 +175,45 @@ function snapshot(socket, revision, items, status = 'running') {
 
 const prompt = { id: 'u-1', role: 'user', text: '只回复 desktop-to-phone-ok，不使用工具' };
 const reply = text => ({ id: 'a-1', role: 'assistant', text });
+
+test('local import launches with a fresh, scoped ticket only after admission and a readable snapshot', () => {
+  const page = browser(), ui = page.elements;
+  const button = ui['import-to-codex'];
+  assert.equal(button.hidden, true);
+  const socket = page.join();
+  button.click();
+  assert.equal(page.appLaunches.length, 0);
+  snapshot(socket, 1, [], 'idle');
+  assert.equal(button.disabled, true);
+  socket.receive({ type: 'data', payload: { type: 'snapshot', status: 'idle', revision: 2,
+    title: '合成会话', items: [prompt, reply('synthetic private response')], historyTruncated: true } });
+  assert.equal(button.disabled, false);
+  button.click();
+  const ticket = socket.sent.at(-1).ticket;
+  assert.deepEqual(socket.sent.at(-1), { type: 'import-offer', ticket });
+  assert.match(ticket, /^[a-f0-9]{64}$/);
+  const target = new URL(page.appLaunches[0]);
+  assert.equal(target.protocol, 'codex-co2:');
+  assert.equal(target.hostname, 'import');
+  assert.deepEqual([...target.searchParams], [['origin', 'https://synthetic.invalid'], ['ticket', ticket]]);
+  assert.equal(target.hash, '');
+  assert.equal(ui['codex-import-dialog'].open, true);
+  assert.match(ui['codex-import-scope'].textContent, /截断/);
+  assert.match(html, /id="download-co2" href="https:\/\/github\.com\/SpaceCoder-Kafka\/codex-co2"/);
+  ui['retry-codex-import'].click();
+  const next = socket.sent.at(-1).ticket;
+  assert.notEqual(next, ticket);
+  socket.receive({ type: 'import-claimed', ticket });
+  assert.equal(ui['retry-codex-import'].hidden, false);
+  socket.receive({ type: 'import-claimed', ticket: next });
+  assert.equal(ui['retry-codex-import'].hidden, true);
+  assert.match(ui['codex-import-status'].textContent, /已领取/);
+  socket.receive({ type: 'revoked' });
+  assert.equal(ui['codex-import-dialog'].open, false);
+  assert.equal(button.hidden, true);
+  button.click();
+  assert.equal(page.appLaunches.length, 2);
+});
 
 function offerInviteRecovery(page, reason = 'expired') {
   const socket = page.sockets.at(-1);

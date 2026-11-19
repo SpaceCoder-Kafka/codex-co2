@@ -60,6 +60,9 @@ Section "Codex Co²"
   SetOutPath "$INSTDIR"
   File /r "${APP_DIR}\*"
   WriteUninstaller "$INSTDIR\Uninstall.exe"
+  WriteRegStr HKCU "Software\Classes\codex-co2" "" "URL:Codex Co²"
+  WriteRegStr HKCU "Software\Classes\codex-co2" "URL Protocol" ""
+  WriteRegStr HKCU "Software\Classes\codex-co2\shell\open\command" "" '"$INSTDIR\CodexCo2.exe" --import "%1"'
   CreateDirectory "$SMPROGRAMS\Codex Co2"
   CreateShortcut "$SMPROGRAMS\Codex Co2\Codex Co².lnk" "$INSTDIR\CodexCo2.exe"
   CreateShortcut "$SMPROGRAMS\Codex Co2\Uninstall.lnk" "$INSTDIR\Uninstall.exe"
@@ -85,6 +88,10 @@ Section "Uninstall"
   Delete "$SMPROGRAMS\Codex Co2\Uninstall.lnk"
   RMDir "$SMPROGRAMS\Codex Co2"
   DeleteRegKey HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\CodexCo2"
+  ReadRegStr $0 HKCU "Software\Classes\codex-co2\shell\open\command" ""
+  ${If} $0 == '"$INSTDIR\CodexCo2.exe" --import "%1"'
+    DeleteRegKey HKCU "Software\Classes\codex-co2"
+  ${EndIf}
   ; Private .coop state is outside the installation and is preserved.
   !include "${UNINSTALL_LIST}"
   Delete "$INSTDIR\Uninstall.exe"

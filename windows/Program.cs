@@ -20,10 +20,74 @@ internal static class Program
             MessageBox.Show("Codex Co² requires Windows 10 version 1809 (build 17763) or later.", "Codex Co²");
             return 1;
         }
+        // A browser activation has its own confirmation window. An existing
+        // sharing manager stays attached to its Desktop and keeps its rooms.
+        if (args.FirstOrDefault() == "--import")
+            return args.Length == 2 ? ReceiveImport(args[1]) : 1;
         using var instance = new Mutex(true, "Local\\CodexCo2.Manager", out var first);
         if (!first) { MessageBox.Show("Codex Co² is already running. Open it from the notification area.", "Codex Co²"); return 0; }
         try { Application.Run(new ManagerWindow()); return 0; }
         catch { MessageBox.Show("Codex Co² could not start. Reinstall the complete package and check your private data folder permissions.", "Codex Co²"); return 1; }
+    }
+
+    internal static ProcessStartInfo NodeHelper(string resources, params string[] arguments)
+    {
+        var binaries = Path.Combine(resources, "runtime");
+        var start = new ProcessStartInfo(Path.Combine(binaries, "node.exe"))
+        {
+            UseShellExecute = false, CreateNoWindow = true, RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true,
+            StandardInputEncoding = new UTF8Encoding(false), StandardOutputEncoding = Encoding.UTF8, StandardErrorEncoding = Encoding.UTF8, WorkingDirectory = resources
+        };
+        foreach (var argument in arguments) start.ArgumentList.Add(argument);
+        start.Environment.Clear();
+        foreach (var name in new[] { "USERPROFILE", "LOCALAPPDATA", "APPDATA", "SYSTEMROOT", "WINDIR", "TEMP", "TMP", "COMSPEC", "USERNAME", "HOMEDRIVE", "HOMEPATH" })
+        {
+            var value = Environment.GetEnvironmentVariable(name);
+            if (!string.IsNullOrEmpty(value)) start.Environment[name] = value;
+        }
+        start.Environment["PATH"] = binaries + ";" + Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "System32");
+        start.Environment["CO2_PLATFORM_BRIDGE"] = Environment.ProcessPath!;
+        return start;
+    }
+
+    private static int ReceiveImport(string link)
+    {
+        if (!link.StartsWith("codex-co2://import?", StringComparison.Ordinal) || link.Length > 4096) return 1;
+        var runtime = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Codex Co2", ".coop");
+        var resources = Path.Combine(AppContext.BaseDirectory, "resources");
+        Dictionary<string, string> Request(string action)
+        {
+            var start = NodeHelper(resources, Path.Combine(resources, "service", "bin", "receiver-import.mjs"), action, runtime);
+            using var job = new JobScope();
+            using var process = Process.Start(start) ?? throw new IOException("Could not start import helper");
+            job.Assign(process);
+            process.ErrorDataReceived += (_, _) => { }; process.BeginErrorReadLine();
+            var output = process.StandardOutput.ReadToEndAsync();
+            process.StandardInput.Write(link); process.StandardInput.Close();
+            process.WaitForExit();
+            return JsonSerializer.Deserialize<Dictionary<string, string>>(output.GetAwaiter().GetResult())
+                ?? throw new IOException("Empty import helper response");
+        }
+        try
+        {
+            var preview = Request("inspect");
+            if (!preview.TryGetValue("origin", out var origin))
+            {
+                MessageBox.Show("无法读取会话导入链接。", "Codex Co²"); return 1;
+            }
+            if (MessageBox.Show($"将来自 {origin} 的对话保存为本机 Codex 的新会话，并打开它。", "导入到我的 Codex",
+                MessageBoxButtons.OKCancel, MessageBoxIcon.Question) != DialogResult.OK) return 0;
+            PlatformBridge.SecureDirectory(runtime);
+            var reply = Request("import");
+            if (!reply.TryGetValue("threadId", out var value) || !Guid.TryParseExact(value, "D", out var id))
+            {
+                MessageBox.Show(reply.GetValueOrDefault("error", "导入未完成，请检查本机 Codex 是否正在运行。"), "Codex Co²"); return 1;
+            }
+            try { Process.Start(new ProcessStartInfo("codex://threads/" + id.ToString("D")) { UseShellExecute = true }); }
+            catch { MessageBox.Show("会话已导入，无法打开 Codex。", "Codex Co²"); return 1; }
+            return 0;
+        }
+        catch { MessageBox.Show("无法完成会话导入。请检查本机 Co² 和 Codex 是否可用。", "Codex Co²"); return 1; }
     }
 }
 
@@ -131,18 +195,8 @@ internal sealed class ManagerWindow : Form
         owner = null; rooms = 0; announced.Clear();
         var binaries = Path.Combine(resources, "runtime");
         var service = Path.Combine(resources, "service");
-        var start = new ProcessStartInfo(Path.Combine(binaries, "node.exe"))
-        {
-            UseShellExecute = false, CreateNoWindow = true, RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true,
-            StandardInputEncoding = new UTF8Encoding(false), StandardOutputEncoding = Encoding.UTF8, StandardErrorEncoding = Encoding.UTF8, WorkingDirectory = resources
-        };
-        foreach (var argument in new[] { Path.Combine(service, "bin", "desktop-service.mjs"), "--resource-root", service, "--runtime-dir", runtime, "--attach", "--parent-ready", "--cloudflared", Path.Combine(binaries, "cloudflared.exe") }) start.ArgumentList.Add(argument);
-        var inherited = new Dictionary<string, string?>();
-        foreach (var name in new[] { "USERPROFILE", "LOCALAPPDATA", "APPDATA", "SYSTEMROOT", "WINDIR", "TEMP", "TMP", "COMSPEC", "USERNAME", "HOMEDRIVE", "HOMEPATH" }) inherited[name] = Environment.GetEnvironmentVariable(name);
-        start.Environment.Clear();
-        foreach (var item in inherited) if (!string.IsNullOrEmpty(item.Value)) start.Environment[item.Key] = item.Value;
-        start.Environment["PATH"] = binaries + ";" + Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "System32");
-        start.Environment["CO2_PLATFORM_BRIDGE"] = Environment.ProcessPath!;
+        var start = Program.NodeHelper(resources, Path.Combine(service, "bin", "desktop-service.mjs"), "--resource-root", service,
+            "--runtime-dir", runtime, "--attach", "--parent-ready", "--cloudflared", Path.Combine(binaries, "cloudflared.exe"));
         try
         {
             var process = Process.Start(start) ?? throw new IOException("Could not start bundled helper");

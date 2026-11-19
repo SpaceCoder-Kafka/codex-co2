@@ -18,6 +18,14 @@ button:disabled { cursor: not-allowed; opacity: .4; }
 .page-shell { position: fixed; top: var(--viewport-top); width: 100%; height: var(--viewport-height); display: flex; flex-direction: column; }
 .masthead { flex-shrink: 0; min-height: 56px; display: flex; align-items: center; border-bottom: 1px solid var(--border); z-index: 2; }
 .masthead-content { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.masthead .import-to-codex { flex-shrink: 0; font-size: 12px; min-height: 36px; padding: 6px 12px; }
+.codex-import-dialog { width: min(380px, calc(100% - 32px)); border: 1px solid var(--border); border-radius: 16px; padding: 20px; color: var(--ink); box-shadow: 0 12px 40px #0002; }
+.codex-import-dialog::backdrop { background: #0005; }
+.codex-import-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.codex-import-heading h2 { margin: 0; }
+.codex-import-dialog p { font-size: 13px; line-height: 1.6; }
+.codex-import-dialog .codex-install { margin: 16px 0 0; border-top: 1px solid var(--border); padding-top: 12px; }
+.codex-install a { color: inherit; text-underline-offset: 3px; }
 .heading { flex: 1; min-width: 0; display: flex; align-items: center; gap: 16px; }
 h1 { font-size: 16px; line-height: 1.5; font-weight: 600; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 h2 { font-size: 18px; font-weight: 600; margin: 0 0 8px; }
@@ -183,13 +191,14 @@ textarea:disabled { color: #aaa; }
 .toast-actions { display: flex; justify-content: space-between; align-items: center; margin-top: 4px; }
 .toast-actions .text-button { padding-left: 0; color: var(--ink); }
 @media (pointer: coarse) {
-  .collaboration-toggle, .text-button, .close-button { min-height: 44px; }
+  .collaboration-toggle, .text-button, .close-button, .masthead .import-to-codex { min-height: 44px; }
   .close-button { min-width: 44px; }
   #send-button { width: 44px; height: 44px; }
 }
 @keyframes breathe { 50% { opacity: .35; } }
 @media(max-width: 600px) {
   .masthead-content { gap: 10px; }
+  .masthead .import-to-codex { padding-inline: 9px; }
   .heading { gap: 8px; }
   h1 { font-size: 14px; }
   .agent-status { font-size: 11px; }
@@ -208,6 +217,10 @@ textarea:disabled { color: #aaa; }
   .collaboration-toggle { padding-inline: 0; }
   .collaboration-panel { top: calc(100% + 6px); }
   .privacy-note { font-size: 11px; }
+}
+@media (max-width: 440px) {
+  .heading { flex-direction: column; align-items: flex-start; gap: 0; }
+  .heading h1 { max-width: 100%; }
 }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; } }
 

@@ -111,6 +111,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
     var startupExplanation: NSTextField?
     var startupRetry: NSButton?
     var changingRuntime = false
+    private var pendingImportLink: String?
+    private var importingLink = false
     let updates = AppUpdates()
     var sequence = 0
     var helperGeneration = 0
@@ -251,6 +253,74 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         } }
         DistributedNotificationCenter.default().addObserver(self, selector: #selector(showFromNotification(_:)), name: Notification.Name("local.codexco2.manager.show"), object: nil)
         NSWorkspace.shared.notificationCenter.addObserver(self, selector: #selector(checkAfterWake(_:)), name: NSWorkspace.didWakeNotification, object: nil)
+        if let link = pendingImportLink { pendingImportLink = nil; receiveImport(link) }
+    }
+    func application(_ application: NSApplication, open urls: [URL]) {
+        guard urls.count == 1, let link = urls.first?.absoluteString,
+              link.hasPrefix("codex-co2://import?"), link.utf8.count <= 4096 else { return }
+        if window == nil { pendingImportLink = link } else { receiveImport(link) }
+    }
+    private func runImportHelper(_ action: String, link: String, completion: @escaping ([String: String]) -> Void) {
+        guard let resources = Bundle.main.resourceURL else { completion([:]); return }
+        let runtime = runtimeDir
+        let official = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.openai.codex")
+        DispatchQueue.global(qos: .userInitiated).async {
+            let process = Process(), input = Pipe(), output = Pipe()
+            process.executableURL = resources.appendingPathComponent("runtime/node")
+            process.arguments = [resources.appendingPathComponent("service/bin/receiver-import.mjs").path, action, runtime]
+            process.currentDirectoryURL = resources
+            var environment = BackgroundConfiguration.environment(resources: resources)
+            if action == "import" { environment["CO2_RECEIVER_DESKTOP_APP"] = official?.path }
+            process.environment = environment
+            process.standardInput = input; process.standardOutput = output; process.standardError = FileHandle.nullDevice
+            var reply: [String: String] = [:]
+            do {
+                try process.run()
+                defer { if process.isRunning { process.terminate() } }
+                try input.fileHandleForReading.close()
+                try output.fileHandleForWriting.close()
+                try input.fileHandleForWriting.write(contentsOf: Data(link.utf8))
+                try input.fileHandleForWriting.close()
+                let data = output.fileHandleForReading.readDataToEndOfFile()
+                process.waitUntilExit()
+                if data.count <= 4096, let values = (try? JSONSerialization.jsonObject(with: data)) as? [String: String] {
+                    reply = values
+                }
+            } catch { /* The UI reports a generic failure without exposing the ticket. */ }
+            let result = reply
+            DispatchQueue.main.async { completion(result) }
+        }
+    }
+    private func receiveImport(_ link: String) {
+        showWindow()
+        guard !importingLink else { setStatus("请先完成当前导入。"); return }
+        importingLink = true
+        runImportHelper("inspect", link: link) { reply in
+            guard let origin = reply["origin"] else {
+                self.importingLink = false; self.message(reply["error"] ?? "无法读取会话导入链接。"); return
+            }
+            let alert = NSAlert(); alert.messageText = self.localized("导入到我的 Codex")
+            alert.informativeText = self.localized("将来自 {origin} 的对话保存为本机 Codex 的新会话，并打开它。").replacingOccurrences(of: "{origin}", with: origin)
+            alert.addButton(withTitle: self.localized("导入")); alert.addButton(withTitle: self.localized("取消"))
+            guard alert.runModal() == .alertFirstButtonReturn else { self.importingLink = false; return }
+            self.setStatus("正在导入会话…")
+            self.runImportHelper("import", link: link) { result in
+                self.importingLink = false
+                guard let value = result["threadId"], let id = UUID(uuidString: value) else {
+                    self.message(result["error"] ?? "导入未完成，请检查本机 Codex 是否正在运行。"); return
+                }
+                let target = URL(string: "codex://threads/" + id.uuidString.lowercased())!
+                guard let app = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.openai.codex") else {
+                    self.message("会话已导入，无法打开 Codex。"); return
+                }
+                NSWorkspace.shared.open([target], withApplicationAt: app, configuration: .init()) { _, error in
+                    DispatchQueue.main.async {
+                        if error != nil { self.message("会话已导入，无法打开 Codex。") }
+                        else { self.setStatus("会话已导入，正在打开 Codex。") }
+                    }
+                }
+            }
+        }
     }
     @objc func checkAfterWake(_ notification: Notification) { send("check-network") }
     func applicationDidBecomeActive(_ notification: Notification) {

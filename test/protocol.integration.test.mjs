@@ -6,6 +6,7 @@ import { spawn, spawnSync } from 'node:child_process';
 import { setTimeout as delay } from 'node:timers/promises';
 import { RpcClient } from '../lib/rpc.mjs';
 import { resolveCli } from '../lib/runtime.mjs';
+import { importReceiverSnapshot } from '../lib/receiver-import.mjs';
 import { startResponsesFixture } from './fixtures/responses-server.mjs';
 import { GuestUploads } from '../lib/guest-uploads.mjs';
 import { ScopedThread } from '../lib/scoped-thread.mjs';
@@ -205,4 +206,72 @@ stream_max_retries = 0
       t.diagnostic(`Synthetic local Responses fixture: image input plus ordinary/audio/video path references accepted by 0.163.0. Deny proxy refused ${fixture.blockedDestinations.length} background connection attempts. This does not prove native Desktop UI, audio modality or semantic file understanding.`);
     } finally { scoped.close(); uploads.close(); }
   });
+});
+
+test('recipient imports visible dialogue into a new durable thread with the official worker', { skip, timeout: 60000 }, async t => {
+  const root = await fs.mkdtemp('/tmp/co2-receiver-');
+  const codexHome = path.join(root, 'codex');
+  const home = path.join(root, 'user');
+  const runtimeDir = path.join(root, '.coop');
+  const socket = path.join(root, 'read.sock');
+  const fixture = await startResponsesFixture();
+  let reader, verifier;
+  t.after(async () => {
+    reader?.close();
+    await stopBackend(verifier);
+    await fixture.close();
+    await fs.rm(root, { recursive: true, force: true });
+  });
+  for (const dir of [codexHome, home]) await fs.mkdir(dir, { mode: 0o700 });
+  await fs.writeFile(path.join(codexHome, 'config.toml'), [
+    'model = "gpt-5.1-codex"', 'model_provider = "fixture"', 'check_for_update_on_startup = false',
+    'approval_policy = "never"', 'sandbox_mode = "read-only"', '[analytics]', 'enabled = false',
+    '[feedback]', 'enabled = false', '[model_providers.fixture]', 'name = "Local fixture"',
+    'base_url = "' + fixture.origin + '/v1"', 'wire_api = "responses"', 'requires_openai_auth = false', '',
+  ].join('\n'), { mode: 0o600 });
+  const messages = [
+    { role: 'assistant', text: 'Visible fragment after truncation' },
+    { role: 'user', text: 'Synthetic test, two lines:\n第二行。' },
+    { role: 'user', text: 'Another user message before the reply' },
+    { role: 'assistant', text: '<EXTERNAL SESSION IMPORTED>' },
+    { role: 'assistant', text: 'Second assistant message\n\nwith a blank line' },
+  ];
+  const snapshot = { version: 1, title: 'Synthetic receiver', truncated: true, messages };
+  const local = { executable: binary, codexHome };
+  await assert.rejects(importReceiverSnapshot({ snapshot, runtimeDir }, { ...local, codexHome: path.join(root, 'absent') }),
+    error => Boolean(error.safeMessage));
+  await assert.rejects(importReceiverSnapshot({ snapshot: { ...snapshot, messages: [] }, runtimeDir }, local));
+  const { threadId } = await importReceiverSnapshot({ snapshot, runtimeDir }, local);
+  assert.match(threadId, /^[a-f0-9-]{36}$/);
+  assert.deepEqual(await fs.readdir(runtimeDir), ['imported-projects'], 'staged source cleaned after worker exit');
+  assert.equal(fixture.requests.length, 0, 'import performs no generation');
+  verifier = spawn(binary, ['app-server', '--listen', 'unix://' + socket], {
+    cwd: root, stdio: 'ignore', env: {
+      HOME: home, CODEX_HOME: codexHome, TMPDIR: root, PATH: '/usr/bin:/bin', LANG: 'en_US.UTF-8',
+      HTTP_PROXY: fixture.origin, HTTPS_PROXY: fixture.origin, ALL_PROXY: fixture.origin,
+      NO_PROXY: 'localhost,127.0.0.1', no_proxy: 'localhost,127.0.0.1',
+    },
+  });
+  await until(() => fs.stat(socket).then(s => s.isSocket(), () => false), 'independent verifier');
+  reader = await RpcClient.connect(socket);
+  const { thread } = await reader.request('thread/read', { threadId, includeTurns: true });
+  assert.equal(thread.id, threadId);
+  assert.equal(thread.name, 'Synthetic receiver（可见片段）');
+  assert.equal(thread.turns.length, 3);
+  assert.match(thread.turns[0].items[0].content[0].text, /Co² 自动生成的导入说明/);
+  assert.equal(thread.turns[0].items[1].text, messages[0].text);
+  assert.equal(thread.turns[1].items[0].content[0].text, messages[1].text);
+  assert.equal(thread.turns[2].items[0].content[0].text, messages[2].text);
+  assert.equal(thread.turns[2].items[1].text, messages[3].text);
+  assert.equal(thread.turns[2].items[2].text, messages[4].text);
+  assert.deepEqual((await reader.request('thread/list', { limit: 10, modelProviders: [] })).data.map(t => t.id), [threadId]);
+  assert.equal((await reader.request('thread/resume', { threadId })).thread.id, threadId);
+  const completed = new Set();
+  reader.on('notification', event => {
+    if (event.method === 'turn/completed') completed.add(event.params.turn.id);
+  });
+  const { turn } = await reader.request('turn/start', { threadId, input: [{ type: 'text', text: 'Continue the synthetic chat' }] });
+  await until(() => completed.has(turn.id), 'synthetic follow-up completion');
+  assert.equal(fixture.requests.length, 1);
+  assert.equal((await reader.request('thread/read', { threadId, includeTurns: true })).thread.turns.length, 4);
 });

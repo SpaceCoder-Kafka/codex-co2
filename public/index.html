@@ -20,6 +20,7 @@
       <header class="masthead">
         <div class="masthead-content reading-width">
           <div class="heading"><h1 id="thread-title">共享会话</h1><span id="agent-status" class="agent-status" hidden>Agent 空闲</span></div>
+          <button id="import-to-codex" class="button import-to-codex" type="button" aria-haspopup="dialog" aria-controls="codex-import-dialog" hidden>导入到我的 Codex</button>
           <div class="collaboration">
             <button id="collaboration-toggle" class="collaboration-toggle" type="button" aria-expanded="false" aria-controls="collaboration-panel">协作详情 <span aria-hidden="true">⌄</span></button>
             <div id="collaboration-panel" class="collaboration-panel" data-view="menu" role="dialog" aria-label="协作详情" hidden>
@@ -59,6 +60,13 @@
           </div>
         </div>
       </header>
+      <dialog id="codex-import-dialog" class="codex-import-dialog" aria-labelledby="codex-import-heading">
+        <div class="codex-import-heading"><h2 id="codex-import-heading">导入到我的 Codex</h2><button id="close-codex-import" class="close-button" type="button" aria-label="关闭导入窗口">×</button></div>
+        <p id="codex-import-status" role="status"></p>
+        <p id="codex-import-scope" class="field-help"></p>
+        <button id="retry-codex-import" class="button" type="button">重新打开 Co²</button>
+        <p class="codex-install">尚未安装？<a id="download-co2" href="https://github.com/SpaceCoder-Kafka/codex-co2" target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer">下载 Co²</a>，安装后回到这里重试。</p>
+      </dialog>
       <main class="workspace">
         <div class="context-bar reading-width">
           <div id="notice" class="notice" role="status" hidden></div>

@@ -8,6 +8,7 @@ import { once } from 'node:events';
 import { setTimeout as delay } from 'node:timers/promises';
 import { WebSocket } from 'ws';
 import { startRelay } from '../lib/relay.mjs';
+import { claimImportSnapshot, importClaimPath, parseImportLink } from '../lib/import-handoff.mjs';
 
 const secret = () => randomBytes(32).toString('base64url');
 async function fixture(t, overrides = {}) {
@@ -369,4 +370,55 @@ test('rolling leases may outlive 24 hours in total but explicit revocation remai
   host.send({ type: 'revoke' }); await host.next('revoked');
   const revival = await connect(relay, '/host'); revival.send({ ...credentials, expiresAt });
   await revival.next('registration-rejected');
+});
+
+test('receiver claims one admitted snapshot once, with origin and recipient binding', async t => {
+  const relay = await fixture(t);
+  const { host, credentials } = await register(relay);
+  const { guest, guestId } = await admit(relay, host, credentials);
+  const other = await admit(relay, host, credentials);
+  const makeLink = ticket => 'codex-co2://import?' + new URLSearchParams({ origin: relay.url, ticket });
+  const offer = async () => {
+    const ticket = randomBytes(32).toString('hex');
+    guest.send({ type: 'import-offer', ticket });
+    guest.send({ type: 'ping' });
+    await guest.next('pong');
+    return ticket;
+  };
+  const expired = await offer();
+  const ticket = await offer();
+  const claim = (value, origin) => fetch(relay.url + importClaimPath, { method: 'POST',
+    headers: { Authorization: 'Co2Import ' + value, Origin: origin ?? relay.url } });
+  assert.equal((await claim(expired)).status, 410);
+  assert.equal((await claim(ticket, 'https://unrelated.example')).status, 403);
+  const body = claimImportSnapshot(makeLink(ticket));
+  assert.deepEqual(await host.next('guest-message'), { type: 'guest-message', guestId, payload: { type: 'snapshot-request' } });
+  assert.deepEqual(await guest.next('import-claimed'), { type: 'import-claimed', ticket });
+  assert.equal((await claim(ticket)).status, 410);
+  host.send({ type: 'deliver', guestId: other.guestId, payload: { type: 'snapshot', title: 'Other', items: [] } });
+  await other.guest.next('data');
+  host.send({ type: 'deliver', guestId, payload: { type: 'snapshot', status: 'idle', title: 'Example', historyTruncated: true, items: [
+    { role: 'user', text: 'Question', id: 'source-id', files: [{ name: 'source-file' }] },
+    { role: 'activity', text: 'tool output' }, { role: 'assistant', text: 'Answer' }] } });
+  assert.deepEqual(await body, { version: 1, title: 'Example', truncated: true,
+    messages: [{ role: 'user', text: 'Question' }, { role: 'assistant', text: 'Answer' }] });
+  assert.equal((await claim(ticket)).status, 410);
+
+  const withdrawn = await offer();
+  const pending = claim(withdrawn);
+  await host.next('guest-message');
+  host.send({ type: 'revoke', guestId });
+  assert.equal((await pending).status, 410);
+  assert.equal((await claim(withdrawn)).status, 410);
+});
+
+test('native receiver rejects non-share destinations and extra URL data', () => {
+  const ticket = 'ab'.repeat(32);
+  const link = origin => 'codex-co2://import?' + new URLSearchParams({ origin, ticket });
+  for (const origin of ['https://company.example', 'http://192.168.1.3:4242', 'http://co2-host.local:49201']) {
+    assert.deepEqual(parseImportLink(link(origin)), { origin, ticket });
+  }
+  for (const origin of ['http://company.example', 'https://company.example/private', 'http://169.254.169.254', 'file:///',
+    'http://127.1:3030', 'http://192.168.1.1:80']) assert.throws(() => parseImportLink(link(origin)));
+  assert.throws(() => parseImportLink(link('https://company.example') + '&extra=1'));
 });

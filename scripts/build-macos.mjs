@@ -132,7 +132,8 @@ try {
   await fs.writeFile(path.join(resources, 'Licenses/npm-NOTICES.txt'), notices);
 } finally { await fs.rm(dependencies, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }); }
 await fs.mkdir(path.join(service, 'bin'));
-await fs.copyFile(path.join(root, 'bin/desktop-service.mjs'), path.join(service, 'bin/desktop-service.mjs'));
+for (const file of ['desktop-service.mjs', 'receiver-import.mjs'])
+  await fs.copyFile(path.join(root, 'bin', file), path.join(service, 'bin', file));
 await fs.copyFile(path.join(root, 'package.json'), path.join(service, 'package.json'));
 await fs.copyFile(path.join(nodeDir, 'LICENSE'), path.join(resources, 'Licenses/Node-LICENSE'));
 await fs.copyFile(tunnelBuild.licensePath, path.join(resources, 'Licenses/cloudflared-LICENSE'));
@@ -187,6 +188,8 @@ await fs.writeFile(path.join(app, 'Contents/Info.plist'), `<?xml version="1.0" e
 <key>CFBundleIdentifier</key><string>local.codexco2.manager</string>
 <key>CFBundleName</key><string>Codex Co²</string><key>CFBundleDisplayName</key><string>Codex Co²</string>
 <key>CFBundleExecutable</key><string>CodexCo2</string><key>CFBundlePackageType</key><string>APPL</string>
+<key>CFBundleURLTypes</key><array><dict><key>CFBundleURLName</key><string>Codex Co² import</string>
+<key>CFBundleURLSchemes</key><array><string>codex-co2</string></array></dict></array>
 <key>CFBundleIconFile</key><string>AppIcon.icns</string>
 <key>CFBundleShortVersionString</key><string>${appVersion}</string><key>CFBundleVersion</key><string>${buildNumber}</string>
 <key>Co2UpdateChannel</key><string>${release.channel}</string><key>Co2UpdateTesting</key><${release.testing}/>
