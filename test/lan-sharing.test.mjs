@@ -45,7 +45,7 @@ test('persisted LAN mode survives restart without public access, and host transp
   assert.equal(f.relays[0].options.host, '127.0.0.1'); assert.equal(f.relays[0].options.port, 0);
   assert.equal(f.relays[0].options.lanAddress, '192.168.40.2');
   assert.deepEqual(f.relays[0].origins, ['http://192.168.40.2:35001']);
-  assert.equal(f.counts.health, 0); assert.equal(f.counts.tunnel, 0);
+  assert.equal(f.counts.health, 1); assert.equal(f.counts.tunnel, 0);
 });
 
 test('missing or changed LAN addresses keep management available and fail closed without a tunnel', async t => {

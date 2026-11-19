@@ -479,32 +479,35 @@ function shareThread(id) {
   chooseInviteLifetime({ type: 'share', threadId: id, ownerName, requireApproval: $('#require-approval').checked });
 }
 let copySequence = 0, pendingInviteCopy = null;
-function manualInviteCopy(url, input) {
-  const current = [...invitationInputs.values()].find(candidate => candidate.value === url) ?? input;
-  current?.focus(); current?.select(); notice('请手动复制链接');
+const currentInviteInput = url => [...invitationInputs.values()].find(input => input.value === url);
+function manualInviteCopy(url) {
+  const current = currentInviteInput(url);
+  if (current) { current.focus(); current.select(); notice('请手动复制链接'); }
 }
 window.co2InviteCopyResult = result => {
   if (!result || typeof result.requestId !== 'string' || typeof result.ok !== 'boolean'
     || result.requestId !== pendingInviteCopy?.requestId) return;
   const pending = pendingInviteCopy; pendingInviteCopy = null; clearTimeout(pending.timer);
+  if (!currentInviteInput(pending.url)) return;
   if (result.ok) notice('邀请链接已复制');
-  else manualInviteCopy(pending.url, pending.input);
+  else manualInviteCopy(pending.url);
 };
-function copyInvite(url, input) {
+function copyInvite(url) {
+  if (!currentInviteInput(url)) return;
   if (pendingInviteCopy) { clearTimeout(pendingInviteCopy.timer); pendingInviteCopy = null; }
   if (window.webkit?.messageHandlers?.copyInvite) {
     const requestId = `copy-${++copySequence}`;
-    pendingInviteCopy = { requestId, url, input, timer: setTimeout(() => {
+    pendingInviteCopy = { requestId, url, timer: setTimeout(() => {
       if (pendingInviteCopy?.requestId !== requestId) return;
-      pendingInviteCopy = null; manualInviteCopy(url, input);
+      pendingInviteCopy = null; manualInviteCopy(url);
     }, 3000) };
     notice('正在复制邀请…');
     try { window.webkit.messageHandlers.copyInvite.postMessage({ requestId, url }); }
     catch { window.co2InviteCopyResult({ requestId, ok: false }); }
     return;
   }
-  if (!navigator.clipboard) { manualInviteCopy(url, input); return; }
-  navigator.clipboard.writeText(url).then(() => notice('邀请链接已复制')).catch(() => manualInviteCopy(url, input));
+  if (!navigator.clipboard) { manualInviteCopy(url); return; }
+  navigator.clipboard.writeText(url).then(() => { if (currentInviteInput(url)) notice('邀请链接已复制'); }).catch(() => manualInviteCopy(url));
 }
 function reshare(threadId) {
   if (busyThreadId || pendingInviteLifetime || networkWorkBusy() || disconnected || ws.readyState !== WebSocket.OPEN || connectionAction || lastState?.connection?.state === 'connecting') return;
@@ -735,9 +738,12 @@ ws.onmessage = event => {
   if (m.type === 'share-result') {
     shareLimitAlert = null; renderShareLimit();
     busyThreadId = ''; updateShare(); if (lastState) renderRooms(lastState);
-    selectTab('shared', true); $('#rooms').scrollTop = 0; notice('邀请已生成，可以发送给同伴');
-    const room = lastState?.rooms.find(room => room.roomId === m.roomId && room.state !== 'revoked');
-    if (m.restored && room) copyInvite(room.inviteUrl, invitationInputs.get(room.roomId));
+    selectTab('shared', true); $('#rooms').scrollTop = 0;
+    const input = invitationInputs.get(m.roomId);
+    if (input) {
+      notice('邀请已生成，可以发送给同伴');
+      if (m.restored) copyInvite(input.value);
+    }
     return;
   }
   if (m.type === 'threads') {
@@ -812,19 +818,28 @@ function renderRooms(m) {
     const mark = el('span', '↗', 'session-icon'); mark.setAttribute('aria-hidden', 'true');
     title.append(el('h2', room.title), el('p', t('分享者：{name}', { name: room.ownerName || t('分享者') }), 'muted'));
     identity.append(mark, title); heading.append(identity);
+    const lanReady = room.intranetOnly !== true || (room.state === 'online' && m.connection?.state === 'local'
+      && m.network?.intranetOnly && m.network.interfaces?.some(item => item.address === m.network.lanAddress)
+      && room.inviteUrl?.startsWith(`http://${m.network.lanAddress}:`));
     if (room.state === 'revoked') {
       const actions = el('div', null, 'row');
       actions.append(badge(room.state), button('我知道了', () => send({ type: 'dismiss-room', roomId: room.roomId })));
       heading.append(actions);
-    } else heading.append(badge(room.state));
+    } else heading.append(badge(lanReady ? room.state : 'offline'));
     section.append(heading);
     if (room.state !== 'revoked') {
       const invite = el('div', null, 'invite'), row = el('div', null, 'invite-row');
-      const link = el('input', null, 'link'); link.value = room.inviteUrl; link.readOnly = true; link.setAttribute('aria-label', t('访客邀请链接'));
-      invitationInputs.set(room.roomId, link);
-      row.append(link, button('复制邀请', () => copyInvite(room.inviteUrl, link)), button('停止共享', () => send({ type: 'revoke', roomId: room.roomId }), 'danger'));
+      if (lanReady) {
+        const link = el('input', null, 'link'); link.value = room.inviteUrl; link.readOnly = true; link.setAttribute('aria-label', t('访客邀请链接'));
+        invitationInputs.set(room.roomId, link);
+        row.append(link, button('复制邀请', () => copyInvite(room.inviteUrl)));
+      } else {
+        invite.append(el('p', t('共享已暂停，正在等待内网地址和 Desktop 可用。'), 'muted'));
+        row.append(button('选择内网地址', () => { selectTab('settings'); $('#lan-address').focus(); }));
+      }
+      row.append(button('停止共享', () => send({ type: 'revoke', roomId: room.roomId }), 'danger'));
       if (room.state === 'offline') {
-        invite.append(el('p', t('连接中断，正在恢复原邀请；也可重新分享，新邀请需重新发送。'), 'muted'));
+        if (lanReady) invite.append(el('p', t('连接中断，正在恢复原邀请；也可重新分享，新邀请需重新发送。'), 'muted'));
         if (room.threadId && (m.history ?? []).some(entry => entry.threadId === room.threadId)) {
           row.append(reshareButton(room.threadId));
         }

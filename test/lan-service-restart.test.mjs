@@ -33,7 +33,7 @@ async function peer(t, origin, route, lan = false) {
 async function fixture(t) {
   const root = await fs.mkdtemp('/tmp/co2-lan-restart-'), runtimeDir = path.join(root, '.coop');
   const services = [], daemons = [], calls = [];
-  let available = true, desktop = true, occupied = false, currentAddress = address;
+  let available = true, desktop = true, occupied = false, healthy = true, currentAddress = address;
   const dependencies = {
     lanInterfaces: () => available ? [{ name: 'synthetic', address: currentAddress }] : [],
     selectLanAddress: selected => {
@@ -41,6 +41,19 @@ async function fixture(t) {
       return currentAddress;
     },
     startTunnel: () => { throw new Error('LAN must never start a public tunnel'); },
+    checkHealth: (origin, { direct, signal }) => {
+      assert.equal(direct, true);
+      const target = new URL(origin);
+      if (!healthy) return Promise.resolve({ ok: false });
+      return new Promise((resolve, reject) => {
+        http.get({ host: '127.0.0.1', port: target.port, path: '/health', headers: { Host: target.host }, agent: false, signal }, response => {
+          let body = '';
+          response.on('data', chunk => { body += chunk; });
+          response.on('end', () => resolve({ ok: response.statusCode === 200 && body === '{"ok":true}' }));
+          response.on('error', reject);
+        }).on('error', reject);
+      });
+    },
     attachDesktop: async () => {
       calls.push('attach'); if (!desktop) throw new Error('Synthetic Desktop is not running');
       return {
@@ -98,7 +111,7 @@ async function fixture(t) {
     await until(() => local.messages.some(message => message.type === 'state')); return local;
   };
   t.after(async () => { for (const daemon of daemons) await daemon.close(); for (const service of services) await service.close(); await fs.rm(root, { recursive: true, force: true }); });
-  return { start, startForeground, manager, runtimeDir, calls, set available(value) { available = value; },
+  return { start, startForeground, manager, runtimeDir, calls, set available(value) { available = value; }, set healthy(value) { healthy = value; },
     set desktop(value) { desktop = value; }, set occupied(value) { occupied = value; }, set address(value) { currentAddress = value; } };
 }
 async function share(f, service, inviteLifetime = 'permanent') {
@@ -247,6 +260,51 @@ test('missing LAN address and occupied fixed port wait without changing origin, 
   f.available = true;
   await until(() => second.inviteOrigin === origin);
   await until(() => second.recovery.status(original, origin).status === 'active');
+});
+
+test('invalid move keeps the working invitation; failed guest health pauses a move without issuing a new invitation', async t => {
+  const f = await fixture(t), service = await f.start({ lanCheckIntervalMs: 60000 });
+  const { room, local } = await share(f, service, '1d');
+  const original = room.view().inviteUrl;
+  local.send({ type: 'set-network-mode', intranetOnly: true, lanAddress: '192.168.215.0' });
+  await until(() => local.messages.some(m => m.type === 'error' && m.operation === 'set-network-mode'));
+  assert.equal(service.connection.state, 'local');
+  assert.equal(service.inviteOrigin, new URL(original).origin);
+  assert.equal(room.view().inviteUrl, original); assert.equal(room.state, 'online');
+
+  const newAddress = '192.168.44.99'; f.address = newAddress; f.healthy = false;
+  local.send({ type: 'set-network-mode', intranetOnly: true, lanAddress: newAddress });
+  await until(() => local.messages.some(m => m.type === 'error' && m.operation === 'set-network-mode' && /访客入口/.test(m.message)));
+  assert.equal(room.closed, true);
+  assert.equal(service.inviteOrigin, null);
+  assert.equal(local.messages.some(m => m.type === 'network-result' && m.moved), false);
+  await until(() => service.recovery.waitingLanRooms().length === 1);
+  assert.equal([...service.owner.rooms.values()].some(r => !r.closed), false);
+
+  f.healthy = true;
+  const restored = await until(() => [...service.owner.rooms.values()].find(r => !r.closed && r.historyStarted));
+  assert.equal(restored.admissionScope, room.admissionScope);
+  assert.equal(restored.inviteExpiresAt, room.inviteExpiresAt);
+  assert.equal(new URL(restored.view().inviteUrl).hostname, newAddress);
+  assert.equal(new URL(restored.view().inviteUrl).port, new URL(original).port);
+});
+
+test('a delayed health response from the old LAN listener cannot pause its replacement', async t => {
+  const f = await fixture(t), service = await f.start({ lanCheckIntervalMs: 60000 });
+  const { room, local } = await share(f, service);
+  const original = service.inviteOrigin, probe = service.dependencies.checkHealth;
+  let resolveOld;
+  service.dependencies.checkHealth = (origin, options) => origin === original
+    ? new Promise(resolve => { resolveOld = resolve; }) : probe(origin, options);
+  const oldCheck = service.checkLanAddress();
+  assert.equal(service.checkLanAddress(), oldCheck);
+  const next = '192.168.44.99'; f.address = next;
+  local.send({ type: 'set-network-mode', intranetOnly: true, lanAddress: next });
+  await until(() => local.messages.some(m => m.type === 'network-result' && m.moved));
+  resolveOld({ ok: false }); await oldCheck;
+  assert.equal(service.connection.state, 'local');
+  assert.equal(new URL(service.inviteOrigin).hostname, next);
+  assert.ok([...service.owner.rooms.values()].some(r => !r.closed && r.admissionScope === room.admissionScope));
 });
 
 test('disabling background recovery erases persisted eligibility without stopping the current foreground share', async t => {

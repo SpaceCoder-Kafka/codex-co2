@@ -284,6 +284,32 @@ test('native LAN invitation copy waits for a matching successful clipboard ackno
   assert.equal(page.copyTimeouts.size, 0);
 });
 
+test('LAN invites are offered only for an online room on the current reachable guest network', () => {
+  const page = browser({ nativeCopy: 'manual' });
+  const shared = { ...room(), intranetOnly: true, inviteUrl: 'http://192.168.40.20:47830/#room=synthetic' };
+  page.receive(lanState({ rooms: [shared] }));
+  const previousButton = page.nodes().find(node => node.textContent === '复制邀请');
+  previousButton.onclick();
+  for (const unavailable of [
+    { connection: { state: 'unavailable' } },
+    { network: network({ intranetOnly: true, lanAddress: '192.168.40.20', interfaces: [] }) },
+    { rooms: [{ ...shared, inviteUrl: 'http://192.168.215.0:47830/#room=synthetic' }] },
+    { rooms: [{ ...shared, state: 'offline' }] },
+  ]) {
+    page.receive(lanState({ rooms: [shared], ...unavailable }));
+    assert.ok(!page.nodes().some(node => node.className === 'link' || node.textContent === '复制邀请'));
+    assert.ok(page.nodes().some(node => node.textContent === '选择内网地址'));
+    page.receive({ type: 'share-result', roomId: shared.roomId, restored: true });
+    previousButton.onclick();
+  }
+  assert.equal(page.copyRequests.length, 1);
+  page.acknowledgeCopy(true);
+  assert.notEqual(page.elements.notice.textContent, '邀请链接已复制');
+  page.receive(lanState({ rooms: [shared] }));
+  page.click('复制邀请');
+  assert.equal(page.copyRequests.length, 2);
+});
+
 test('native copy rejection selects the currently rendered invitation for manual copying', () => {
   const page = browser({ nativeCopy: 'manual' }), r = room();
   page.receive({ type: 'state', rooms: [r] }); page.click('复制邀请');
