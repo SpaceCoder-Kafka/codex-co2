@@ -990,7 +990,7 @@ function handleMessage(message) {
         const proposal = proposals.get(payload.requestId);
         proposal.status = payload.status;
         proposal.message = typeof payload.message === 'string' ? payload.message.slice(0, 500) : '';
-        proposalFeedback(proposalLabels[payload.status], ['failed', 'rejected', 'unknown'].includes(payload.status));
+        proposalFeedback(proposal.message || proposalLabels[payload.status], ['failed', 'rejected', 'unknown'].includes(payload.status));
         renderProposals();
       }
       break;

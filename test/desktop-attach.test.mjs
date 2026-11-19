@@ -31,7 +31,7 @@ const state = (id = THREAD) => ({ id, hostId: 'local', title: '合成日常会�
 async function fixture(t, streamVersion = 11) {
   const dir = await fs.mkdtemp('/tmp/co2-attach-'); await fs.chmod(dir, 0o700);
   const endpoint = path.join(dir, 'desktop.sock'), owner = randomUUID(), clientIds = new Map(), sockets = new Set(), requests = [];
-  let revision = 0, malformed, holdInput = false, noOwner = false, noOwnerCount = 0, discoveryError, discoveryDelayMs = 0, inputDelayMs = 0, inputTimeout = false, inputObserver;
+  let revision = 0, malformed, holdInput = false, noOwner = false, noOwnerCount = 0, discoveryError, discoveryDelayMs = 0, inputDelayMs = 0, inputTimeout = false, inputObserver, replyTurnId = TURN;
   const encode = message => { const b = Buffer.from(JSON.stringify(message)), h = Buffer.alloc(4); h.writeUInt32LE(b.length); return Buffer.concat([h, b]); };
   const send = (socket, message) => socket.write(encode(message));
   const broadcast = (socket, id, change, extra = {}) => send(socket, { type: 'broadcast', method: 'thread-stream-state-changed', version: streamVersion,
@@ -60,12 +60,12 @@ async function fixture(t, streamVersion = 11) {
         }
         else if (m.method === 'thread-stream-following-changed' && m.params.following) {
           broadcast(socket, m.params.conversationId, { type: 'snapshot', revision: revision++, conversationState: malformed ?? state(m.params.conversationId) });
-        } else if (m.method === 'thread-follower-start-turn' && !holdInput) {
+        } else if (['thread-follower-start-turn', 'thread-follower-steer-turn'].includes(m.method) && !holdInput) {
           inputObserver?.(m);
           const reply = () => {
             if (socket.destroyed) return;
             if (inputTimeout) send(socket, { type: 'response', resultType: 'error', error: 'request-timeout', requestId: m.requestId });
-            else response({ result: { turn: { id: TURN } } });
+            else response({ result: m.method === 'thread-follower-steer-turn' ? { turnId: replyTurnId } : { turn: { id: replyTurnId } } });
           };
           if (inputDelayMs) setTimeout(reply, inputDelayMs); else reply();
         }
@@ -79,6 +79,7 @@ async function fixture(t, streamVersion = 11) {
     set noOwner(value) { noOwner = value; },
     set noOwnerCount(value) { noOwnerCount = value; }, set discoveryError(value) { discoveryError = value; },
     set discoveryDelayMs(value) { discoveryDelayMs = value; }, set inputDelayMs(value) { inputDelayMs = value; }, set inputTimeout(value) { inputTimeout = value; },
+    set replyTurnId(value) { replyTurnId = value; },
     set inputObserver(value) { inputObserver = value; }, lastSocket: () => [...sockets].at(-1) };
 }
 
@@ -130,6 +131,111 @@ test('sharing keeps loaded threads in place and loads a missing owner once throu
   assert.equal(f.requests.filter(r => r.method === 'thread-owner-discovery').length, 4);
   assert.deepEqual((await runtime.listThreads()).map(t => t.id), [THREAD, OTHER]);
   assert.equal(f.requests.some(r => r.method === 'thread-follower-start-turn'), false);
+});
+
+test('rapid distinct submissions steer the native owner until its acknowledged turn completes', async t => {
+  for (const version of [11, 13]) await t.test(`stream v${version}`, async t => {
+    const f = await fixture(t, version), rpc = await DesktopRpcClient.connect(f.endpoint);
+    t.after(() => rpc.close()); await rpc.request('thread/read', { threadId: THREAD });
+    const next = randomUUID();
+    f.replyTurnId = next;
+    const submit = (id, text) => rpc.request('turn/start', { threadId: THREAD, clientUserMessageId: id, input: [{ type: 'text', text }] });
+    const first = randomUUID(), repeat = randomUUID(), stop = randomUUID();
+    const text = '同一段文字发两次';
+    const { turn: opened } = await submit(first, text);
+    assert.deepEqual(opened, { id: next, clientUserMessageId: first });
+    // The second explicit Send arrives before the owner broadcasts the first
+    // turn. It must not create another optimistic opening turn.
+    const { turn: steered } = await submit(repeat, text);
+    assert.deepEqual(steered, { id: next, clientUserMessageId: repeat });
+    const steer = f.requests.at(-1);
+    assert.equal(steer.method, 'thread-follower-steer-turn'); assert.equal(steer.version, 1); assert.equal(steer.targetClientId, f.owner);
+    assert.deepEqual(steer.params.input, [{ type: 'text', text, text_elements: [] }]);
+    assert.deepEqual(steer.params.attachments, []); assert.equal(steer.params.conversationId, THREAD);
+    assert.equal(steer.params.restoreMessage.id, repeat); assert.equal(steer.params.restoreMessage.text, text);
+    assert.equal(steer.params.restoreMessage.context.prompt, text); assert.deepEqual(steer.params.restoreMessage.context.workspaceRoots, ['/private/workspace']);
+    const snapshot = state(), history = snapshot.turnHistory.history;
+    const live = { turnId: next, status: 'inProgress', params: { clientUserMessageId: first, input: steer.params.input }, items: [] };
+    snapshot.turns = [live];
+    const update = async () => {
+      const done = once(rpc, 'state');
+      f.broadcast(f.lastSocket(), THREAD, { type: 'snapshot', revision: rpc.revision + 1, conversationState: snapshot });
+      await done;
+    };
+    await update(); await submit(randomUUID(), '只更新了显示层');
+    assert.equal(f.requests.at(-1).method, 'thread-follower-steer-turn');
+    history.entitiesByKey.live = live; history.islands[0].entries.push({ value: 'live' });
+    await update(); f.inputTimeout = true;
+    await assert.rejects(submit(stop, '先不用回答了'), error => error.code === 'DESKTOP_IPC_TIMEOUT'
+      && error.method === 'thread-follower-steer-turn' && /不要重复发送/.test(error.message));
+    assert.equal(f.requests.filter(m => m.method === 'thread-follower-start-turn').length, 1);
+    assert.equal(f.requests.filter(m => m.method === 'thread-follower-steer-turn').length, 3);
+    history.entitiesByKey.live.status = 'completed'; await update(); f.inputTimeout = false;
+    const last = randomUUID(); await submit(last, '下一轮');
+    assert.equal(f.requests.at(-1).method, 'thread-follower-start-turn');
+  });
+});
+
+test('the native owner decides active turns from canonical history, including a pending turn without an ID', async t => {
+  const f = await fixture(t, 13), native = state(), clientId = randomUUID();
+  const pending = { turnId: null, status: 'inProgress', params: { clientUserMessageId: clientId, input: [{ type: 'text', text: '待确认' }] }, items: [] };
+  native.turns = [pending]; native.threadRuntimeStatus.type = 'active'; f.malformed = native;
+  const rpc = await DesktopRpcClient.connect(f.endpoint); t.after(() => rpc.close());
+  await rpc.request('thread/read', { threadId: THREAD });
+  const input = { threadId: THREAD, input: [{ type: 'text', text: '继续' }] };
+  await rpc.request('turn/start', input);
+  assert.equal(f.requests.at(-1).method, 'thread-follower-start-turn', 'a stale overlay is not an active native turn');
+  const history = native.turnHistory.history;
+  history.entitiesByKey.pending = pending; history.islands[0].entries.push({ value: 'pending' });
+  const changed = once(rpc, 'state'); f.broadcast(f.lastSocket(), THREAD,
+    { type: 'snapshot', revision: rpc.revision + 1, conversationState: native });
+  await changed; await rpc.request('turn/start', input);
+  assert.equal(f.requests.at(-1).method, 'thread-follower-steer-turn');
+});
+
+test('a proven orphan anywhere in native owner history stops dispatch until the owner state recovers', async t => {
+  for (const kind of ['canonical', 'legacy']) await t.test(kind, async t => {
+    const f = await fixture(t, 13), native = state(), first = randomUUID(), second = randomUUID();
+    const history = native.turnHistory.history, executed = history.entitiesByKey['turn:1'];
+    const input = [{ type: 'text', text: '先不用回答了' }];
+    const placeholder = id => ({ turnId: null, status: 'inProgress', params: { clientUserMessageId: id, input }, items: [] });
+    const orphans = [placeholder(first), placeholder(second)];
+    executed.items = [{ type: 'userMessage', id: first, content: input },
+      { type: 'userMessage', id: randomUUID(), clientId: second, content: input }];
+    if (kind === 'legacy') { native.turnHistory = { kind: 'legacy' }; native.turns = [executed, ...orphans]; }
+    else for (const turn of orphans) {
+      const value = turn.params.clientUserMessageId;
+      history.entitiesByKey[value] = turn; history.islands[0].entries.push({ value });
+    }
+    f.malformed = native;
+    const rpc = await DesktopRpcClient.connect(f.endpoint); t.after(() => rpc.close());
+    const { thread } = await rpc.request('thread/read', { threadId: THREAD });
+    assert.equal(thread.turns.length, 3, 'routing does not remove historical rows');
+    const submit = () => rpc.request('turn/start', { threadId: THREAD, input });
+    const update = async () => {
+      const changed = once(rpc, 'state');
+      f.broadcast(f.lastSocket(), THREAD, { type: 'snapshot', revision: rpc.revision + 1, conversationState: native });
+      await changed;
+    };
+    const blocked = async () => {
+      const count = f.requests.length;
+      await assert.rejects(submit(), { code: 'DESKTOP_STALE_USER_MESSAGE', message: /未发送/ });
+      assert.equal(f.requests.length, count, 'no input reaches the owner');
+    };
+    await blocked();
+    orphans[1].params.clientUserMessageId = randomUUID(); await update();
+    await blocked(); // The orphan proved by item.id is no longer last.
+    orphans[0].params.clientUserMessageId = randomUUID(); orphans[1].params.clientUserMessageId = second;
+    await update(); await blocked(); // An independent persisted item with clientId.
+    orphans[1].params.clientUserMessageId = randomUUID();
+    await update(); await submit();
+    assert.equal(f.requests.at(-1).method, 'thread-follower-steer-turn', 'same text with distinct IDs is a genuine pending submission');
+    // A later authoritative snapshot has retired the placeholders.
+    if (kind === 'legacy') native.turns = [executed];
+    else history.islands[0].entries = [{ value: 'turn:1' }];
+    await update(); await submit();
+    assert.equal(f.requests.at(-1).method, 'thread-follower-start-turn');
+  });
 });
 
 test('missing-owner fallback is bounded and never opens on read-only selection or other IPC failures', async t => {
@@ -487,11 +593,11 @@ test('Desktop author evidence survives input persistence, repeated text and late
     const submission = scoped.submitApproved('相同的建议', randomUUID(), { author: { id: name, name, kind: 'guest' } });
     let request;
     for (let i = 0; i < 100 && !request; i++) {
-      request = f.requests.slice(before).find(r => r.method === 'thread-follower-start-turn');
+      request = f.requests.slice(before).find(r => r.method === 'thread-follower-steer-turn');
       if (!request) await delay(5);
     }
     assert.ok(request);
-    const clientId = request.params.turnStart.request.clientUserMessageId;
+    const clientId = request.params.clientUserMessageId;
     turn.items.push(raw(clientId, '相同的建议')); await sync();
     await submission;
     assert.equal(scoped.snapshot.items.find(i => i.id === clientId).author.name, name);
@@ -509,14 +615,14 @@ test('Desktop author evidence survives input persistence, repeated text and late
   assert.equal(scoped._liveTurns.size, 0, 'author observations must not pin native text or running state');
   turn.items = turn.items.filter(i => i.id !== 'owner-live'); await sync();
   assert.equal(scoped.snapshot.items.some(i => i.id === 'owner-live'), false);
-  assert.equal(f.requests.filter(r => r.method === 'thread-follower-start-turn').length, 2);
+  assert.equal(f.requests.filter(r => r.method === 'thread-follower-steer-turn').length, 2);
   assert.ok(!JSON.stringify(scoped.snapshot).includes('clientUserMessageId'));
   const evidence = scoped._authors.checkpoint(); scoped.close();
   const reopened = new ScopedThread({ rpc, threadId: THREAD, ownerName: '新分享者', authorEvidence: evidence });
   t.after(() => reopened.close()); await reopened.start();
   assert.deepEqual(reopened.snapshot.items.filter(i => i.author?.kind === 'guest').map(i => i.author.name), ['小林', '小周']);
   assert.equal(reopened.snapshot.items.find(i => i.id === 'late-history').author.kind, 'unknown');
-  assert.equal(f.requests.filter(r => r.method === 'thread-follower-start-turn').length, 2, 'reopening must not replay inputs');
+  assert.equal(f.requests.filter(r => r.method === 'thread-follower-steer-turn').length, 2, 'reopening must not replay inputs');
 });
 
 test('new Desktop turns retain host and guest authors through optimistic promotion and server persistence', async t => {
@@ -762,6 +868,20 @@ test('uploaded images and ordinary/audio/video files use the existing Desktop fo
     assert.match(native.params.turnStart.request.input[0].text, /## My request:/);
     assert.equal(native.params.turnStart.request.input.length, name.endsWith('.png') ? 2 : 1);
     assert.deepEqual(await fs.readFile(attachments[0].path), bytes);
+    if (name.endsWith('.png')) {
+      const snapshot = state(), updated = once(rpc, 'state');
+      snapshot.turnHistory.history.entitiesByKey['turn:1'].status = 'inProgress';
+      f.broadcast(f.lastSocket(), THREAD, { type: 'snapshot', revision: rpc.revision + 1, conversationState: snapshot });
+      await updated; await thread.submitApproved('补充图片', randomUUID(), { attachments });
+      const steer = f.requests.at(-1);
+      assert.equal(steer.method, 'thread-follower-steer-turn');
+      assert.equal(steer.targetClientId, f.owner);
+      assert.deepEqual(steer.params.attachments, native.params.turnStart.context.attachments);
+      assert.deepEqual(steer.params.input[1], { type: 'localImage', path: attachments[0].path });
+      const idle = once(rpc, 'state');
+      f.broadcast(f.lastSocket(), THREAD, { type: 'snapshot', revision: rpc.revision + 1, conversationState: state() });
+      await idle;
+    }
   }
   const count = f.requests.filter(r => r.method === 'thread-follower-start-turn').length;
   for (const attachments of [[{ path: '/synthetic/private', image: true }], [{ path: cases[0][0] }]]) await assert.rejects(rpc.request('turn/start',

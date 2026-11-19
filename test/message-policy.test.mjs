@@ -52,6 +52,24 @@ test('default direct input dispatches once to the shared thread and rejects gues
   room.guests.get('guest').status = 'pending'; send('not admitted'); assert.equal(room.proposals.size, 1);
 });
 
+test('a stale Desktop input fails before dispatch and a new input can proceed after recovery', async t => {
+  const { room, rpc, send } = await fixture(t);
+  const delivered = [];
+  room.deliver = (payload, guestId) => delivered.push({ payload, guestId });
+  rpc.validateSubmission = () => { throw Object.assign(new Error('synthetic'), { code: 'DESKTOP_STALE_USER_MESSAGE' }); };
+  const blocked = send('first input');
+  await until(() => room.proposals.get(blocked.id)?.status === 'failed');
+  assert.equal(rpc.calls.length, 0);
+  assert.ok(delivered.some(({ payload, guestId }) => guestId === 'guest' && payload.requestId === blocked.payload.requestId &&
+    payload.status === 'failed' && payload.message.includes('这条消息尚未发送')));
+  delete rpc.validateSubmission;
+  room.receive({ type: 'guest-message', guestId: 'guest', payload: blocked.payload });
+  assert.equal(rpc.calls.length, 0);
+  const fresh = send('first input');
+  await until(() => room.proposals.get(fresh.id)?.status === 'accepted');
+  assert.equal(rpc.calls.length, 1);
+});
+
 test('local policy controls new input; switching off never drains existing pending decisions', async t => {
   const { rpc, room, send } = await fixture(t);
   for (const invalid of ['false', null, 0, undefined]) assert.throws(() => room.setRequireApproval(invalid), /布尔/);

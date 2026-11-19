@@ -14,7 +14,7 @@ const notice = (text, tone = 'ready', values = {}) => { noticeState = { text, to
 const send = data => { if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(data)); };
 const el = (tag, text, cls) => { const node = document.createElement(tag); if (text != null) node.textContent = text; if (cls) node.className = cls; return node; };
 const button = (text, fn, cls) => { const b = el('button', t(text), cls); b.onclick = fn; return b; };
-const labels = { online: '共享中', offline: '连接中断', connecting: '正在连接', revoked: '已停止', pending: '待确认', admitted: '已加入', denied: '已拒绝', processing: '提交中', accepted: '已交给 Agent', rejected: '未采纳', unknown: '结果待核实' };
+const labels = { online: '共享中', offline: '连接中断', connecting: '正在连接', revoked: '已停止', pending: '待确认', admitted: '已加入', denied: '已拒绝', processing: '提交中', accepted: '已交给 Agent', rejected: '未采纳', failed: '未发送', unknown: '结果待核实' };
 const badge = state => { const b = el('span', t(labels[state] || state), 'badge'); b.dataset.state = state; return b; };
 let threads = [], selectedThreadId = '', nextCursor = null, search = '', busyThreadId = '', menuThreadId = '', searchTimer;
 let pendingInviteLifetime = null;
@@ -693,6 +693,7 @@ function proposalCard(room, proposal) {
     card.append(row);
   }
   if (proposal.status === 'unknown') card.append(el('p', t('提交结果不确定。请在 Codex 确认是否已执行；不会自动重试。'), 'muted'));
+  if (proposal.status === 'failed' && proposal.message) card.append(el('p', t(proposal.message), 'muted'));
   return card;
 }
 ws.onmessage = event => {
