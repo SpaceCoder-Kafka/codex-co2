@@ -62,6 +62,8 @@ test('public health cancellation interrupts a server that never responds', async
   t.after(() => { server.closeAllConnections(); return new Promise(resolve => server.close(resolve)); });
   const origin = `http://127.0.0.1:${server.address().port}`;
   assert.equal((await checkHealth(origin)).ok, true);
+  assert.equal((await checkHealth(origin, { direct: true, expectedAddress: '127.0.0.1' })).ok, true);
+  assert.equal((await checkHealth(origin, { direct: true, expectedAddress: '192.168.40.2' })).ok, false);
   stall = true;
   const result = await checkHealth(origin, { signal: controller.signal });
   assert.deepEqual(result, { ok: false, reason: 'ABORT_ERR' });

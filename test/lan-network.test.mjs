@@ -1,33 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { privateIPv4, lanInterfaces, selectLanAddress, lanRequestAllowed, resolveLanHostname } from '../lib/lan-network.mjs';
+import { privateIPv4, lanInterfaces, selectLanAddress, lanRequestAllowed } from '../lib/lan-network.mjs';
 
 const entry = (address, overrides = {}) => ({ address, family: 'IPv4', internal: false, netmask: '255.255.255.0', ...overrides });
 const request = (remoteAddress = '192.168.1.42', headers = {}) => ({
   headers: { host: '192.168.1.2:8787', ...headers }, socket: { remoteAddress, localAddress: '192.168.1.2' },
 });
 const listener = { address: '192.168.1.2', port: 8787 };
-
-test('the local Bonjour name must resolve to this selected IPv4 and only machine-owned addresses', async () => {
-  const networkInterfaces = () => ({ lo0: [entry('127.0.0.1', { internal: true })],
-    en0: [entry(listener.address)], bridge100: [entry('10.15.0.1')] });
-  const options = { platform: 'darwin', getLocalHostName: async () => 'CO2-Test', networkInterfaces,
-    lookupAddresses: async (name, opts) => {
-      assert.equal(name, 'co2-test.local.'); assert.deepEqual(opts, { family: 4, all: true });
-      return [listener.address, '10.15.0.1', '127.0.0.1'].map(address => ({ address, family: 4 }));
-    } };
-  assert.equal(await resolveLanHostname(listener.address, options), 'co2-test.local');
-  for (const overrides of [
-    { platform: 'win32' }, { networkInterfaces: () => ({}) },
-    { getLocalHostName: async () => 'sub.example' }, { getLocalHostName: async () => '-bad' },
-    { getLocalHostName: async () => { throw Error('unavailable'); } },
-    { lookupAddresses: async () => [] }, { lookupAddresses: async () => [{ family: 4, address: '10.15.0.1' }] },
-    { lookupAddresses: async () => [listener.address, '192.168.1.8'].map(address => ({ address, family: 4 })) },
-    { lookupAddresses: async () => { throw Error('unresolved'); } },
-    { lookupAddresses: () => new Promise(() => {}), timeoutMs: 5 },
-  ]) assert.equal(await resolveLanHostname(listener.address, { ...options, ...overrides }), null);
-  assert.equal(await resolveLanHostname('127.0.0.1', options), null);
-});
 
 test('LAN address membership accepts only canonical RFC1918 IPv4', () => {
   for (const address of ['10.0.0.0', '10.255.255.255', '172.16.0.0', '172.31.255.255', '192.168.0.0', '192.168.255.255']) {

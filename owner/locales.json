@@ -470,14 +470,14 @@
     "开启后，已获准的访客可用原浏览器和有效的内网邀请返回。关闭会撤销已保存的恢复资格。": "开启后，已获准的访客可用原浏览器和有效的内网邀请返回。关闭会撤销已保存的恢复资格。",
     "恢复记录已关闭，退出应用后停止共享。": "恢复记录已关闭，退出应用后停止共享。",
     "在新地址继续共享": "在新地址继续共享",
-    "内网地址已更新，请复制新邀请发给访客。": "内网地址已更新，请复制新邀请发给访客。",
+    "内网地址已更新，请发送新邀请。如果浏览器仍连到旧 IP，约一分钟后重新打开新邀请。": "内网地址已更新，请发送新邀请。如果浏览器仍连到旧 IP，约一分钟后重新打开新邀请。",
     "共享已暂停，正在等待内网地址和 Desktop 可用。": "共享已暂停，正在等待内网地址和 Desktop 可用。",
     "访客通过内网主机名或 IP 加入。HTTP 未加密，访客系统通知不可用。": "访客通过内网主机名或 IP 加入。HTTP 未加密，访客系统通知不可用。",
     "换址后请发送新邀请。同一浏览器用原主机名打开新邀请，会自动核验已保存的身份。": "换址后请发送新邀请。同一浏览器用原主机名打开新邀请，会自动核验已保存的身份。",
     "复制 IP 邀请": "复制 IP 邀请",
     "访客打不开主机名时使用 IP 邀请": "访客打不开主机名时使用 IP 邀请",
     "数字 IP 改变后，访客需导入原身份或重新申请。": "数字 IP 改变后，访客需导入原身份或重新申请。",
-    "原浏览器通过同一主机名回访时会自动核验身份。只用过 IP 邀请的访客，首次需恢复身份或申请加入。": "原浏览器通过同一主机名回访时会自动核验身份。只用过 IP 邀请的访客，首次需恢复身份或申请加入。"
+    "同一浏览器通过此名称回访时会自动核验身份。首次从旧名称或数字 IP 切换到这里，可重新申请加入。": "同一浏览器通过此名称回访时会自动核验身份。首次从旧名称或数字 IP 切换到这里，可重新申请加入。"
   },
   "zh-TW": {
     "应用导航": "應用程式導覽",
@@ -950,14 +950,14 @@
     "开启后，已获准的访客可用原浏览器和有效的内网邀请返回。关闭会撤销已保存的恢复资格。": "開啟後，已獲准的訪客可用原瀏覽器和有效的內網邀請返回。關閉會撤銷已儲存的恢復資格。",
     "恢复记录已关闭，退出应用后停止共享。": "恢復記錄已關閉，退出應用程式後停止共享。",
     "在新地址继续共享": "在新位址繼續分享",
-    "内网地址已更新，请复制新邀请发给访客。": "內網位址已更新，請複製新邀請並傳給訪客。",
+    "内网地址已更新，请发送新邀请。如果浏览器仍连到旧 IP，约一分钟后重新打开新邀请。": "內網位址已更新，請傳送新邀請。如果瀏覽器仍連到舊 IP，請約一分鐘後重新開啟新邀請。",
     "共享已暂停，正在等待内网地址和 Desktop 可用。": "分享已暫停，正在等待內網位址和 Desktop 可用。",
     "访客通过内网主机名或 IP 加入。HTTP 未加密，访客系统通知不可用。": "訪客透過內網主機名稱或 IP 加入。HTTP 未加密，訪客系統通知無法使用。",
     "换址后请发送新邀请。同一浏览器用原主机名打开新邀请，会自动核验已保存的身份。": "換址後請傳送新邀請。同一瀏覽器以原主機名稱開啟新邀請，會自動核驗已儲存的身分。",
     "复制 IP 邀请": "複製 IP 邀請",
     "访客打不开主机名时使用 IP 邀请": "訪客無法開啟主機名稱時使用 IP 邀請",
     "数字 IP 改变后，访客需导入原身份或重新申请。": "數字 IP 改變後，訪客需匯入原身分或重新申請。",
-    "原浏览器通过同一主机名回访时会自动核验身份。只用过 IP 邀请的访客，首次需恢复身份或申请加入。": "原瀏覽器透過同一主機名稱回訪時會自動核驗身分。只用過 IP 邀請的訪客，首次需復原身分或申請加入。"
+    "同一浏览器通过此名称回访时会自动核验身份。首次从旧名称或数字 IP 切换到这里，可重新申请加入。": "同一瀏覽器透過此名稱再次造訪時會自動核驗身分。首次從舊名稱或數字 IP 切換到這裡，可重新申請加入。"
   },
   "en": {
     "应用导航": "App navigation",
@@ -1430,13 +1430,13 @@
     "开启后，已获准的访客可用原浏览器和有效的内网邀请返回。关闭会撤销已保存的恢复资格。": "Approved visitors can return using their original browser and a valid LAN invitation. Turning this off revokes saved recovery eligibility.",
     "恢复记录已关闭，退出应用后停止共享。": "Recovery records are off. Quitting the app stops sharing.",
     "在新地址继续共享": "Continue sharing at the new address",
-    "内网地址已更新，请复制新邀请发给访客。": "The intranet address has changed. Copy the new invitation and send it to your guests.",
+    "内网地址已更新，请发送新邀请。如果浏览器仍连到旧 IP，约一分钟后重新打开新邀请。": "The intranet address has changed. Send the new invitation. If the browser still connects to the old IP, reopen the new invitation in about a minute.",
     "共享已暂停，正在等待内网地址和 Desktop 可用。": "Sharing is paused until the intranet address and Desktop are available.",
     "访客通过内网主机名或 IP 加入。HTTP 未加密，访客系统通知不可用。": "Guests join through an intranet hostname or IP. HTTP is unencrypted and guest system notifications are unavailable.",
     "换址后请发送新邀请。同一浏览器用原主机名打开新邀请，会自动核验已保存的身份。": "Send a new invitation after the address changes. Opening it with the same hostname and browser automatically checks the saved identity.",
     "复制 IP 邀请": "Copy IP invitation",
     "访客打不开主机名时使用 IP 邀请": "Use an IP invitation if the hostname cannot be reached",
     "数字 IP 改变后，访客需导入原身份或重新申请。": "If the numeric IP changes, guests need to import their identity or request access again.",
-    "原浏览器通过同一主机名回访时会自动核验身份。只用过 IP 邀请的访客，首次需恢复身份或申请加入。": "The same browser automatically verifies your identity when you return through the same hostname. Guests who previously used only the IP must restore their identity or request access the first time."
+    "同一浏览器通过此名称回访时会自动核验身份。首次从旧名称或数字 IP 切换到这里，可重新申请加入。": "The same browser verifies your saved identity when you return through this name. Guests switching from the old hostname or numeric IP can request access once."
   }
 }

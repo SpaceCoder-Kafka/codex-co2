@@ -744,7 +744,7 @@ ws.onmessage = event => {
   if (m.type === 'network-result') {
     networkDirty = false; networkSaving = false; networkDraft = null; networkStatus = '访问范围已保存';
     if (lastState) { lastState = { ...lastState, network: m.network }; renderRooms(lastState); }
-    if (m.moved) { selectTab('shared', true); notice('内网地址已更新，请复制新邀请发给访客。'); }
+    if (m.moved) { selectTab('shared', true); notice('内网地址已更新，请发送新邀请。如果浏览器仍连到旧 IP，约一分钟后重新打开新邀请。'); }
     else notice('访问范围已保存');
     return;
   }
@@ -872,7 +872,7 @@ function renderRooms(m) {
         const numeric = new URL(room.inviteUrl);
         numeric.hostname = m.network.lanAddress;
         if (numeric.href === room.ipInviteUrl && numeric.href !== room.inviteUrl) {
-          invite.append(el('p', t('原浏览器通过同一主机名回访时会自动核验身份。只用过 IP 邀请的访客，首次需恢复身份或申请加入。'), 'muted'));
+          invite.append(el('p', t('同一浏览器通过此名称回访时会自动核验身份。首次从旧名称或数字 IP 切换到这里，可重新申请加入。'), 'muted'));
           const alternate = el('details'), ipRow = el('div', null, 'invite-row');
           ipRow.append(inviteInput(room.roomId + ':ip', room.ipInviteUrl), button('复制 IP 邀请', () => copyInvite(room.ipInviteUrl)));
           alternate.append(el('summary', t('访客打不开主机名时使用 IP 邀请')), ipRow,

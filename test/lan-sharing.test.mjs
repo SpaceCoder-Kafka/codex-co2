@@ -22,7 +22,7 @@ async function fixture(t, { saved, interfaces = { en0: [privateInterface('192.16
     start: async () => { throw new Error('LAN tests must not start a backend'); },
     startOwner: async value => { ownerOptions = value; return owner; },
     lanInterfaces: () => lanInterfaces(interfaces), selectLanAddress: address => selectLanAddress(address, interfaces),
-    resolveLanHostname: async () => null,
+    publishLanBonjour: async () => null,
     startRelay: async value => {
       const relay = { options: value, url: 'http://127.0.0.1:35000', inviteOrigin: value.lanAddress ? `http://${value.lanAddress}:35001` : 'http://127.0.0.1:35000',
         setLanHostname: name => { relay.guestOrigin = name ? `http://${name}:35001` : relay.inviteOrigin; },
@@ -52,25 +52,32 @@ test('persisted LAN mode survives restart without public access, and host transp
 
 test('only a verified hostname is offered alongside the numeric LAN origin, including after DNS catches up', async t => {
   const address = '192.168.40.2', numeric = 'http://' + address + ':35001', hostname = 'co2-lab.local';
-  let name = null, aliasHealthy = true;
+  let available = false, aliasHealthy = false, closed = 0;
+  const alias = 'http://' + hostname + ':35001';
   const probes = [];
   const f = await fixture(t, { saved: { intranetOnly: true, lanAddress: address }, dependencies: {
-    resolveLanHostname: async selected => { assert.equal(selected, address); return name; },
-    checkHealth: async (origin, { direct, guestHost }) => {
-      assert.equal(origin, numeric); assert.equal(direct, true);
-      probes.push(guestHost); return { ok: !guestHost || aliasHealthy };
+    publishLanBonjour: async (selected, port) => {
+      assert.equal(selected, address); assert.equal(port, 35001);
+      return available ? { hostname, isCurrent: async () => available, close: async () => { closed++; } } : null;
+    },
+    checkHealth: async (origin, { direct, expectedAddress }) => {
+      assert.equal(direct, true);
+      if (origin === alias) assert.equal(expectedAddress, address);
+      else assert.equal(origin, numeric);
+      probes.push(origin); return { ok: origin === numeric || aliasHealthy };
     },
   } });
   await f.service.start(); await f.service.ensureRelay();
   assert.equal(f.ownerOptions.getNetwork().guestOrigin, numeric);
-  name = hostname; aliasHealthy = false; await f.service.checkConnection();
+  available = true; await f.service.checkConnection();
   assert.equal(f.ownerOptions.getNetwork().guestOrigin, numeric);
   aliasHealthy = true; await f.service.checkConnection();
-  assert.equal(f.ownerOptions.getNetwork().guestOrigin, 'http://' + hostname + ':35001');
+  assert.equal(f.ownerOptions.getNetwork().guestOrigin, alias);
   assert.equal(f.ownerOptions.getInviteOrigin(), numeric);
-  assert.equal(probes.at(-1), hostname + ':35001');
-  name = null; await f.service.checkConnection();
+  assert.equal(probes.at(-1), alias);
+  available = false; await f.service.checkConnection();
   assert.equal(f.ownerOptions.getNetwork().guestOrigin, numeric);
+  assert.equal(closed, 1);
   assert.equal(f.relays.length, 1);
   assert.equal(f.counts.tunnel, 0);
 });

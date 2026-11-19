@@ -35,19 +35,19 @@ async function fixture(t, { hostname = null } = {}) {
   const services = [], daemons = [], calls = [];
   let available = true, desktop = true, occupied = false, healthy = true, currentAddress = address;
   const dependencies = {
-    resolveLanHostname: async () => hostname,
+    publishLanBonjour: async () => hostname && ({ hostname, isCurrent: async () => true, close: async () => {} }),
     lanInterfaces: () => available ? [{ name: 'synthetic', address: currentAddress }] : [],
     selectLanAddress: selected => {
       if (!available || (selected && selected !== currentAddress)) throw new Error('所选内网地址已不可用，请重新选择当前网络地址。');
       return currentAddress;
     },
     startTunnel: () => { throw new Error('LAN must never start a public tunnel'); },
-    checkHealth: (origin, { direct, signal, guestHost }) => {
+    checkHealth: (origin, { direct, signal }) => {
       assert.equal(direct, true);
       const target = new URL(origin);
       if (!healthy) return Promise.resolve({ ok: false });
       return new Promise((resolve, reject) => {
-        http.get({ host: '127.0.0.1', port: target.port, path: '/health', headers: { Host: guestHost ?? target.host }, agent: false, signal }, response => {
+        http.get({ host: '127.0.0.1', port: target.port, path: '/health', headers: { Host: target.host }, agent: false, signal }, response => {
           let body = '';
           response.on('data', chunk => { body += chunk; });
           response.on('end', () => resolve({ ok: response.statusCode === 200 && body === '{"ok":true}' }));
