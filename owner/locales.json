@@ -486,7 +486,7 @@
     "访客通过内网主机名或 IP 加入。HTTP 未加密，访客系统通知不可用。": "访客通过内网主机名或 IP 加入。HTTP 未加密，访客系统通知不可用。",
     "换址后请发送新邀请。使用名称邀请的访客只需打开一次，页面会自动连接并核验已保存的身份。": "换址后请发送新邀请。使用名称邀请的访客只需打开一次，页面会自动连接并核验已保存的身份。",
     "复制 IP 邀请": "复制 IP 邀请",
-    "访客打不开主机名时使用 IP 邀请": "访客打不开主机名时使用 IP 邀请",
+    "主机名打不开？用 IP 邀请": "主机名打不开？用 IP 邀请",
     "数字 IP 改变后，访客需导入原身份或重新申请。": "数字 IP 改变后，访客需导入原身份或重新申请。",
     "邀请会打开当前地址，再回到保存访客身份的页面。同一浏览器可沿用已有批准。": "邀请会打开当前地址，再回到保存访客身份的页面。同一浏览器可沿用已有批准。"
   },
@@ -977,7 +977,7 @@
     "访客通过内网主机名或 IP 加入。HTTP 未加密，访客系统通知不可用。": "訪客透過內網主機名稱或 IP 加入。HTTP 未加密，訪客系統通知無法使用。",
     "换址后请发送新邀请。使用名称邀请的访客只需打开一次，页面会自动连接并核验已保存的身份。": "換址後請傳送新邀請。訪客只需開啟名稱邀請一次，頁面就會自動連線並核驗已儲存的身分。",
     "复制 IP 邀请": "複製 IP 邀請",
-    "访客打不开主机名时使用 IP 邀请": "訪客無法開啟主機名稱時使用 IP 邀請",
+    "主机名打不开？用 IP 邀请": "主機名稱打不開？用 IP 邀請",
     "数字 IP 改变后，访客需导入原身份或重新申请。": "數字 IP 改變後，訪客需匯入原身分或重新申請。",
     "邀请会打开当前地址，再回到保存访客身份的页面。同一浏览器可沿用已有批准。": "邀請會開啟目前位址，再回到儲存訪客身分的頁面。同一瀏覽器可沿用已有核准。"
   },
@@ -1468,7 +1468,7 @@
     "访客通过内网主机名或 IP 加入。HTTP 未加密，访客系统通知不可用。": "Guests join through an intranet hostname or IP. HTTP is unencrypted and guest system notifications are unavailable.",
     "换址后请发送新邀请。使用名称邀请的访客只需打开一次，页面会自动连接并核验已保存的身份。": "Send a new invitation after the address changes. Guests can open the hostname invitation once and the page will reconnect and check their saved identity.",
     "复制 IP 邀请": "Copy IP invitation",
-    "访客打不开主机名时使用 IP 邀请": "Use an IP invitation if the hostname cannot be reached",
+    "主机名打不开？用 IP 邀请": "Hostname unreachable? Use an IP invite",
     "数字 IP 改变后，访客需导入原身份或重新申请。": "If the numeric IP changes, guests need to import their identity or request access again.",
     "邀请会打开当前地址，再回到保存访客身份的页面。同一浏览器可沿用已有批准。": "The invitation opens the current address, then takes guests to the page that stores their identity. Returning guests can use their existing approval in the same browser."
   }

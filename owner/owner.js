@@ -868,16 +868,17 @@ function renderRooms(m) {
       policy.disabled = room.state !== 'online';
       policyRow.append(policyTitle, policy); $('#room-policies').append(policyRow);
       invite.append(row);
+      let alternateInvite;
       if (room.intranetOnly === true && lanReady && room.ipInviteUrl) {
         const numeric = new URL(room.inviteUrl);
         numeric.hostname = m.network.lanAddress;
         if (numeric.href === room.ipInviteUrl && numeric.href !== room.inviteUrl) {
           invite.append(el('p', t('邀请会打开当前地址，再回到保存访客身份的页面。同一浏览器可沿用已有批准。'), 'muted'));
-          const alternate = el('details'), ipRow = el('div', null, 'invite-row');
+          alternateInvite = el('details', null, 'alternate-invite');
+          const panel = el('div', null, 'alternate-invite-panel'), ipRow = el('div', null, 'invite-row');
           ipRow.append(inviteInput(room.roomId + ':ip', room.ipInviteUrl), button('复制 IP 邀请', () => copyInvite(room.ipInviteUrl)));
-          alternate.append(el('summary', t('访客打不开主机名时使用 IP 邀请')), ipRow,
-            el('p', t('数字 IP 改变后，访客需导入原身份或重新申请。'), 'muted'));
-          invite.append(alternate);
+          panel.append(ipRow, el('p', t('数字 IP 改变后，访客需导入原身份或重新申请。'), 'muted'));
+          alternateInvite.append(el('summary', t('主机名打不开？用 IP 邀请'), 'button primary'), panel);
         }
       } else if (room.intranetOnly === true && lanReady && m.network.guestOrigin) {
         invite.append(el('p', t('数字 IP 改变后，访客需导入原身份或重新申请。'), 'muted'));
@@ -887,6 +888,7 @@ function renderRooms(m) {
           ? t('不设固定到期时间 · 包含本会话中已展示的文本记录')
           : t('有效至 {time} · 到期后自动结束共享', { time: new Date(room.inviteExpiresAt).toLocaleString(i18n.language) }), 'muted'));
         if (room.inviteExpiresAt === null) invite.append(el('p', t('不设固定到期时间；停止共享会撤销邀请。重启恢复取决于后台运行设置及原地址是否可用。'), 'muted'));
+        if (alternateInvite) invite.append(alternateInvite);
       } else {
         invite.append(el('p', t('有效至 {time} · 包含本会话中已展示的文本记录', { time: new Date(room.expiresAt).toLocaleTimeString(i18n.language) }), 'muted'));
         if (room.renewalSupported === true) invite.append(el('p', t('连接正常时自动续期'), 'muted'));
