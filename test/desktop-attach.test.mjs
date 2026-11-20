@@ -5,6 +5,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { once } from 'node:events';
+import { PassThrough } from 'node:stream';
 import { DesktopIpc, DesktopRpcClient, attachDesktop, applyDesktopPatches, projectDesktopThread } from '../lib/desktop-ipc.mjs';
 import { ScopedThread } from '../lib/scoped-thread.mjs';
 import { SharedRoom } from '../lib/host.mjs';
@@ -31,7 +32,7 @@ const state = (id = THREAD) => ({ id, hostId: 'local', title: '合成日常会�
 async function fixture(t, streamVersion = 11) {
   const dir = await fs.mkdtemp('/tmp/co2-attach-'); await fs.chmod(dir, 0o700);
   const endpoint = path.join(dir, 'desktop.sock'), owner = randomUUID(), clientIds = new Map(), sockets = new Set(), requests = [];
-  let revision = 0, malformed, holdInput = false, noOwner = false, noOwnerCount = 0, discoveryError, discoveryDelayMs = 0, inputDelayMs = 0, inputTimeout = false, inputObserver, replyTurnId = TURN;
+  let revision = 0, malformed, followReply, holdInput = false, noOwner = false, noOwnerCount = 0, discoveryError, discoveryDelayMs = 0, inputDelayMs = 0, inputTimeout = false, inputObserver, replyTurnId = TURN;
   const encode = message => { const b = Buffer.from(JSON.stringify(message)), h = Buffer.alloc(4); h.writeUInt32LE(b.length); return Buffer.concat([h, b]); };
   const send = (socket, message) => socket.write(encode(message));
   const broadcast = (socket, id, change, extra = {}) => send(socket, { type: 'broadcast', method: 'thread-stream-state-changed', version: streamVersion,
@@ -59,7 +60,8 @@ async function fixture(t, streamVersion = 11) {
           if (discoveryDelayMs) setTimeout(reply, discoveryDelayMs); else reply();
         }
         else if (m.method === 'thread-stream-following-changed' && m.params.following) {
-          broadcast(socket, m.params.conversationId, { type: 'snapshot', revision: revision++, conversationState: malformed ?? state(m.params.conversationId) });
+          if (followReply) socket.write(followReply);
+          else broadcast(socket, m.params.conversationId, { type: 'snapshot', revision: revision++, conversationState: malformed ?? state(m.params.conversationId) });
         } else if (['thread-follower-start-turn', 'thread-follower-steer-turn'].includes(m.method) && !holdInput) {
           inputObserver?.(m);
           const reply = () => {
@@ -75,7 +77,7 @@ async function fixture(t, streamVersion = 11) {
   await new Promise(resolve => server.listen(endpoint, resolve)); await fs.chmod(endpoint, 0o600);
   t.after(async () => { for (const socket of sockets) socket.destroy(); await new Promise(resolve => server.close(resolve)); await fs.rm(dir, { recursive: true, force: true }); });
   return { endpoint, owner, requests, sockets, clientIds, send, broadcast,
-    set malformed(value) { malformed = value; }, set holdInput(value) { holdInput = value; },
+    set malformed(value) { malformed = value; }, set followReply(bytes) { followReply = bytes; }, set holdInput(value) { holdInput = value; },
     set noOwner(value) { noOwner = value; },
     set noOwnerCount(value) { noOwnerCount = value; }, set discoveryError(value) { discoveryError = value; },
     set discoveryDelayMs(value) { discoveryDelayMs = value; }, set inputDelayMs(value) { inputDelayMs = value; }, set inputTimeout(value) { inputTimeout = value; },
@@ -781,6 +783,48 @@ test('unsupported first snapshot reports protocol incompatibility during invitat
   assert.deepEqual(await runtime.listThreads(), []);
 });
 
+test('a large v13 Desktop snapshot can start a share and receive further patches', async t => {
+  const f = await fixture(t, 13), native = state();
+  // An owner-only field can make the native frame large while the shared view stays small.
+  native.privateSecret = 'private-marker' + 'x'.repeat(16 * 1024 * 1024);
+  f.malformed = native;
+  const runtime = await attachDesktop({ endpoint: f.endpoint });
+  t.after(() => runtime.close());
+  await runtime.selectThread(THREAD, { activate: true });
+  const registrationSecret = 'a'.repeat(42) + 'Q', relay = await startRelay({ registrationSecret });
+  t.after(() => relay.close());
+  const room = new SharedRoom({ threadId: THREAD, relayUrl: relay.url, registrationSecret, rpcFactory: runtime.rpcFactory });
+  t.after(() => room.close());
+  await room.start();
+  assert.equal(new URL(room.view().inviteUrl).origin, relay.url);
+  assert.ok(room.thread.snapshot.items.some(item => item.text === '既有回复'));
+  const updated = once(room.rpc, 'state');
+  f.broadcast(f.lastSocket(), THREAD, { type: 'patches', baseRevision: room.rpc.revision, revision: room.rpc.revision + 1,
+    patches: [{ op: 'replace', path: ['title'], value: '更新后的标题' }] });
+  await updated;
+  assert.equal((await room.rpc.request('thread/read', { threadId: THREAD })).thread.name, '更新后的标题');
+  const shared = JSON.stringify(room.thread.snapshot);
+  assert.ok(Buffer.byteLength(shared) <= 48 * 1024);
+  assert.ok(!shared.includes('private-marker'));
+});
+
+test('the Desktop frame reader handles split headers, split UTF-8 and coalesced frames', () => {
+  const socket = new PassThrough(), ipc = new DesktopIpc(socket, 1000), received = [];
+  ipc.on('broadcast', message => received.push(message.params.value));
+  const frame = value => {
+    const body = Buffer.from(JSON.stringify({ type: 'broadcast', params: { value } })), header = Buffer.alloc(4);
+    header.writeUInt32LE(body.length);
+    return Buffer.concat([header, body]);
+  };
+  const first = frame('中'), second = frame('文');
+  const split = first.indexOf(Buffer.from('中')) + 1;
+  socket.write(first.subarray(0, 1));
+  socket.write(first.subarray(1, split));
+  socket.write(Buffer.concat([first.subarray(split), second]));
+  assert.deepEqual(received, ['中', '文']);
+  ipc.close();
+});
+
 test('version changes, stream gaps, mismatched snapshot IDs and disconnects fail closed', async t => {
   for (const kind of ['version', 'switch', 'gap', 'id', 'disconnect']) {
     const f = await fixture(t), rpc = await DesktopRpcClient.connect(f.endpoint); await rpc.request('thread/read', { threadId: THREAD });
@@ -804,14 +848,26 @@ test('uncertain submission is never replayed and revocation before dispatch prev
   assert.equal(f.requests.filter(r => r.method === 'thread-follower-start-turn').length, 1);
 });
 
-test('rejects unowned-style endpoints, unsafe patch paths, invalid state and oversized frames', async t => {
+test('rejects unowned-style endpoints, unsafe patch paths and invalid state', async t => {
   const f = await fixture(t);
   await fs.chmod(path.dirname(f.endpoint), 0o777); await assert.rejects(DesktopIpc.connect(f.endpoint), /protected/); await fs.chmod(path.dirname(f.endpoint), 0o700);
   const alias = path.join(path.dirname(f.endpoint), 'alias.sock'); await fs.symlink(f.endpoint, alias); await assert.rejects(DesktopIpc.connect(alias), /same-user/);
   for (const p of [ ['__proto__', 'polluted'], ['constructor', 'prototype'], ['missing', 'key'] ]) assert.throws(() => applyDesktopPatches({}, [{ op: 'add', path: p, value: true }]));
   assert.equal({}.polluted, undefined); assert.throws(() => projectDesktopThread(state(OTHER), THREAD), /another/);
-  const rpc = await DesktopRpcClient.connect(f.endpoint), closed = once(rpc, 'closed');
-  const header = Buffer.alloc(4); header.writeUInt32LE(16 * 1024 * 1024 + 1); f.lastSocket().write(header); await closed;
+});
+
+test('invalid first frames stop sharing with a specific diagnostic and no private text', async t => {
+  const f = await fixture(t), runtime = await attachDesktop({ endpoint: f.endpoint });
+  t.after(() => runtime.close());
+  const header = Buffer.alloc(4);
+  header.writeUInt32LE(256 * 1024 * 1024 + 1);
+  f.followReply = header;
+  await assert.rejects(runtime.selectThread(THREAD, { activate: true }), /256 MiB/);
+  const invalid = Buffer.from('private-text');
+  header.writeUInt32LE(invalid.length);
+  f.followReply = Buffer.concat([header, invalid]);
+  await assert.rejects(runtime.selectThread(THREAD, { activate: true }), { message: '无法解析 Codex 返回的会话同步数据。' });
+  assert.deepEqual(await runtime.listThreads(), []);
 });
 
 test('native connection loss revokes an admitted relay room and pending proposals; fresh sharing needs admission', async t => {
