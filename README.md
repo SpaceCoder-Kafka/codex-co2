@@ -15,7 +15,7 @@
 </p>
 
 <p align="center">
-  <a href="CHANGELOG.md#050"><img src="https://img.shields.io/badge/release-v0.5.0-2563eb" alt="Release v0.5.0"></a>
+  <a href="CHANGELOG.md#051"><img src="https://img.shields.io/badge/release-v0.5.1-2563eb" alt="Release v0.5.1"></a>
   <img src="https://img.shields.io/badge/host-macOS%2014%2B%20%C2%B7%20arm64%20%2F%20Intel-555555" alt="Host: macOS 14+, separate Apple Silicon and Intel packages">
   <img src="https://img.shields.io/badge/guest-browser-2563eb" alt="Guest: browser">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-22c55e" alt="License: MIT"></a>
@@ -26,7 +26,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/SpaceCoder-Kafka/codex-co2/releases/tag/v0.5.0">Download</a> ·
+  <a href="https://github.com/SpaceCoder-Kafka/codex-co2/releases/tag/v0.5.1">Download</a> ·
   <a href="#new-users-install-with-homebrew">Quick start</a> ·
   <a href="#screenshots">Screenshots</a> ·
   <a href="#what-sharing-grants">Sharing boundaries</a> ·
@@ -70,7 +70,7 @@ https://github.com/user-attachments/assets/743766be-3549-4928-9f1e-d720314f8989
 
 ## Install Codex Co²
 
-Version **0.5.0** adds conversation and attachment import, LAN sharing recovery and downloads for more file types. See the [changelog](CHANGELOG.md#050).
+Version **0.5.1** fixes invitation failures when sharing conversations with large Desktop snapshots. See the [changelog](CHANGELOG.md#051).
 
 The host attaches to your **already running official Codex Desktop**, keeping its existing Agent, login and tool approval settings. Guests use a browser with JavaScript and WebSocket support. Public sharing requires access to the generated public address; explicit intranet sharing requires access to the selected private network.
 
@@ -99,18 +99,18 @@ The command opens a local first-launch guide after successful installation. Use 
 
 ### Install from a DMG
 
-Alternatively, download the DMG for your Mac and its matching `.sha256` file from [Releases](https://github.com/SpaceCoder-Kafka/codex-co2/releases/tag/v0.5.0), then run the corresponding check.
+Alternatively, download the DMG for your Mac and its matching `.sha256` file from [Releases](https://github.com/SpaceCoder-Kafka/codex-co2/releases/tag/v0.5.1), then run the corresponding check.
 
 Apple Silicon (`arm64`):
 
 ```sh
-shasum -a 256 -c Codex-Co2-0.5.0-build38-arm64.dmg.sha256
+shasum -a 256 -c Codex-Co2-0.5.1-build39-arm64.dmg.sha256
 ```
 
 Intel (`x86_64`):
 
 ```sh
-shasum -a 256 -c Codex-Co2-0.5.0-build38-x86_64.dmg.sha256
+shasum -a 256 -c Codex-Co2-0.5.1-build39-x86_64.dmg.sha256
 ```
 
 The macOS package is **ad-hoc signed and not notarized by Apple**. macOS may block its first launch. Attempt to open Co² from Applications, then go to **System Settings → Privacy & Security → Open Anyway** and confirm. Homebrew installs the app directly without showing the DMG's installation window. See [Apple's guidance](https://support.apple.com/en-us/102445).

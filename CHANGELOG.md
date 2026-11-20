@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.1
+
+[中文版 →](https://github.com/SpaceCoder-Kafka/codex-co2/blob/main/docs/release-notes/v0.5.1-zh.md)
+
+Generating an invitation could fail when Codex Desktop sent a conversation snapshot larger than 16 MiB. Co² now accepts snapshots up to Desktop’s 256 MiB frame limit and continues to receive updates after the guest joins.
+
 ## 0.5.0
 
 [中文版 →](https://github.com/SpaceCoder-Kafka/codex-co2/blob/main/docs/release-notes/v0.5.0-zh.md)
