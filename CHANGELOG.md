@@ -7,6 +7,11 @@
 **New Features**
 
 1. **Continue a shared chat in your own Codex.** After admission, choose **Import to my Codex** and confirm in your local Co² app to open an independent conversation in Desktop. When both apps support attachment import, the copy includes local links to downloaded originals, including messages containing only attachments. The import identifies missing files and truncated history.
+
+   - **Take over a bug investigation.** A teammate has documented how to reproduce a bug and which causes they have ruled out. Import the chat and ask Codex to suggest the next test based on those results.
+   - **Explore a second approach in parallel.** While the team works through a one-step migration in the shared chat, use your copy to plan a phased rollout under the same compatibility requirements. Your follow-up questions stay in your copy. Bring the two plans back to the team to compare.
+   - **Turn a design review into an acceptance checklist.** Before sharing ends, import the review discussion and the attached mockups. The next day, open the saved mockups and use the decisions in your copy to draft a checklist for each screen.
+
 2. **Return to a LAN conversation.** With recovery records enabled, eligible shares can resume when the host restarts. On macOS, a Bonjour invitation lets a returning guest reuse a valid approval in the same browser after the host selects a new LAN address. A numeric IP invitation is also available.
 3. **Open an invitation in multiple tabs.** Admitted guests can refresh or reopen a valid invitation. Tabs in the same browser share membership and keep separate message drafts.
 4. **Download files without a browser preview.** Open the attachment card or file link to save the original, including diagnostic files and files with no extension.
