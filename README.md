@@ -51,7 +51,7 @@ brew tap SpaceCoder-Kafka/tap && brew install --cask SpaceCoder-Kafka/tap/codex-
 
 ## 演示视频
 
-[下载演示视频（MP4，1 分 28 秒）](https://raw.githubusercontent.com/SpaceCoder-Kafka/codex-co2/84eab529b3ae18921a1cb8af0b776e4ed2028290/assets/promo-feedback.mp4)
+https://github.com/user-attachments/assets/48bdea87-13fd-4f78-95a4-91dcac648644
 
 ## 工作原理
 

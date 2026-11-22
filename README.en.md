@@ -51,7 +51,7 @@ Prefer a DMG or Windows build? Download from [Releases](https://github.com/Space
 
 ## Demo video
 
-[Download the demo video (MP4, 1 min 28 sec)](https://raw.githubusercontent.com/SpaceCoder-Kafka/codex-co2/84eab529b3ae18921a1cb8af0b776e4ed2028290/assets/promo-feedback.mp4)
+https://github.com/user-attachments/assets/48bdea87-13fd-4f78-95a4-91dcac648644
 
 ## How it works
 
