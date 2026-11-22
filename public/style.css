@@ -54,6 +54,8 @@ input { flex: 1; min-width: 0; border: 1px solid #ddd; border-radius: 10px; padd
 .button-primary { color: #fff; background: #222; border-color: #222; }
 .button-primary:hover:not(:disabled) { background: #444; }
 .field-help, .privacy-note { font-size: 11px; line-height: 1.6; color: #888; margin: 8px 0 0; }
+.powered-by { font-size: 11px; line-height: 1.6; color: #888; margin: 12px 0 0; }
+.powered-by a, .help-section a { color: inherit; text-decoration: underline; text-underline-offset: 2px; }
 .inline-feedback { font-size: 12px; color: #777; line-height: 1.5; margin: 8px 0 0; overflow-wrap: anywhere; }
 .inline-feedback:empty { display: none; }
 details { font-size: 12px; padding: 9px 0; border-bottom: 1px solid #f1f1f1; }

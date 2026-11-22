@@ -192,6 +192,9 @@ test('download is available before an explicit native launch, which requires a f
   assert.equal(ui['codex-import-dialog'].open, true);
   assert.match(ui['codex-import-scope'].textContent, /截断/);
   assert.match(html, /id="download-co2" href="https:\/\/github\.com\/SpaceCoder-Kafka\/codex-co2"[^>]*>前往 GitHub 下载 Co²<\/a>/);
+  for (const id of ['powered-by-link', 'help-project-link']) {
+    assert.match(html, new RegExp(`id="${id}" href="https://github\\.com/SpaceCoder-Kafka/codex-co2" target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer"`));
+  }
   ui['download-co2'].click();
   page.tick(3000);
   ui['close-codex-import'].click();

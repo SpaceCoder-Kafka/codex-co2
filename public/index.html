@@ -54,6 +54,7 @@
                 <section class="help-section"><h3>草稿与连接</h3><p id="draft-help">未发送的草稿保存在当前标签页；断线后自动尝试重连，已发送消息不会自动重发。</p><div id="connection-status" class="status-pill" data-state="neutral" role="status"><span class="status-dot" aria-hidden="true"></span><span id="connection-label">尚未连接</span></div><p id="sync-label">等待同步</p></section>
                 <section id="member-panel" class="help-section" hidden><h3>参与信息</h3><p class="member-identity"><span id="member-avatar" class="avatar" aria-hidden="true">访</span><span id="member-name"></span><span id="member-title">你已加入</span></p><p id="member-description"></p></section>
                 <section class="help-section"><h3>共享边界</h3><p>仅共享这一条会话，任务在分享者的电脑上执行。</p><p>可刷新或收藏此页，在同一浏览器返回。地址栏里是完整邀请，请只向受邀协作者转发。</p><div id="history-note" class="history-note" hidden></div></section>
+                <section class="help-section"><h3>关于 Co²</h3><p>Codex Co² 是开源项目，可让你分享自己的 Codex 会话。<a id="help-project-link" href="https://github.com/SpaceCoder-Kafka/codex-co2" target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer">在 GitHub 查看</a></p></section>
                 <p class="panel-brand">Codex Co²</p>
               </section>
             </div>
@@ -78,6 +79,7 @@
             <h2 id="join-title">加入这条会话</h2><p class="card-description">共享一条 Codex 会话，一起推进工作。</p>
             <form id="join-form"><label class="sr-only" for="display-name">显示名称</label><div class="join-row"><input id="display-name" name="display-name" type="text" maxlength="80" placeholder="你的显示名称" autocomplete="nickname" required aria-describedby="name-help"><button id="join-button" class="button button-primary" type="submit">申请加入</button></div><p id="name-help" class="field-help">最多 40 个字符，分享者确认后即可加入。</p><details class="recovery-entry"><summary>换浏览器或换域名？恢复已加入的身份</summary><p class="field-help">同一浏览器会自动读取这个网站保存的身份。使用相同的 .local 名称和端口时，分享电脑换 IP 后也能自动恢复。更换浏览器、网站地址或清理存储后，可以使用下方备份。</p><label for="import-recovery">选择此前保存的恢复文件</label><input id="import-recovery" type="file" accept=".json,application/json"><label for="recovery-input">或粘贴备用恢复凭据</label><input id="recovery-input" type="password" maxlength="43" autocomplete="off" placeholder="首次加入无需填写"><p class="field-help">首次加入不用填写。没有恢复文件或凭据也可以填写显示名称，由分享者重新确认加入。</p></details></form>
             <p id="join-feedback" class="inline-feedback" aria-live="polite"></p>
+            <p class="powered-by">由开源项目 <a id="powered-by-link" href="https://github.com/SpaceCoder-Kafka/codex-co2" target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer">Codex Co²</a> 提供 · 也想分享自己的 Codex 会话？</p>
           </section>
           <section id="invite-recovery-panel" class="join-card invite-recovery-card" aria-labelledby="invite-recovery-title" hidden>
             <h2 id="invite-recovery-title">恢复邀请</h2><p id="invite-recovery-description" class="card-description"></p>
