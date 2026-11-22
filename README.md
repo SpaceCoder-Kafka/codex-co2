@@ -1,252 +1,81 @@
 <h1 align="center">Codex Co²</h1>
 
 <p align="center">
-  <strong>Real-time collaboration for Codex</strong><br>
-  Share the same Codex conversation and move the work forward together.
+  <strong>共享一条 Codex 会话，一起推进工作。</strong><br>
+  团队成员用浏览器加入你正在进行的 Codex 会话，直接与同一个 AI 编程 Agent 对话。
 </p>
 
 <p align="center">
-  Keep working in Codex Desktop while collaborators join in a browser to discuss the work,<br>
-  add context, and follow the Agent's replies.
+  <img src="assets/promotional_banner_cn.png" alt="Codex Co² — share the same Codex conversation and collaborate in a browser" width="100%">
 </p>
 
 <p align="center">
-  <img src="assets/promotional_banner_en.png" alt="Codex Co² — share the same Codex conversation and collaborate in a browser" width="100%">
+  <a href="https://github.com/SpaceCoder-Kafka/codex-co2/releases/tag/v0.5.1"><img src="https://img.shields.io/badge/release-v0.5.1-2563eb" alt="发布版本 v0.5.1"></a>
+  <img src="https://img.shields.io/badge/host-macOS%20%7C%20Windows-555555" alt="分享者：macOS 或 Windows">
+  <img src="https://img.shields.io/badge/guest-any%20browser-2563eb" alt="协作者：任意浏览器">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-22c55e" alt="许可：MIT"></a>
 </p>
 
 <p align="center">
-  <a href="CHANGELOG.md#051"><img src="https://img.shields.io/badge/release-v0.5.1-2563eb" alt="Release v0.5.1"></a>
-  <img src="https://img.shields.io/badge/host-macOS%2014%2B%20%C2%B7%20arm64%20%2F%20Intel-555555" alt="Host: macOS 14+, separate Apple Silicon and Intel packages">
-  <img src="https://img.shields.io/badge/guest-browser-2563eb" alt="Guest: browser">
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-22c55e" alt="License: MIT"></a>
+  <strong>简体中文</strong> · <a href="README.en.md">English</a>
 </p>
 
-<p align="center">
-  <strong>English</strong> · <a href="README.zh-CN.md">简体中文</a>
-</p>
+## 快速开始
 
-<p align="center">
-  <a href="https://github.com/SpaceCoder-Kafka/codex-co2/releases/tag/v0.5.1">Download</a> ·
-  <a href="#new-users-install-with-homebrew">Quick start</a> ·
-  <a href="#screenshots">Screenshots</a> ·
-  <a href="#what-sharing-grants">Sharing boundaries</a> ·
-  <a href="#common-questions">FAQ</a>
-</p>
-
-Codex Co² stands for **Codex Conversation Collaboration**. This is an independent experimental project, not an official OpenAI product or an OpenAI-endorsed integration.
-
-## Screenshots
-
-Choose a conversation in the host app, manage sharing, and collaborate with the same Agent from a browser. The screenshots below show the Chinese interface with demo content; click an image to view it at full size.
-
-<table>
-  <tr>
-    <td align="center" width="50%">
-      <strong>Choose a conversation</strong><br>
-      <a href="assets/screenshot-session-picker-demo-cn.png"><img src="assets/screenshot-session-picker-demo-cn.png" alt="Host app: choose a Codex conversation to share" width="100%"></a>
-    </td>
-    <td align="center" width="50%">
-      <strong>Manage sharing</strong><br>
-      <a href="assets/screenshot-sharing-demo-cn.png"><img src="assets/screenshot-sharing-demo-cn.png" alt="Host app: manage invitations, visitors and shared conversations" width="100%"></a>
-    </td>
-  </tr>
-  <tr>
-    <td align="center" width="50%">
-      <strong>Collaborate in a browser</strong><br>
-      <a href="assets/screenshot-web-conversation-demo-cn-v2.png"><img src="assets/screenshot-web-conversation-demo-cn-v2.png" alt="Guest browser: read the shared conversation and send a follow-up to the Agent" width="100%"></a>
-    </td>
-    <td align="center" width="50%">
-      <strong>Notifications and help</strong><br>
-      <a href="assets/screenshot-web-debug-demo-cn.png"><img src="assets/screenshot-web-debug-demo-cn.png" alt="Guest browser: collaboration help, notification settings and connection status" width="100%"></a>
-    </td>
-  </tr>
-</table>
-
-## Demo video
-
-https://github.com/user-attachments/assets/743766be-3549-4928-9f1e-d720314f8989
-
-[Download the promotional video](assets/promotional_video_en.mp4)
-
-## Install Codex Co²
-
-Version **0.5.1** fixes invitation failures when sharing conversations with large Desktop snapshots. See the [changelog](CHANGELOG.md#051).
-
-The host attaches to your **already running official Codex Desktop**, keeping its existing Agent, login and tool approval settings. Guests use a browser with JavaScript and WebSocket support. Public sharing requires access to the generated public address; explicit intranet sharing requires access to the selected private network.
-
-| Package | Target | Acceptance |
-| --- | --- | --- |
-| Apple Silicon DMG | macOS 14+; arm64 | Native Desktop, macOS 14 and clean-Mac acceptance still required |
-| Intel DMG | macOS 14+; x86_64 | Intel-native Desktop, macOS 14 and clean-Mac acceptance still required |
-| Windows setup EXE and portable ZIP | Windows 10 version 1809+ / Windows 11, x64 | Native Windows Desktop, installation and tool-approval acceptance still required |
-
-Windows requires Microsoft Edge WebView2 Runtime and offers manual updates through the project Releases page. Packages remain ad-hoc signed/unnotarized on macOS and unsigned on Windows. Linux packages are not built. A regular release does not establish native acceptance on every target.
-
-### New users: install with Homebrew
-
-These steps are for the host. Guests only need to open an invitation in their browser.
-
-Install [Homebrew](https://brew.sh/) if needed, and keep official Codex Desktop running. Then install Codex Co² from the [project's tap](https://github.com/SpaceCoder-Kafka/homebrew-tap):
+在分享者的 Mac 上保持官方 Codex Desktop 运行，然后安装：
 
 ```sh
-brew tap SpaceCoder-Kafka/tap
-brew install --cask SpaceCoder-Kafka/tap/codex-co2 && open "$(brew --repository SpaceCoder-Kafka/tap)/guides/homebrew.html"
+brew tap SpaceCoder-Kafka/tap && brew install --cask SpaceCoder-Kafka/tap/codex-co2
 ```
 
-If your Homebrew version requests explicit cask trust, review the cask and run `brew trust --cask SpaceCoder-Kafka/tap/codex-co2`, then retry installation.
+1. 打开 Co²，选择一条会话。
+2. 生成邀请，私下发给同事。
+3. 批准同事加入。对方用浏览器打开即可，无需安装，也无需登录 Codex。
 
-The command opens a local first-launch guide after successful installation. Use the **中文 / English** buttons at the top to choose your language. Homebrew has already placed the app in Applications, so no drag-and-drop step is needed. If you are migrating from 0.3.3, follow the one-time migration instructions below.
+需要 DMG 或 Windows 版本？请从 [Releases](https://github.com/SpaceCoder-Kafka/codex-co2/releases/tag/v0.5.1) 下载。安装包尚未经过公证，macOS 首次打开时需要确认。
 
-### Install from a DMG
+**如果 Co² 对你的团队有帮助，欢迎点一个 ⭐，让更多 Codex 用户发现它。**
 
-Alternatively, download the DMG for your Mac and its matching `.sha256` file from [Releases](https://github.com/SpaceCoder-Kafka/codex-co2/releases/tag/v0.5.1), then run the corresponding check.
+## 为什么用 Co²
 
-Apple Silicon (`arm64`):
+- **和同一个 Agent 结对编程。** 同事能看到 Agent 已经尝试过的一切，直接补充上下文或给出下一步指令。
+- **交接工作不丢上下文。** 通过「导入到我的 Codex」，同事可以在自己电脑上得到一份独立副本继续推进。
+- **现场评审。** 评审者在浏览器中跟进回复和附件，工具审批仍由你掌控。
 
-```sh
-shasum -a 256 -c Codex-Co2-0.5.1-build39-arm64.dmg.sha256
+| | 屏幕共享 | 复制粘贴对话 | **Codex Co²** |
+| --- | --- | --- | --- |
+| 协作者能给 Agent 发消息 | ❌ | ❌ | ✅ |
+| 历史与新回复保持同步 | 仅限观看时 | ❌ | ✅ |
+| 协作者需要安装 | 会议软件 | — | 无需安装 |
+| 在自己的 Codex 中继续 | ❌ | 手动 | ✅ |
+
+## 演示视频
+
+[下载演示视频（MP4，1 分 28 秒）](https://raw.githubusercontent.com/SpaceCoder-Kafka/codex-co2/84eab529b3ae18921a1cb8af0b776e4ed2028290/assets/promo-feedback.mp4)
+
+## 工作原理
+
+```mermaid
+flowchart LR
+  D["官方 Codex Desktop<br/>（已在运行，不做修改）"] <-- "现有本地接口" --> H["Co² 主机应用"]
+  H -- "出站 TLS 中继" --> G["协作者浏览器"]
+  H -. "或仅内网（HTTP）" .-> G
 ```
 
-Intel (`x86_64`):
+Co² 接入你已经打开的 Codex Desktop，不会重启、修改或替换它；Desktop 接口不可用时直接停止接入。只共享你选中的那条会话，Agent 始终在你的电脑上运行。
 
-```sh
-shasum -a 256 -c Codex-Co2-0.5.1-build39-x86_64.dmg.sha256
-```
+## 安全要点
 
-The macOS package is **ad-hoc signed and not notarized by Apple**. macOS may block its first launch. Attempt to open Co² from Applications, then go to **System Settings → Privacy & Security → Open Anyway** and confirm. Homebrew installs the app directly without showing the DMG's installation window. See [Apple's guidance](https://support.apple.com/en-us/102445).
+- **同一个 Agent，同样的权限。** 协作者消息沿用会话已有的工具、沙箱和额度，请只邀请可信任的人。
+- **只共享一条会话。** 你的其他会话和 Codex 凭据都不会共享。
+- **控制权在你手里。** 每位协作者都需你批准；可以要求逐条审批消息，也可以随时撤销访问。工具审批仍在 Desktop 中处理。
+- **不提供端到端加密。** 公网共享依赖 TLS 和中继；仅内网模式在私有网络中使用未加密的 HTTP。
+- **撤权只能阻止后续传输。** 无法收回对方已复制的内容。
 
-After copying the app, eject all older Co² disk images and open the installed copy from Applications. Keeping multiple versions available to macOS can interfere with background-service registration. If startup fails, use the displayed retry or system-settings action.
+## 了解更多
 
-### About and updates
+[更新日志](CHANGELOG.md) · [参与贡献](CONTRIBUTING.md) · [安全策略](SECURITY.md)
 
-Build 17 and later provide **About** in the sidebar and the macOS app menu. About shows the installed version, channel and build, offers **Check for updates**, and links to GitHub and release notes. The dismissible Star invitation opens the project repository in your browser.
+遇到问题或有建议？请提交 [Issue](https://github.com/SpaceCoder-Kafka/codex-co2/issues)。
 
-The app checks for updates at most once a day in the background. Preview builds receive newer preview and stable builds; stable builds receive stable updates. Click **Update to…** to download and verify an update. If sharing is active, confirm that it can end before Co² installs and restarts. Official Codex Desktop stays running; share again after updating. Canceling installation does not schedule it for your next quit. Source/browser mode and read-only disk images offer manual downloads instead.
-
-**Upgrading from a Universal package:** Stop sharing, turn off background running if enabled, then quit Co². Keep official Codex Desktop running. Manually replace Co² once with the matching Apple Silicon or Intel package, keeping its application data. Homebrew users can run:
-
-```sh
-brew update
-brew reinstall --cask SpaceCoder-Kafka/tap/codex-co2
-```
-
-The new packages use separate architecture-specific update feeds. The old Universal feed is frozen, so it does not offer this migration automatically. After replacing the app, use the in-app updater or `brew upgrade --cask --greedy SpaceCoder-Kafka/tap/codex-co2` for subsequent releases.
-
-For the earlier transition from 0.3.3 to the 0.1.0/0.2.0 release series, Build 17 and later could use the in-app updater because the internal Build continued increasing. Older builds required a manual upgrade; Homebrew users needed the same one-time reinstall because a normal upgrade could treat 0.1.0 as an older version.
-
-Windows users download the setup EXE or portable ZIP from Releases and quit the previous Co² app before replacing it.
-
-In-app updates verify signed update metadata and packages and remain subject to macOS security checks.
-
-### Host: share a conversation
-
-1. Install through Homebrew, or open the DMG and drag **Codex Co²** into **Applications**. For a manual replacement, stop sharing, turn off background running if available, then quit the old Co² app from its menu bar menu.
-2. Keep official Codex Desktop running, then open Co² from Applications.
-3. Review your display name and message approval preference in **Settings**.
-4. Select an existing conversation with at least one message and generate an invitation. If Codex comes to the foreground to load the conversation, simply switch back to Co².
-5. Send the invitation privately and approve your collaborator's request to join.
-
-### Guest: join and collaborate
-
-Source builds also let admitted guests select, paste or drop files, including attachment-only messages. Attachments appear above the text input in a horizontal strip, with thumbnails where supported and file icons otherwise. Upload up to 8 files per message, 32 MiB per file and 64 MiB total. Images use image input; other files use Desktop attachment references, with audio interpretation subject to Desktop and model support. Uploading does not require browser preview support. Remote and cloud execution environments without a host-file transfer path disable this feature. Unsubmitted uploads expire after 10 minutes of inactivity and are removed on disconnection; dispatched files remain in private `.coop/guest-uploads/` storage so the conversation can continue using them. Storage quotas apply; native Desktop acceptance remains pending.
-
-After admission, select **Import to my Codex** at the top right. If you need Co², follow the download link and return to the guest page after installation. Choose **Already installed, open Co²**, keep the page connected, and confirm the sharing site in your local app. Co² creates a new conversation in your local Codex and opens it in Desktop. You can continue it independently. The dialog identifies truncated history.
-
-When both copies of Co² support attachment import, Co² saves downloadable originals on your machine and adds local file links to the corresponding user or assistant messages. This includes messages that contain only attachments. Saved files remain available after sharing ends. External images keep their original URLs. If a file is missing or exceeds a limit, its message identifies it. Each import can save up to 128 originals totaling 256 MiB. Older hosts provide text-only snapshots.
-
-1. Open the invitation in a browser, enter a display name and request access.
-2. After admission, read the conversation and send messages to its Agent. You can refresh, bookmark the invitation, or open it in another tab in the same browser. A valid share and saved authorization let you return automatically. Tabs share your membership and keep their own unsent drafts. Share the address bar link only with intended guests.
-3. By default, new messages enter the Agent directly. If the host enables message approval, wait for the host's decision.
-4. After admission, the page automatically attempts to request notification permission if undecided. If your browser blocks the automatic request, click **Enable notifications** in the page prompt or **Collaboration details → Help**. Reconnecting does not repeat the request, and explicitly disabling notifications prevents automatic requests. Use **Send test notification** to check display and click behavior. A different invitation origin needs its own notification permission. If the browser accepts the test but no banner appears, check Chrome's system notification settings and Focus mode. Keep the page open and connected. Supported browsers can notify you while the page is in the background; clicking the notification returns to that page. A run ending does not necessarily mean it succeeded.
-
-The host can remove a collaborator, stop one share or stop all sharing. Closing the management window leaves the app in the menu bar. With the macOS background service enabled and authorized, **Quit** closes the management interface while sharing continues. Without it, quitting ends sharing. Stopping sharing always revokes access, but does not cancel work already dispatched to the Agent.
-
-### Background running on macOS
-
-Current public macOS packages are ad-hoc signed. To keep system background-registration constraints from blocking management, Co² first reuses an existing service. Otherwise it clears only confirmed inactive registrations belonging to Co² and runs with the management app. Closing the window leaves the app in the menu bar; quitting Co² pauses foreground sharing. Login startup is not promised. **Sharing recovery records** in Settings explains the current mode and lets you retain or revoke recovery eligibility.
-
-Recovery records are retained by default. The current source supports returning to the original LAN address and port after an update or restart with a valid visitor credential. Turning this off immediately revokes saved eligibility; enabling it later does not restore old eligibility. Public temporary hostnames cannot survive tunnel restarts. The app does not start or modify official Codex Desktop.
-
-Builds with a stable developer signature may still use system-approved background operation. The app distinguishes that from foreground mode; an enabled preference does not mean a background service is running. Native notifications are not guaranteed while the management interface is closed; reopen it to review pending requests.
-
-This background service is macOS-only in this version. Windows, browser and CLI management do not expose the native setting.
-
-### Recover an expired invitation
-
-If an invitation expires or sharing ends because of a system interruption, the original page can offer **Request invitation recovery** once it confirms recovery is available. Enter a display name and submit. After the page confirms that the request is awaiting the host, keep it open or **reopen the original invitation in the same browser** later to check the result. The browser saves a request receipt; if storage is unavailable, the page asks you to keep it open. Closing the page disables live updates; there is no push delivery while it is closed.
-
-In **Shared conversations → Invitation recovery requests**, the host can approve and allow joining, or decline. Approval reuses the conversation's current valid invitation, or starts a new share, and admits only this requester. It does not interrupt other collaborators or admit every holder of the old link. The requester supplies their display name; it is not a verified identity.
-
-Recovery is available with Co²'s built-in sharing service; external or standalone relays do not support it yet. The recovery window lasts up to **7 days** after expiry or interruption. A request lasts up to **24 hours**, bounded by that window; approved results and unused admission permissions also expire with the target share. Restarting does not extend these deadlines. Stopping sharing revokes eligibility; a declined or removed guest cannot regain access through their original request.
-
-With macOS recovery records enabled, intranet recovery metadata and credential hashes are saved privately. Conversation content and raw invitation, receipt or visitor credentials are not saved by this recovery store. The service waits for the original private IP and port by default. After a DHCP address change, the host can select a new private IP in **Settings → Access scope**, continue sharing there, and copy a new invitation from **Shared sessions**. Existing valid member grants and the original invitation deadline carry over. On macOS, each invitation opens a `.local` landing page specific to the selected IP. The page checks that the stable visitor site reaches the same listener before navigating there automatically. If the browser still remembers the old IP after a move, leave the page open. A returning guest’s identity stays in the stable site’s `localStorage` and the same browser can reuse a valid approval without importing a file. Numeric IP invitations are available for devices without Bonjour.
-
-**Returning LAN visitors can reopen their original invitation in the same browser.** Recovery records must be enabled, the invitation and personal credential must still be valid, and Desktop must be able to open the shared conversation. When the host reopens Co², eligible LAN rooms appear in Shared sessions with their original message approval policy, even before a visitor returns. New visitors still need the host’s approval. Older records without a room-specific visitor grant use the existing manual recovery flow. Pending requests survive and the host can retry interrupted approvals.
-
-A public Quick Tunnel can stay alive while its background service keeps running, but its temporary hostname cannot be preserved across tunnel or computer restarts. If the original entry cannot return, or the host changes it, ask for another invitation.
-
-## What sharing grants
-
-- Admission grants access to the selected conversation's projected history and future messages, including history from before sharing. Long histories may be truncated. Source builds also show read-only tool results, command status and output, Diffs and plans. Desktop does not guarantee live, character-by-character terminal output or in-progress Diffs; the page displays the updates and final results supplied by Desktop.
-- Preview and download supported user attachments and files explicitly linked in assistant replies: MP4; MP3, WAV, M4A, OGG and FLAC audio; PDF; CSV/TSV and XLSX tables; Markdown, DOCX, PPTX and common text or code files. Markdown supports formulas, Mermaid diagrams and code highlighting. Office previews prioritize readable text, tables, images and common layouts; unsupported complex content is marked, and the original file remains available to download. Common document attachments and standalone generated documents appear as compact file cards. Visitors can download original DOC, XLS and PPT files. Source builds also show attachment cards or inline references for other formats without a preview, including .hprof and .trace, and for files without an extension. Open the card or reference and choose **Download original** to view the file locally. Previews are read only. Images are limited to 8 MiB each, other original files to 32 MiB, and text or CSV/TSV previews to 1 MiB. Browser media codec support still applies.
-- Images in assistant Markdown replies appear in place and can be enlarged: absolute local PNG, JPEG and WebP files use the admitted room connection; HTTP(S) images load directly in the guest browser without a referrer. A plain path in a message does not grant file access. Not all Desktop content or plugin interactions are projected.
-- Guest messages enter the **same Agent**, using the conversation's existing tools, sandbox, permissions and billing or usage allowance. This is not a separate execution sandbox. Invite people you trust.
-- Only the local host can change message approval. Changes affect new messages; already pending messages still need a decision. **Native tool approvals remain in official Desktop**; message approval does not replace them.
-- The authenticated local manager reads IDs, titles, update times and project paths from the Desktop index. That catalog is not sent to guests or the relay. Selected content is read through Desktop IPC; the app does not copy default credentials or conversation files.
-- Public sharing uses ordinary TLS and trusts the relay/tunnel infrastructure. **It is not end-to-end encrypted.** Host disconnection pauses collaboration; some failures require a new invitation. Temporary URLs may change and availability is not guaranteed. [Quick Tunnels are intended for testing and development](https://developers.cloudflare.com/tunnel/get-started/quick-tunnels/).
-- Source builds add **Settings → Access scope → Intranet only**. Select a private IPv4 address and save, then invite colleagues through the private IP without creating a Cloudflare entry. End existing shares before changing scope. **Direct intranet access uses unencrypted HTTP; browser system notifications are unavailable.** Chat, admission and message approval remain available. This restricts the collaboration entry; model, tool and remote-image traffic keep their existing network behavior. Cross-device access and company firewall rules still need field acceptance.
-- When creating an intranet invitation, choose **1 hour, 1 day, 7 days or Permanent**. Timed invitations end sharing at a fixed deadline and do not roll forward. Permanent removes that deadline; stopping sharing, replacing the entry, or loss of service, network or Desktop availability can still end access. Visitor credentials have a separate expiry shown in the browser’s collaboration details.
-- Invitations, visitor recovery files and request receipts are sensitive. Browser storage may retain visitor identities and request receipts. Revoking access stops further delivery but cannot erase content a recipient has already copied or saved.
-
-Review history and attachments before sharing. Avoid disclosing secrets or material you do not have permission to share.
-
-## Common questions
-
-**Does the guest need a Codex account?** Browser access to Co² does not require a separate Codex login. Messages use the host's running conversation and its existing allowance.
-
-**Why can't I connect?** Confirm official Desktop is running, has a nonempty conversation, and exposes a compatible local interface. Co² fails closed if unavailable or incompatible. It does not restart Desktop, replace a profile or create a fallback backend. Desktop updates may affect compatibility.
-
-**Why has my invitation stopped working?** Public invitations renew with a compatible relay and healthy connections, keeping the same link; the Cloudflare temporary hostname has no one-hour hard deadline. Timed intranet invitations end sharing at their fixed deadline. Permanent invitations still depend on the host and network. Brief disconnections retry first. For expiry or system interruption with a reachable original entry, follow the page's recovery prompt. Stopping sharing, changing the entry or unavailable recovery requires the host to send another invitation. With macOS recovery records enabled, returning visitors can reopen a valid LAN invitation in the same browser. Choose “Got it” to dismiss an ended share while keeping its history and eligible recovery requests. Check uncertain submissions in Desktop before resending.
-
-**What has been verified?** Synthetic tests cover admission, message policy, scoped transport and revocation. Earlier manual sessions verified individual local/public paths. Final-package native Desktop, native tool approval and clean-Mac download/install acceptance remain pending. Scripted RPC tests do not prove native UI behavior.
-
-## Run or build from source
-
-Use Node.js **22.23.3** (the pinned bundle runtime), npm, a compatible running Codex Desktop, and `cloudflared` **2026.10.1** for public sharing. From the cloned repository:
-
-```sh
-npm ci --ignore-scripts
-npm run host -- --attach --public --open
-```
-
-Open the local manager printed by the command. Without `--public`, access stays local. No separate Codex CLI is needed for attachment.
-
-For direct intranet access from source, run `npm run host -- --attach --intranet-only --open`. If multiple private addresses are detected, select the sharing address in the manager or specify a current interface address with `--lan-address 192.168.1.20`. Intranet mode never falls back to public sharing after failure. After a LAN address change, select the new private IP in the manager to continue sharing and copy a new invitation. Company routing, VPN and Wi-Fi client isolation still determine whether devices can reach each other.
-
-Building a macOS DMG needs Apple Silicon or Intel macOS, Xcode command line tools, Python 3.9+ and network access. Select the target architecture explicitly:
-
-```sh
-npm run build:macos -- --arch arm64
-npm run check:macos -- "dist/arm64/Codex Co².app"
-```
-
-For Intel, use `--arch x86_64` and check `dist/x86_64/Codex Co².app`.
-
-The macOS packages target macOS 14 and rebuild the pinned cloudflared source with a verified Go toolchain. Build tools and caches stay local to the repository; no global Go installation is required. Package checks inspect every native slice's deployment target. They do not establish that Desktop attachment, tool approvals or installation work on macOS 14.
-
-For Windows packages, install .NET SDK 8.0.426, Python 3.9+, NSIS 3.13 and npm dependencies, then run:
-
-```sh
-npm run build:windows
-npm run check:windows
-```
-
-The Windows shell is self-contained; users do not need a separate .NET installation. Cross-building creates Windows artifacts but does not establish native Windows acceptance. See [CONTRIBUTING](CONTRIBUTING.md) for tool overrides and checks.
-
-Outputs are in ignored `dist/`. Builds download pinned runtimes, install clean locked production dependencies, include license notices and run local regressions. See [CONTRIBUTING](CONTRIBUTING.md) for developer tests.
-
-## Feedback and license
-
-Use this repository's Issues for reproducible bugs and suggestions. Include app/build and Desktop versions; remove private messages, paths, invitations and recovery credentials. Report vulnerabilities privately as described in [SECURITY](SECURITY.md).
-
-Project code is under [MIT](LICENSE). Bundled components retain their [own licenses](THIRD_PARTY_NOTICES.md). See [asset provenance](ASSET_PROVENANCE.md) for visuals.
+<sub>Codex Co²（Codex Conversation Collaboration）是独立实验项目，并非 OpenAI 官方产品，也未获 OpenAI 背书。项目代码使用 [MIT](LICENSE) 许可。随附组件的许可和项目素材的授权范围见[许可说明](THIRD_PARTY_NOTICES.md)。</sub>

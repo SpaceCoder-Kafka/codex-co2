@@ -65,7 +65,7 @@ test('Windows static bundle checks accept listed preview outputs but reject tamp
   }
   const assetManifest = { version: 1, sourceSHA256: 'a'.repeat(64), assets, files: assetFiles };
   const saveAssets = () => put('resources/service/public/vendor/asset-manifest.json', JSON.stringify(assetManifest)); await saveAssets();
-  for (const name of ['LICENSE', 'THIRD_PARTY_NOTICES.md', 'ASSET_PROVENANCE.md', 'npm-NOTICES.txt', 'Node-LICENSE', 'cloudflared-LICENSE', 'NSIS-LICENSE.txt', 'cloudflared-modules/Go-LICENSE']) await put('resources/Licenses/' + name, 'synthetic notice');
+  for (const name of ['LICENSE', 'THIRD_PARTY_NOTICES.md', 'npm-NOTICES.txt', 'Node-LICENSE', 'cloudflared-LICENSE', 'NSIS-LICENSE.txt', 'cloudflared-modules/Go-LICENSE']) await put('resources/Licenses/' + name, 'synthetic notice');
   const nuget = {
     'microsoft.web.webview2': { version: WINDOWS.webView2SDK, notices: ['LICENSE.txt', 'NOTICE.txt'] },
     'microsoft.netcore.app.runtime.win-x64': { version: WINDOWS.dotnetRuntime, notices: ['LICENSE.TXT', 'THIRD-PARTY-NOTICES.TXT'] },

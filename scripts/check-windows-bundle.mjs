@@ -29,7 +29,7 @@ for (const name of ['CodexCo2.exe', 'resources/runtime/node.exe', 'resources/run
   if (peArchitecture(await fs.readFile(path.join(app, name))) !== 'x64') throw new Error(`Wrong native architecture: ${name}`);
 const runtime = (await fs.readdir(path.join(resources, 'runtime'))).sort();
 if (runtime.join(',') !== 'cloudflared.exe,node.exe') throw new Error('Only the pinned Node/cloudflared runtimes may be bundled');
-for (const name of ['LICENSE', 'THIRD_PARTY_NOTICES.md', 'ASSET_PROVENANCE.md', 'npm-NOTICES.txt', 'Node-LICENSE', 'cloudflared-LICENSE', 'NSIS-LICENSE.txt', 'cloudflared-modules/Go-LICENSE', 'cloudflared-modules/index.json'])
+for (const name of ['LICENSE', 'THIRD_PARTY_NOTICES.md', 'npm-NOTICES.txt', 'Node-LICENSE', 'cloudflared-LICENSE', 'NSIS-LICENSE.txt', 'cloudflared-modules/Go-LICENSE', 'cloudflared-modules/index.json'])
   if (!(await fs.stat(path.join(resources, 'Licenses', name))).size) throw new Error(`Missing Windows distribution notice: ${name}`);
 const nugetVersions = { 'microsoft.web.webview2': WINDOWS.webView2SDK, 'microsoft.netcore.app.runtime.win-x64': WINDOWS.dotnetRuntime,
   'microsoft.windowsdesktop.app.runtime.win-x64': WINDOWS.dotnetRuntime };

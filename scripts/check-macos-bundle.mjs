@@ -113,7 +113,7 @@ for (const relative of files.filter(name => /^service\/(lib|owner|public)\//.tes
   if (Object.hasOwn(manifest.source.files, sourceName)
       ? manifest.source.files[sourceName] !== manifest.files[relative] : !generatedWebFiles.has(relative)) throw new Error(`Unreviewed service source: ${relative}`);
 }
-for (const name of ['LICENSE', 'npm-NOTICES.txt', 'Node-LICENSE', 'cloudflared-LICENSE', 'Sparkle-LICENSE.txt', 'THIRD_PARTY_NOTICES.md', 'ASSET_PROVENANCE.md', 'cloudflared-modules/Go-LICENSE', 'cloudflared-modules/index.json']) {
+for (const name of ['LICENSE', 'npm-NOTICES.txt', 'Node-LICENSE', 'cloudflared-LICENSE', 'Sparkle-LICENSE.txt', 'THIRD_PARTY_NOTICES.md', 'cloudflared-modules/Go-LICENSE', 'cloudflared-modules/index.json']) {
   if (!(await fs.stat(path.join(resources, 'Licenses', name))).size) throw new Error(`Missing license text: ${name}`);
 }
 const goNotices = JSON.parse(await fs.readFile(path.join(resources, 'Licenses/cloudflared-modules/index.json'), 'utf8'));

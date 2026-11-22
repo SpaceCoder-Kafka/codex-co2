@@ -113,7 +113,7 @@ try {
   productionDependencies = await copyProductionDependencies({ sourceRoot: root, installedRoot: dependencies, destination: path.join(service, 'node_modules') });
   await fs.writeFile(path.join(licenses, 'npm-NOTICES.txt'), notices);
 } finally { await fs.rm(dependencies, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }); }
-for (const name of ['LICENSE', 'THIRD_PARTY_NOTICES.md', 'ASSET_PROVENANCE.md']) await fs.copyFile(path.join(root, name), path.join(licenses, name));
+for (const name of ['LICENSE', 'THIRD_PARTY_NOTICES.md']) await fs.copyFile(path.join(root, name), path.join(licenses, name));
 await fs.copyFile(path.join(root, 'windows/NSIS-LICENSE.txt'), path.join(licenses, 'NSIS-LICENSE.txt'));
 
 // NuGet signature validation and the checked-in lock protect the WebView2 SDK.

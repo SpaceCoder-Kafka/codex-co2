@@ -137,7 +137,7 @@ for (const file of ['desktop-service.mjs', 'receiver-import.mjs'])
 await fs.copyFile(path.join(root, 'package.json'), path.join(service, 'package.json'));
 await fs.copyFile(path.join(nodeDir, 'LICENSE'), path.join(resources, 'Licenses/Node-LICENSE'));
 await fs.copyFile(tunnelBuild.licensePath, path.join(resources, 'Licenses/cloudflared-LICENSE'));
-for (const name of ['LICENSE', 'THIRD_PARTY_NOTICES.md', 'ASSET_PROVENANCE.md']) await fs.copyFile(path.join(root, name), path.join(resources, 'Licenses', name));
+for (const name of ['LICENSE', 'THIRD_PARTY_NOTICES.md']) await fs.copyFile(path.join(root, name), path.join(resources, 'Licenses', name));
 const noticeRoot = path.join(resources, 'Licenses/cloudflared-modules'), noticeFiles = {}, noticeModules = new Map(), noticeArchitectures = {};
 for (const architecture of architectures) {
   const destination = path.join(noticeRoot, architecture);

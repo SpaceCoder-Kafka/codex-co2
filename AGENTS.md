@@ -2,6 +2,7 @@
 
 - Repository/package: `codex-co2`; display name **Codex Co²**; full name **Codex Conversation Collaboration**.
 - English subtitle: **Real-time collaboration for Codex**. Chinese introduction: **共享一条 Codex 会话，一起推进工作。**
+- Use Simplified Chinese for the default `README.md` and English for `README.en.md`. Keep installation steps, core usage and sharing boundaries in sync. Localize demo media when readers need it.
 - Public README files explain value, installation, usage and essential boundaries. Maintainer architecture, historical evidence and acceptance archives are kept separately and are not part of the public export.
 - Preserve legacy protocol identifiers, `.coop/` state and retired SSH cleanup markers. Do not rewrite historical evidence as if it used new paths or versions.
 
