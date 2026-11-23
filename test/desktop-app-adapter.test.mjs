@@ -171,7 +171,10 @@ test('poll notifications carry only the bound target and stop after disconnect',
   await attachment.selectThread(THREAD);
   const rpc = await attachment.rpcFactory();
   await rpc.request('thread/read', { threadId: THREAD });
-  const [notification] = await once(rpc, 'notification');
+  // The production poller is unref'ed. Keep the synthetic client alive until its notification arrives.
+  const controller = new AbortController();
+  const deadline = setTimeout(() => controller.abort(), 3000);
+  const [notification] = await once(rpc, 'notification', { signal: controller.signal }).finally(() => clearTimeout(deadline));
   assert.deepEqual(notification, { method: 'thread/status/changed', params: { threadId: THREAD } });
   const closed = once(rpc, 'closed'); bridge.disconnect(); await closed;
   let count = 0; rpc.on('notification', () => count++);
