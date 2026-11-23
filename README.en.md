@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/SpaceCoder-Kafka/codex-co2/releases/tag/v0.5.1"><img src="https://img.shields.io/badge/release-v0.5.1-2563eb" alt="Release v0.5.1"></a>
+  <a href="https://github.com/SpaceCoder-Kafka/codex-co2/releases/tag/v0.6.0"><img src="https://img.shields.io/badge/release-v0.6.0-2563eb" alt="Release v0.6.0"></a>
   <img src="https://img.shields.io/badge/host-macOS%20%7C%20Windows-555555" alt="Host: macOS or Windows">
   <img src="https://img.shields.io/badge/guest-any%20browser-2563eb" alt="Guest: any browser">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-22c55e" alt="License: MIT"></a>
@@ -41,7 +41,7 @@ Newer Codex Desktop versions connect through the Co² bridge plugin. Click **Ins
 
 </details>
 
-Prefer a DMG or Windows build? Download from [Releases](https://github.com/SpaceCoder-Kafka/codex-co2/releases/tag/v0.5.1). Packages aren't notarized yet, so macOS asks you to confirm the first launch.
+Prefer a DMG or Windows build? Download from [Releases](https://github.com/SpaceCoder-Kafka/codex-co2/releases/tag/v0.6.0). Packages aren't notarized yet, so macOS asks you to confirm the first launch.
 
 **If Co² helps your team, give it a ⭐ so other Codex users can find it.**
 

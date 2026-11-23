@@ -1,8 +1,10 @@
 # Changelog
 
-## Unreleased
+## 0.6.0
 
-- Add an automatic local bridge for newer macOS Codex Desktop versions whose previous sharing interface is unavailable. Startup and **Reconnect Codex** use Desktop's plugin entry point without a model call or a manual command in a chat.
+[中文版 →](https://github.com/SpaceCoder-Kafka/codex-co2/blob/main/docs/release-notes/v0.6.0-zh.md)
+
+- Add a local bridge for newer macOS Codex Desktop versions whose previous sharing interface is unavailable. On first use or after uninstalling the plugin, click **Install plugin** in the running Codex Desktop. Startup and **Reconnect Codex** use Desktop's plugin entry point without a model call or a manual command in a chat.
 - Queue text submissions through the installed official CLI while keeping execution in the existing Desktop. Reconnection never resubmits a message. This compatibility mode uses periodic updates and explicitly reports its attachment, attribution and output limits.
 - Replace a stalled session picker with actionable connection errors.
 - Recover from initial connection failures and synchronize connection changes across open managers. Retry oversized history pages with fewer turns and explicitly report any omitted execution details.
