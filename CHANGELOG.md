@@ -4,7 +4,7 @@
 
 [中文版 →](https://github.com/SpaceCoder-Kafka/codex-co2/blob/main/docs/release-notes/v0.6.1-zh.md)
 
-Co² 0.6.1 rotates the macOS update signing key. If you use 0.6.0 or earlier, upgrade once via Homebrew or the DMG for your Mac. Subsequent in-app updates use the new key.
+Co² 0.6.1 rotates the macOS update signing key. If you use 0.6.0 or earlier, upgrade once via Homebrew or the DMG for your Mac. Subsequent in-app updates use the new key. The native update prompt now starts the download when you choose **Update and Reopen**, including when the management window is unavailable.
 
 ## 0.6.0
 

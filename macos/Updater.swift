@@ -238,14 +238,18 @@ final class AppUpdates: NSObject, SPUUserDriver, SPUUpdaterDelegate {
             }
         }) { reply(.skip) }
     }
-    private func presentNativeState() {
+    private func confirmNativeInstallation() -> Bool {
         let alert = NSAlert(); alert.messageText = "Codex Co²"
+        let version = candidate?.displayVersionString ?? "?", build = candidate?.versionString ?? "?"
+        alert.informativeText = localize("检测到新版本：{version}（Build {build}）").replacingOccurrences(of: "{version}", with: version).replacingOccurrences(of: "{build}", with: build)
+        alert.addButton(withTitle: localize("更新并重新打开")); alert.addButton(withTitle: localize("稍后"))
+        return alert.runModal() == .alertFirstButtonReturn
+    }
+    private func presentNativeState() {
         if phase == "available" {
-            let version = candidate?.displayVersionString ?? "?", build = candidate?.versionString ?? "?"
-            alert.informativeText = localize("检测到新版本：{version}（Build {build}）").replacingOccurrences(of: "{version}", with: version).replacingOccurrences(of: "{build}", with: build)
-            alert.addButton(withTitle: localize("更新并重新打开")); alert.addButton(withTitle: localize("稍后"))
-            if alert.runModal() == .alertFirstButtonReturn { install() }
+            if updater?.sessionInProgress != true && confirmNativeInstallation() { install() }
         } else {
+            let alert = NSAlert(); alert.messageText = "Codex Co²"
             let source = state["message"] as? String ?? (phase == "upToDate" ? "当前已是最新版本" : "正在准备更新…")
             alert.informativeText = localize(source)
             alert.addButton(withTitle: localize("好"))
@@ -275,8 +279,14 @@ final class AppUpdates: NSObject, SPUUserDriver, SPUUpdaterDelegate {
             guard writableInstallation else { reply(.dismiss); fail("当前安装无法自动更新，请前往 GitHub 下载。"); return }
             reply(.install)
         } else {
-            publish("available"); nativePresentationPending = userInitiated && showAbout?() != true
-            reply(.dismiss)
+            publish("available")
+            // Sparkle is still waiting for this driver's choice. Answer this
+            // session directly so a native confirmation cannot start a second check.
+            if userInitiated && showAbout?() != true && confirmNativeInstallation() {
+                guard writableInstallation else { reply(.dismiss); fail("当前安装无法自动更新，请前往 GitHub 下载。"); return }
+                installRequested = true
+                reply(.install)
+            } else { reply(.dismiss) }
         }
     }
     func showUpdateReleaseNotes(with downloadData: SPUDownloadData) {}
