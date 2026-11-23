@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes"?><!-- sparkle-sign-warning:
+IMPORTANT: This file was signed by Sparkle. Any modifications to this file requires re-signing this file with generate_appcast or sign_update! The signed signature will be embedded at the end of this file.
+--><rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0">
+  <channel>
+    <title>Codex Co² updates</title>
+    <link>https://github.com/SpaceCoder-Kafka/codex-co2</link>
+    <description>Real-time collaboration for Codex</description>
+    <item>
+      <title>Codex Co² 0.6.1 (Build 41)</title>
+      <link>https://github.com/SpaceCoder-Kafka/codex-co2/releases/tag/v0.6.1</link>
+      <pubDate>Mon, 23 Nov 2026 15:31:45 GMT</pubDate>
+      <sparkle:version>41</sparkle:version>
+      <sparkle:shortVersionString>0.6.1</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <enclosure url="https://github.com/SpaceCoder-Kafka/codex-co2/releases/download/v0.6.1/Codex-Co2-0.6.1-build41-arm64.dmg" sparkle:edSignature="gbEVudrscnYB9ebkFLQtYQuom/BSpwTVkKQgZXxsQGeZVVizt/tSyAzStrGV4fczEs0e9WSA+0lANcN87z//AA==" length="66779784" type="application/octet-stream"></enclosure>
+    </item>
+  </channel>
+</rss><!-- sparkle-signatures:
+edSignature: BWZVUmMfapwsrW9g6uq7FDm+WXozCdYocLOVs/Lg+JWChu66uN/U985/MX7q7vMaAzyKYHEL/L/kmb83AXTsAw==
+length: 1275
+-->
