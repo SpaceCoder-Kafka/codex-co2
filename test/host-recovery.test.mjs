@@ -35,6 +35,21 @@ async function manager(t, owner) {
   return { ws, messages, send };
 }
 
+test('Desktop state changes reach all authenticated managers without a reconnect result or runtime input', async t => {
+  let connected = false;
+  const owner = await startOwner({ attached: true, ownerDir: new URL('../owner', import.meta.url).pathname,
+    getDesktopConnection: () => ({ transport: 'desktop-app-tools', connected }),
+    rpcFactory: async () => assert.fail('status updates cannot execute or reopen a room') });
+  t.after(() => owner.close());
+  const first = await manager(t, owner), second = await manager(t, owner);
+  connected = true; owner.notifyDesktopChanged();
+  await until(() => [first, second].every(client => client.messages.at(-1)?.desktop?.connected === true));
+  connected = false; owner.notifyDesktopChanged();
+  await until(() => [first, second].every(client => client.messages.at(-1)?.desktop?.connected === false));
+  assert.equal(owner.rooms.size, 0);
+  for (const client of [first, second]) assert.equal(client.messages.some(message => message.type === 'desktop-result'), false);
+});
+
 test('half-open host transport reconnects to the same invitation without restoring guest admission or sending inputs', async t => {
   const registrationSecret = secret(), relay = await startRelay({ registrationSecret }); t.after(() => relay.close());
   const rpc = new Rpc(), owner = await startOwner({ relayUrl: relay.url, registrationSecret, rpcFactory: async () => rpc,

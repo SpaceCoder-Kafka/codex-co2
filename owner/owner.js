@@ -2,6 +2,8 @@ const $ = s => document.querySelector(s);
 const i18n = window.Co2I18n, t = i18n.t;
 let activeTab = 'sessions', lastState = null, lastAttached, disconnected = false;
 let connectionAction = '', rebuildArmed = false;
+let desktopReconnectBusy = false;
+let threadRequests = 0, desktopRefreshRequested = false;
 let shareLimitDirty = false, shareLimitSaving = false, shareLimitStatus = '', shareLimitAlert = null;
 let networkDraft = null, networkDirty = false, networkSaving = false, networkStatus = '';
 let nameHint = '用于新共享会话中的消息署名，1–40 个字符。';
@@ -11,12 +13,14 @@ history.replaceState(null, '', location.pathname);
 const ws = new WebSocket(`ws://${location.host}/owner`);
 const emptyState = $('#rooms').firstElementChild.cloneNode(true);
 const notice = (text, tone = 'ready', values = {}) => { noticeState = { text, tone, values }; $('#notice').textContent = t(text, values); $('.connection').dataset.tone = tone; };
-const send = data => { if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(data)); };
+const send = data => { if (ws.readyState === WebSocket.OPEN) { if (data.type === 'threads') threadRequests++; ws.send(JSON.stringify(data)); } };
 const el = (tag, text, cls) => { const node = document.createElement(tag); if (text != null) node.textContent = text; if (cls) node.className = cls; return node; };
 const button = (text, fn, cls) => { const b = el('button', t(text), cls); b.onclick = fn; return b; };
-const labels = { online: '共享中', offline: '连接中断', connecting: '正在连接', revoked: '已停止', pending: '待确认', admitted: '已加入', denied: '已拒绝', processing: '提交中', accepted: '已交给 Agent', rejected: '未采纳', failed: '未发送', unknown: '结果待核实' };
+const labels = { online: '共享中', offline: '连接中断', connecting: '正在连接', revoked: '已停止', pending: '待确认', admitted: '已加入', denied: '已拒绝', processing: '提交中', queued: '已排队，等待 Codex 执行', accepted: '已交给 Agent', rejected: '未采纳', failed: '未发送', unknown: '结果待核实' };
+const desktopErrors = new Map([['desktop_bridge_connect_timeout', 'Codex 尚未连接桥接。请在插件管理中检查 Co² 的安装和启用状态，再回 Co² 点「重新连接 Codex」。']]);
 const badge = state => { const b = el('span', t(labels[state] || state), 'badge'); b.dataset.state = state; return b; };
 let threads = [], selectedThreadId = '', nextCursor = null, search = '', busyThreadId = '', menuThreadId = '', searchTimer;
+let threadLoadError = '';
 let pendingInviteLifetime = null;
 let renderedThreadRows = [], ownerNameEdited = false;
 const collapsedProjects = new Set(), searchCollapsedProjects = new Set();
@@ -425,7 +429,12 @@ function renderThreads() {
     }
     container.append(heading, rows); return container;
   });
-  $('#threads').replaceChildren(...(groups.length ? groups : [el('p', t(search ? '没有匹配的会话' : '暂无可分享的会话'), 'catalog-empty')]));
+  const content = groups.length ? groups : [el('p', t(search ? '没有匹配的会话' : '暂无可分享的会话'), 'catalog-empty')];
+  if (threadLoadError) {
+    const error = el('p', t(threadLoadError), 'catalog-empty'); error.setAttribute('role', 'alert');
+    if (groups.length) content.unshift(error); else content.splice(0, content.length, error);
+  }
+  $('#threads').replaceChildren(...content);
   $('#load-more').hidden = nextCursor === null; updateSelection(); updateShare();
 }
 const inviteLifetimeValues = ['1h', '1d', '7d', 'permanent'];
@@ -644,6 +653,31 @@ function renderConnection(m) {
   $('#rebuild-relay').textContent = t(rebuildLabel);
   $('#rebuild-relay').setAttribute('aria-busy', String(rebuilding));
 }
+const canReconnectDesktop = m => m?.desktop?.transport === 'desktop-app-tools' || m?.desktop?.canReconnect === true;
+function refreshDesktopCatalog() {
+  if (desktopRefreshRequested) return;
+  desktopRefreshRequested = true;
+  // An initial catalog request may itself be awaiting this handshake.
+  if (threadRequests === 0) send({ type: 'threads', search });
+}
+function renderDesktopConnection(m) {
+  const attached = canReconnectDesktop(m);
+  $('#desktop-connection').hidden = !attached;
+  $('#desktop-boundary').hidden = m.desktop?.transport !== 'desktop-app-tools';
+  $('#desktop-connection').dataset.state = m.desktop?.connected === true ? 'online' : 'unavailable';
+  $('#desktop-status').textContent = t(desktopReconnectBusy ? '正在重新连接 Codex…'
+    : m.desktop?.connected === true ? 'Codex 已连接' : 'Codex 未连接，共享已暂停');
+  const button = $('#reconnect-desktop');
+  button.disabled = !attached || disconnected || desktopReconnectBusy || ws.readyState !== WebSocket.OPEN;
+  button.setAttribute('aria-busy', String(desktopReconnectBusy));
+  button.textContent = t(desktopReconnectBusy ? '正在重新连接 Codex…' : '重新连接 Codex');
+  button.setAttribute('data-i18n', desktopReconnectBusy ? '正在重新连接 Codex…' : '重新连接 Codex');
+}
+$('#reconnect-desktop').onclick = () => {
+  if (!canReconnectDesktop(lastState) || disconnected || desktopReconnectBusy || ws.readyState !== WebSocket.OPEN) return;
+  desktopReconnectBusy = true; desktopRefreshRequested = false; renderDesktopConnection(lastState);
+  notice('正在重新连接 Codex…'); send({ type: 'reconnect-desktop' });
+};
 $('#check-connection').onclick = () => {
   if (disconnected || networkWorkBusy() || connectionAction || lastState?.connection?.state === 'connecting') return;
   connectionAction = 'check'; if (lastState) renderRooms(lastState);
@@ -655,9 +689,10 @@ $('#rebuild-relay').onclick = () => {
   rebuildArmed = false; connectionAction = 'rebuild'; if (lastState) renderRooms(lastState);
   notice(intranetMode() ? '内网入口更新中，稍后可重新分享…' : '入口重建中，稍后可重新分享…'); send({ type: 'rebuild-relay' });
 };
+window.co2ManagerOpened = () => send({ type: 'threads', search, verifyInstallation: true });
 ws.onopen = () => {
   if (!token) { notice('缺少本机管理凭据，请重新打开助手生成的管理链接。', 'error'); ws.close(); return; }
-  send({ type: 'auth', token }); send({ type: 'threads' }); notice('本地助手已连接'); updateShare();
+  send({ type: 'auth', token }); window.co2ManagerOpened(); notice('本地助手已连接'); updateShare();
 };
 const disableDisconnectedControls = () => {
   document.querySelectorAll('button').forEach(b => {
@@ -666,6 +701,7 @@ const disableDisconnectedControls = () => {
 };
 ws.onclose = () => {
   disconnected = true; closeMenu(); cancelInviteLifetime(); notice('本地助手已断开，请从菜单栏重新连接。', 'error');
+  desktopReconnectBusy = false; if (lastState) renderDesktopConnection(lastState);
   renderNetwork();
   disableDisconnectedControls();
 };
@@ -721,16 +757,19 @@ function proposalCard(room, proposal) {
 ws.onmessage = event => {
   let m; try { m = JSON.parse(event.data); } catch { return; }
   if (m.type === 'error') {
+    const message = desktopErrors.get(m.code) ?? desktopErrors.get(m.message) ?? m.message;
+    if (m.operation === 'threads') { threadRequests = Math.max(0, threadRequests - 1); threadLoadError = message; renderThreads(); }
     if (['approve-recovery', 'reject-recovery'].includes(m.operation)) {
       for (const [requestId, operation] of recoveryDecisions) if (operation === m.operation) recoveryDecisions.delete(requestId);
     }
     if (['share', 'reshare'].includes(m.operation)) { busyThreadId = ''; updateShare(); }
     if (['check-connection', 'rebuild-relay'].includes(m.operation)) connectionAction = '';
+    if (m.operation === 'reconnect-desktop') desktopReconnectBusy = false;
     if (m.operation === 'set-network-mode') { networkSaving = false; networkStatus = '访问范围未能保存，请重试。'; }
     if (lastState) renderRooms(lastState);
     if (m.operation === 'set-share-limit') { shareLimitSaving = false; shareLimitStatus = '共享上限未能保存，请重试。'; }
     if (m.code === 'SHARE_LIMIT_REACHED') shareLimitAlert = { limit: m.values.limit };
-    renderShareLimit(); notice(m.message, 'error', m.values ?? {}); return;
+    renderShareLimit(); notice(message, 'error', m.values ?? {}); return;
   }
   if (m.type === 'recovery-result') {
     recoveryDecisions.delete(m.requestId);
@@ -755,6 +794,15 @@ ws.onmessage = event => {
     else notice(intranetMode() ? '检查完成，内网入口仍不可用，请检查网络或更新入口。' : '检查完成，公网入口仍不可用，请检查网络或重建入口。', 'error');
     return;
   }
+  if (m.type === 'desktop-result') {
+    desktopReconnectBusy = false; if (lastState) renderRooms(lastState);
+    if (lastState?.desktop?.connected === true || lastState?.attached === true && lastState.desktop == null && m.connected === true) {
+      notice('Codex 已重新连接；已发送的消息不会重发。');
+      refreshDesktopCatalog();
+    }
+    else notice('Codex 未连接，共享已暂停', 'error');
+    return;
+  }
   if (m.type === 'share-result') {
     shareLimitAlert = null; renderShareLimit();
     busyThreadId = ''; updateShare(); if (lastState) renderRooms(lastState);
@@ -767,7 +815,9 @@ ws.onmessage = event => {
     return;
   }
   if (m.type === 'threads') {
+    threadRequests = Math.max(0, threadRequests - 1);
     if ((m.search ?? '') !== search) return;
+    threadLoadError = '';
     const existing = m.cursor ? threads : [];
     threads = [...new Map([...existing, ...m.threads].map(t => [t.id, t])).values()];
     nextCursor = m.nextCursor ?? null;
@@ -778,8 +828,11 @@ ws.onmessage = event => {
     return;
   }
   if (m.type !== 'state') return;
+  const desktopRecovered = lastState?.desktop?.connected === false && m.desktop?.connected === true;
+  if (m.desktop?.connected === false) desktopRefreshRequested = false;
   if (!nativeUpdates && m.appInfo) { appInfo = m.appInfo; renderAbout(); }
   renderRooms(m);
+  if (desktopRecovered) { notice('Codex 已连接'); refreshDesktopCatalog(); }
 };
 function renderRooms(m) {
   lastState = m;
@@ -797,6 +850,7 @@ function renderRooms(m) {
   renderShareLimit(m.settings);
   attentionTargets.clear(); renderAttention(m);
   renderConnection(m);
+  renderDesktopConnection(m);
   $('#rooms').replaceChildren();
   invitationInputs.clear();
   $('#room-policies').replaceChildren();
@@ -926,7 +980,7 @@ function updateLanguage() {
   renderShareLimit();
   renderAbout();
   renderBackground();
-  if (threads.length || lastAttached !== undefined) {
+  if (threads.length || lastAttached !== undefined || threadLoadError) {
     const scroll = document.querySelector('.catalog-scroll'); const top = scroll?.scrollTop;
     renderThreads(); if (scroll) scroll.scrollTop = top;
   }

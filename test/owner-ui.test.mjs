@@ -101,6 +101,22 @@ const room = () => ({ roomId: 'room-1', title: '<script>synthetic title</script>
   expiresAt: Date.now() + 3600000, inviteUrl: 'https://example.invalid/#invite=synthetic',
   guests: [{ id: 'guest-1', name: '<img onerror=synthetic>', status: 'pending' }],
   proposals: [{ id: 'proposal-1', name: 'B', status: 'pending', text: '<script>synthetic proposal</script>' }], approvalPending: false });
+test('catalog failure replaces loading with an alert and a successful refresh clears it', () => {
+  const page = browser();
+  const message = 'Synthetic Desktop connection refused';
+  page.receive({ type: 'error', operation: 'threads', message });
+  assert.equal(page.elements.threads.children[0].textContent, message);
+  assert.equal(page.elements.threads.children[0].getAttribute('role'), 'alert');
+  assert.equal(page.elements.share.disabled, true);
+  page.elements.refresh.onclick();
+  assert.equal(page.sent.at(-1).type, 'threads');
+  page.receive({ type: 'threads', threads: [{ id: 'synthetic-thread', name: 'Synthetic session' }] });
+  assert.equal(page.threadRows().length, 1);
+  assert.ok(page.elements.threads.children.every(e => e.getAttribute('role') !== 'alert'));
+  page.receive({ type: 'error', operation: 'threads', message });
+  assert.equal(page.threadRows().length, 1, 'Previously loaded rows survive a failed refresh');
+  assert.equal(page.elements.threads.children[0].textContent, message);
+});
 const recoveryRequest = (overrides = {}) => ({ requestId: 'request-1', roomId: 'ended-room', threadId: 'synthetic-thread',
   title: '<script>synthetic old conversation</script>', name: '<img onerror=synthetic requester>',
   createdAt: Date.now() - 60000, expiresAt: Date.now() + 3600000, status: 'pending', ...overrides });
@@ -116,6 +132,147 @@ function lifetimePage(options) {
   return page;
 }
 const selectedLifetime = page => ['1h', '1d', '7d', 'permanent'].find(value => page.elements[`invite-lifetime-${value}`].checked);
+
+test('Desktop reconnect is scoped to the new transport, allows a disconnected Desktop and never resends messages', () => {
+  const page = browser(), e = page.elements;
+  page.receive(lanState());
+  assert.equal(e['desktop-connection'].hidden, true);
+  e['reconnect-desktop'].onclick();
+  assert.equal(page.sent.filter(m => m.type === 'reconnect-desktop').length, 0);
+  const state = lanState({ desktop: { transport: 'desktop-app-tools', connected: false } });
+  page.receive(state);
+  assert.equal(e['desktop-connection'].hidden, false);
+  assert.equal(e['desktop-status'].textContent, 'Codex 未连接，共享已暂停');
+  assert.equal(e['reconnect-desktop'].disabled, false);
+  e['reconnect-desktop'].onclick(); e['reconnect-desktop'].onclick();
+  assert.equal(page.sent.filter(m => m.type === 'reconnect-desktop').length, 1);
+  assert.equal(e['reconnect-desktop'].disabled, true);
+  page.receive({ type: 'error', operation: 'reconnect-desktop', message: 'Synthetic connection failure' });
+  assert.equal(e['reconnect-desktop'].disabled, false);
+  assert.equal(e.notice.textContent, 'Synthetic connection failure');
+  e['reconnect-desktop'].onclick();
+  page.receive({ type: 'desktop-result' });
+  assert.equal(e['desktop-status'].textContent, 'Codex 未连接，共享已暂停');
+  assert.equal(e.notice.textContent, 'Codex 未连接，共享已暂停', 'a result without connected state is not a successful connection');
+  e['reconnect-desktop'].onclick();
+  page.receive({ ...state, desktop: { ...state.desktop, connected: true } });
+  page.receive({ type: 'desktop-result' });
+  assert.equal(e['desktop-status'].textContent, 'Codex 已连接');
+  assert.equal(e.notice.textContent, 'Codex 已重新连接；已发送的消息不会重发。');
+  assert.equal(page.sent.some(m => ['proposal', 'approve', 'share', 'reshare'].includes(m.type)), false);
+  page.socket.close();
+  assert.equal(e['reconnect-desktop'].disabled, true);
+});
+
+test('Desktop limitations and queued proposals are translated without claiming completion', () => {
+  const page = browser(), e = page.elements;
+  const queuedRoom = room(); queuedRoom.proposals[0].status = 'queued';
+  page.receive(lanState({ rooms: [queuedRoom], desktop: { transport: 'desktop-app-tools', connected: true } }));
+  const boundary = '定时同步 · 仅文字输入；忙时消息排队；历史附件可能不完整，作者可能无法确认';
+  for (const language of ['zh-CN', 'zh-TW', 'en']) {
+    e.language.value = language; e.language.onchange();
+    assert.equal(e['desktop-boundary'].textContent, messages[language][boundary]);
+    assert.equal(e['reconnect-desktop'].textContent, messages[language]['重新连接 Codex']);
+    assert.ok(page.nodes().some(n => n.dataset.state === 'queued' && n.textContent === messages[language]['已排队，等待 Codex 执行']));
+    assert.equal(page.nodes().some(n => n.textContent === messages[language]['提交结果不确定。请在 Codex 确认是否已执行；不会自动重试。']), false);
+  }
+});
+
+test('both native reopen and first page load request installation verification', () => {
+  const page = browser();
+  const startup = { type: 'threads', search: '', verifyInstallation: true };
+  assert.deepEqual(page.sent.at(-1), startup);
+  page.window.co2ManagerOpened();
+  assert.deepEqual(page.sent.at(-1), startup);
+  page.elements.refresh.onclick();
+  assert.deepEqual(page.sent.at(-1), { type: 'threads', search: '' });
+});
+
+test('a failed first Desktop connection retains an explicit retry before its transport is known', () => {
+  const page = browser(), e = page.elements;
+  const pending = lanState({ attached: true, desktop: { transport: null, connected: false, canReconnect: true } });
+  page.receive(pending);
+  page.receive({ type: 'error', operation: 'threads', message: 'desktop_bridge_connect_timeout' });
+  assert.equal(e['desktop-connection'].hidden, false);
+  assert.equal(e['desktop-boundary'].hidden, true, 'do not claim a transport capability before connection');
+  assert.equal(e['reconnect-desktop'].disabled, false);
+  e['reconnect-desktop'].onclick();
+  assert.equal(page.sent.at(-1).type, 'reconnect-desktop');
+  assert.equal(e['reconnect-desktop'].disabled, true);
+  page.receive({ type: 'error', operation: 'reconnect-desktop', message: 'desktop_bridge_connect_timeout' });
+  assert.equal(e['reconnect-desktop'].disabled, false);
+  e['reconnect-desktop'].onclick();
+  page.receive({ ...pending, desktop: { transport: 'desktop-app-tools', connected: true } });
+  page.receive({ type: 'desktop-result', connected: true });
+  assert.equal(e['desktop-status'].textContent, 'Codex 已连接');
+  assert.equal(e['desktop-boundary'].hidden, false);
+  assert.deepEqual(page.sent.at(-1), { type: 'threads', search: '' }, 'successful retry refreshes the previously failed catalog');
+  page.receive({ type: 'threads', attached: true, threads: [{ id: 'synthetic-thread', name: 'Recovered session' }] });
+  assert.equal(page.threadRows().length, 1);
+  assert.ok(e.threads.children.every(node => node.getAttribute('role') !== 'alert'));
+  assert.equal(page.sent.filter(m => m.type === 'reconnect-desktop').length, 2);
+  assert.equal(page.sent.some(m => ['proposal', 'share', 'reshare'].includes(m.type)), false);
+});
+
+test('a deferred retry that finds legacy Desktop refreshes its catalog without showing new transport limits', () => {
+  const page = browser(), e = page.elements;
+  page.receive(lanState({ attached: true, desktop: { transport: null, connected: false, canReconnect: true } }));
+  page.receive({ type: 'error', operation: 'threads', message: 'Synthetic first connection failure' });
+  e['reconnect-desktop'].onclick();
+  page.receive(lanState({ attached: true, desktop: null }));
+  page.receive({ type: 'desktop-result', connected: true });
+  assert.equal(e['desktop-connection'].hidden, true);
+  assert.equal(e['desktop-boundary'].hidden, true);
+  assert.equal(e.notice.textContent, 'Codex 已重新连接；已发送的消息不会重发。');
+  assert.deepEqual(page.sent.at(-1), { type: 'threads', search: '' });
+});
+
+test('Desktop handshake timeout explains retry in all manager languages without showing protocol codes', () => {
+  const page = browser(), e = page.elements;
+  page.receive(lanState({ attached: true, desktop: { transport: null, connected: false, canReconnect: true } }));
+  page.receive({ type: 'error', operation: 'threads', message: 'desktop_bridge_connect_timeout' });
+  for (const language of ['zh-CN', 'zh-TW', 'en']) {
+    e.language.value = language; e.language.onchange();
+    assert.equal(e.notice.textContent, messages[language]['Codex 尚未连接桥接。请在插件管理中检查 Co² 的安装和启用状态，再回 Co² 点「重新连接 Codex」。']);
+    assert.equal(e.threads.children[0].textContent, messages[language]['Codex 尚未连接桥接。请在插件管理中检查 Co² 的安装和启用状态，再回 Co² 点「重新连接 Codex」。']);
+  }
+  e['reconnect-desktop'].onclick();
+  page.receive({ type: 'error', operation: 'reconnect-desktop', code: 'desktop_bridge_connect_timeout', message: 'opaque error' });
+  assert.equal(e.notice.textContent, messages.en['Codex 尚未连接桥接。请在插件管理中检查 Co² 的安装和启用状态，再回 Co² 点「重新连接 Codex」。']);
+  assert.equal(e['reconnect-desktop'].disabled, false);
+});
+
+test('a state-only Desktop recovery refreshes the failed catalog once across manager windows', () => {
+  const page = browser(), e = page.elements;
+  const offline = lanState({ attached: true, desktop: { transport: 'desktop-app-tools', connected: false } });
+  const online = { ...offline, desktop: { ...offline.desktop, connected: true } };
+  page.receive(offline);
+  page.receive({ type: 'error', operation: 'threads', message: 'desktop_bridge_connect_timeout' });
+  const before = page.sent.filter(m => m.type === 'threads').length;
+  page.receive(online);
+  assert.equal(e.notice.textContent, 'Codex 已连接');
+  assert.equal(page.sent.filter(m => m.type === 'threads').length, before + 1);
+  page.receive(online); page.receive({ type: 'desktop-result', connected: true });
+  assert.equal(page.sent.filter(m => m.type === 'threads').length, before + 1, 'state and action result share one refresh');
+  page.receive({ type: 'threads', attached: true, threads: [{ id: 'synthetic-thread', name: 'Recovered session' }] });
+  assert.ok(e.threads.children.every(node => node.getAttribute('role') !== 'alert'));
+  assert.equal(e.notice.textContent, '日常 Codex 会话列表已更新');
+  page.receive(offline);
+  assert.equal(page.sent.filter(m => m.type === 'threads').length, before + 1, 'disconnect only updates state');
+  page.receive(online);
+  assert.equal(page.sent.filter(m => m.type === 'threads').length, before + 2, 'a later real recovery gets one fresh catalog');
+  assert.equal(page.sent.some(m => ['proposal', 'approve', 'share', 'reshare'].includes(m.type)), false);
+});
+
+test('an initial catalog request waiting for Desktop is reused by its connected state update', () => {
+  const page = browser();
+  page.receive(lanState({ attached: true, desktop: { transport: null, connected: false, canReconnect: true } }));
+  const before = page.sent.filter(m => m.type === 'threads').length;
+  page.receive(lanState({ attached: true, desktop: { transport: 'desktop-app-tools', connected: true } }));
+  assert.equal(page.sent.filter(m => m.type === 'threads').length, before);
+  page.receive({ type: 'threads', attached: true, threads: [] });
+  assert.equal(page.elements.notice.textContent, '日常 Codex 会话列表已更新');
+});
 function chooseLifetime(page, value) {
   for (const option of ['1h', '1d', '7d', 'permanent']) page.elements[`invite-lifetime-${option}`].checked = option === value;
   page.elements[`invite-lifetime-${value}`]?.onchange();

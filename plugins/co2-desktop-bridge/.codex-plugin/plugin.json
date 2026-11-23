@@ -1,0 +1,6 @@
+{
+  "name": "co2-desktop-bridge",
+  "version": "0.1.0",
+  "description": "Connect Codex Co² to explicitly selected chats through the running Desktop.",
+  "mcpServers": "./.mcp.json"
+}

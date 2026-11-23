@@ -363,7 +363,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         if statusItem == nil { statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength) }
         setStatusTitle(statusTitleSource)
         let menu = NSMenu()
-        for (title, action) in [("显示管理窗口", #selector(showWindow)), ("打开 Codex", #selector(openDesktop)),
+        for (title, action) in [("显示管理窗口", #selector(reopenManager)), ("打开 Codex", #selector(openDesktop)),
                                 ("连接当前 Codex", #selector(connectCurrent)), ("停止全部共享", #selector(revokeAll)),
                                 ("选择运行目录…", #selector(selectRuntime)), ("重新连接助手", #selector(retry))] {
             let item = menu.addItem(withTitle: localized(title), action: action, keyEquivalent: ""); item.target = self
@@ -417,8 +417,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         webView?.evaluateJavaScript("window.showCo2Settings?.()", completionHandler: nil)
     }
     @objc func showWindow() { window?.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true) }
-    @objc func showFromNotification(_ notification: Notification) { showWindow() }
-    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool { showWindow(); return true }
+    @objc func reopenManager() {
+        showWindow()
+        guard let owner = managerOrigin, let current = webView?.url,
+              current.scheme == owner.scheme, current.host == owner.host, current.port == owner.port else { return }
+        webView?.evaluateJavaScript("window.co2ManagerOpened?.()", completionHandler: nil)
+    }
+    @objc func showFromNotification(_ notification: Notification) { reopenManager() }
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool { reopenManager(); return true }
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
     func windowShouldClose(_ sender: NSWindow) -> Bool { sender.orderOut(nil); return false }
     @objc func about() {
@@ -699,9 +705,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         if type == "error" { message(object["message"] as? String ?? "操作失败，请重试。") }
         if type == "result", object["command"] as? String == "account", object["authenticated"] as? Bool == false {
             setStatus("尚未登录独立账号 · 点击“独立账号登录”")
-        }
-        if type == "result", object["attached"] as? Bool == true {
-            setStatus("已连接日常 Codex · 右键选择会话即可分享")
         }
         if type == "result", object["command"] as? String == "connect-current" {
             setStatus("已连接当前 Codex · 在管理页选择会话")

@@ -20,6 +20,35 @@ import { NATIVE_INPUT_DIGEST, NATIVE_INPUT_ID } from '../lib/user-presentation.m
 const THREAD = '11111111-1111-4111-8111-111111111111';
 const OTHER = '22222222-2222-4222-8222-222222222222';
 const TURN = '33333333-3333-4333-8333-333333333333';
+test('missing and stale Desktop sockets report safe system codes before any catalog access', async t => {
+  if (process.platform === 'win32') return t.skip('Unix socket diagnostics');
+  const dir = await fs.mkdtemp('/tmp/co2-endpoint-'); await fs.chmod(dir, 0o700);
+  t.after(() => fs.rm(dir, { recursive: true, force: true }));
+  let catalogReads = 0;
+  const catalog = { list() { catalogReads++; } };
+  const endpoint = path.join(dir, 'missing.sock');
+  await assert.rejects(attachDesktop({ endpoint, catalog }), error => {
+    assert.equal(error.code, 'DESKTOP_IPC_UNAVAILABLE');
+    assert.equal(error.systemCode, 'ENOENT');
+    assert.ok(!error.message.includes(dir));
+    return true;
+  });
+  const server = net.createServer();
+  await new Promise(resolve => server.listen(endpoint, resolve));
+  const stale = path.join(dir, 'stale.sock');
+  await fs.chmod(endpoint, 0o600);
+  await fs.rename(endpoint, stale);
+  await new Promise(resolve => server.close(resolve));
+  await assert.rejects(attachDesktop({ endpoint: stale, catalog }), error => {
+    assert.equal(error.code, 'DESKTOP_IPC_UNAVAILABLE');
+    assert.equal(error.systemCode, 'ECONNREFUSED');
+    assert.equal(error.phase, 'connect');
+    assert.match(error.message, /ECONNREFUSED/);
+    assert.ok(!error.message.includes(dir));
+    return true;
+  });
+  assert.equal(catalogReads, 0);
+});
 const state = (id = THREAD) => ({ id, hostId: 'local', title: '合成日常会话', requests: [], threadRuntimeStatus: { type: 'idle' },
   privateSecret: 'never-project', cwd: '/private/workspace', turns: [], turnHistory: { kind: 'canonical', history: {
     generation: 1, isComplete: false, islands: [{ entries: [{ value: 'turn:1' }] }], entitiesByKey: { 'turn:1': {

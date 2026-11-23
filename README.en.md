@@ -32,13 +32,22 @@ brew tap SpaceCoder-Kafka/tap && brew install --cask SpaceCoder-Kafka/tap/codex-
 2. Generate an invitation and send it privately.
 3. Approve your teammate. They join in a browser with no install and no Codex login.
 
+<details>
+<summary>Codex opened a plugin page?</summary>
+
+Newer Codex Desktop versions connect through the Co² bridge plugin. Click **Install plugin** in the upper right and confirm, and Co² connects automatically. If Co² has stopped waiting, click **Reconnect Codex** once.
+
+![Codex bridge plugin page with the Install plugin button in the upper right](assets/install-bridge-plugin.png)
+
+</details>
+
 Prefer a DMG or Windows build? Download from [Releases](https://github.com/SpaceCoder-Kafka/codex-co2/releases/tag/v0.5.1). Packages aren't notarized yet, so macOS asks you to confirm the first launch.
 
 **If Co² helps your team, give it a ⭐ so other Codex users can find it.**
 
 ## Why Co²
 
-- **Pair program with one Agent.** Your teammate sees everything the Agent has tried and adds context or the next instruction directly.
+- **Pair program with one Agent.** Your teammate follows the conversation as it unfolds and adds context or the next instruction directly.
 - **Hand off without losing context.** **Import to my Codex** gives a teammate an independent copy on their own computer.
 - **Run a live review.** Reviewers follow replies and attachments in the browser. You keep control of tool approvals.
 
@@ -57,12 +66,12 @@ https://github.com/user-attachments/assets/48bdea87-13fd-4f78-95a4-91dcac648644
 
 ```mermaid
 flowchart LR
-  D["Official Codex Desktop<br/>(running, unmodified)"] <-- "existing local interface" --> H["Co² host app"]
+  D["Official Codex Desktop<br/>(running, unpatched)"] <-- "existing local interface<br/>or bridge plugin" --> H["Co² host app"]
   H -- "outbound TLS relay" --> G["Guest browsers"]
   H -. "or intranet only (HTTP)" .-> G
 ```
 
-Co² attaches to the Codex Desktop you already have open. It doesn't restart, patch or replace it, and it stops if Desktop's interface is unavailable. Only the conversation you pick is shared, and the Agent keeps running on your machine.
+Co² attaches to the Codex Desktop you already have open. It doesn't restart, patch or replace it, and it stops if the interface is incompatible. Only the conversation you pick is shared, guest messages land in that conversation, and the Agent keeps running on your machine.
 
 ## Security at a glance
 

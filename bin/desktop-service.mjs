@@ -7,7 +7,6 @@ import { AppControl } from '../lib/app-control.mjs';
 import { SharingService } from '../lib/sharing-service.mjs';
 import { RpcClient } from '../lib/rpc.mjs';
 import { processIdentity, binaryVersion } from '../lib/runtime.mjs';
-import { DesktopIpc, desktopIpcPath } from '../lib/desktop-ipc.mjs';
 import { BackgroundService, connectBackground } from '../lib/background-service.mjs';
 
 const { values } = parseArgs({ options: {
@@ -72,7 +71,7 @@ const command = async (service, type) => {
     if (type === 'revoke-all') { service.revokeAll(); return { ok: true }; }
     if (type === 'connect-current') {
       if (!values.attach) throw safeError('当前为隔离实验模式，请使用日常 Codex 接入模式。');
-      const ipc = await DesktopIpc.connect(desktopIpcPath()); ipc.close(); return { ok: true };
+      await service.reconnectDesktop(); return { ok: true };
     }
     if (values.attach && type === 'account') return { attached: true };
     if (values.attach && type === 'login') throw safeError('请直接在日常 Codex 中登录，然后重新连接助手。');

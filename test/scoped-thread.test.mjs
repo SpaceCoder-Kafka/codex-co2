@@ -43,6 +43,68 @@ async function fixture(t) {
   return { rpc, bridge };
 }
 
+test('omitted native execution details remain explicit without forwarding arbitrary diagnostic data', async t => {
+  const { rpc, bridge } = await fixture(t);
+  rpc.thread.historyDetailsOmitted = true;
+  await bridge.refresh();
+  assert.equal(bridge.snapshot.historyDetailsOmitted, true);
+  assert.equal(bridge.snapshot.historyTruncated, true);
+  assert.deepEqual(bridge.snapshot.items.map(item => item.text), ['Hello', 'Ready']);
+  for (const value of [false, { privatePath: '/private/not-for-guests' }, 'true']) {
+    rpc.thread.historyDetailsOmitted = value;
+    await bridge.refresh();
+    assert.equal(Object.hasOwn(bridge.snapshot, 'historyDetailsOmitted'), false);
+    assert.equal(JSON.stringify(bridge.snapshot).includes('/private/not-for-guests'), false);
+  }
+});
+
+test('native queue acknowledgements do not invent turns or authors and never enqueue twice', async t => {
+  const rpc = new FakeRpc();
+  rpc.supportsClientMessageId = true;
+  rpc.capabilities = { transport: 'desktop-app-tools', submission: 'native-queue' };
+  const queueId = randomUUID(); let dispatches = 0;
+  const original = rpc.request.bind(rpc);
+  rpc.request = async (method, params, options) => {
+    if (method !== 'turn/start') return original(method, params);
+    dispatches++; assert.equal(options.canDispatch(), true);
+    return { queued: { id: queueId, clientUserMessageId: params.clientUserMessageId } };
+  };
+  const bridge = new ScopedThread({ rpc, threadId: THREAD, ownerName: 'Synthetic host' });
+  t.after(() => bridge.close()); await bridge.start();
+  const requestId = randomUUID();
+  const args = { canDispatch: () => true, author: { id: 'guest', name: 'Synthetic guest', kind: 'guest' } };
+  assert.deepEqual(await bridge.submitApproved('Queued text', requestId, args), { kind: 'queued', queueId });
+  assert.deepEqual(await bridge.submitApproved('Queued text', requestId, args), { kind: 'queued', queueId });
+  assert.equal(dispatches, 1);
+  assert.equal(bridge.snapshot.desktopBridge, true);
+  rpc.thread.turns.push({ id: 'native-turn', status: 'completed', items: [
+    { id: 'native-input', type: 'userMessage', content: [{ type: 'text', text: 'Queued text' }] },
+  ] });
+  await bridge.refresh();
+  assert.equal(bridge.snapshot.items.at(-1).author.kind, 'unknown');
+  assert.equal(JSON.stringify(bridge.snapshot).includes(queueId), false);
+});
+
+test('late local admission rejection remains revoked rather than uncertain', async t => {
+  const { rpc, bridge } = await fixture(t);
+  rpc.capabilities = { submission: 'native-queue' };
+  rpc.request = async (method, params, options) => {
+    assert.equal(method, 'turn/start');
+    assert.equal(typeof options.canDispatch, 'function');
+    throw Object.assign(new Error('revoked before queue write'), { code: 'SUBMISSION_REVOKED' });
+  };
+  await assert.rejects(bridge.submitApproved('Never dispatch', randomUUID(), { canDispatch: () => true }), { code: 'SUBMISSION_REVOKED' });
+});
+
+test('legacy RPC timeout position never receives a local callback object', async t => {
+  const { rpc, bridge } = await fixture(t);
+  rpc.request = async (method, params, timeout) => {
+    assert.equal(method, 'turn/start'); assert.equal(timeout, undefined);
+    return { turn: { id: 'native-turn' } };
+  };
+  assert.deepEqual(await bridge.submitApproved('Legacy transport', randomUUID(), { canDispatch: () => true }), { turnId: 'native-turn' });
+});
+
 test('start scopes read and resume; snapshots expose only shared text and opaque attachment references', async t => {
   const rpc = new FakeRpc();
   rpc.thread.cwd = '/secret/workspace';

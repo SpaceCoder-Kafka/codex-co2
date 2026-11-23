@@ -32,13 +32,22 @@ brew tap SpaceCoder-Kafka/tap && brew install --cask SpaceCoder-Kafka/tap/codex-
 2. 生成邀请，私下发给同事。
 3. 批准同事加入。对方用浏览器打开即可，无需安装，也无需登录 Codex。
 
+<details>
+<summary>Codex 弹出了插件安装页？</summary>
+
+最新版本的 Codex Desktop 需要通过 Co² 桥接插件接入。点右上角的 **「安装插件」（Install plugin）** 并确认，Co² 会自动连接；如果 Co² 已停止等待，点一次「重新连接 Codex」。
+
+![Codex 桥接插件安装页，右上角是 Install plugin 按钮](assets/install-bridge-plugin.png)
+
+</details>
+
 需要 DMG 或 Windows 版本？请从 [Releases](https://github.com/SpaceCoder-Kafka/codex-co2/releases/tag/v0.5.1) 下载。安装包尚未经过公证，macOS 首次打开时需要确认。
 
 **如果 Co² 对你的团队有帮助，欢迎点一个 ⭐，让更多 Codex 用户发现它。**
 
 ## 为什么用 Co²
 
-- **和同一个 Agent 结对编程。** 同事能看到 Agent 已经尝试过的一切，直接补充上下文或给出下一步指令。
+- **和同一个 Agent 结对编程。** 同事跟着对话进展，直接补充上下文或给出下一步指令。
 - **交接工作不丢上下文。** 通过「导入到我的 Codex」，同事可以在自己电脑上得到一份独立副本继续推进。
 - **现场评审。** 评审者在浏览器中跟进回复和附件，工具审批仍由你掌控。
 
@@ -57,12 +66,12 @@ https://github.com/user-attachments/assets/48bdea87-13fd-4f78-95a4-91dcac648644
 
 ```mermaid
 flowchart LR
-  D["官方 Codex Desktop<br/>（已在运行，不做修改）"] <-- "现有本地接口" --> H["Co² 主机应用"]
+  D["官方 Codex Desktop<br/>（已在运行，不做修补）"] <-- "现有本地接口<br/>或桥接插件" --> H["Co² 主机应用"]
   H -- "出站 TLS 中继" --> G["协作者浏览器"]
   H -. "或仅内网（HTTP）" .-> G
 ```
 
-Co² 接入你已经打开的 Codex Desktop，不会重启、修改或替换它；Desktop 接口不可用时直接停止接入。只共享你选中的那条会话，Agent 始终在你的电脑上运行。
+Co² 接入你已经打开的 Codex Desktop，不会重启、修补或替换它；接口不兼容时直接停止接入。只共享你选中的那条会话，协作者的消息进入原会话，Agent 始终在你的电脑上运行。
 
 ## 安全要点
 

@@ -118,6 +118,103 @@ test('attach failure starts no backend, owner, bridge or public relay and releas
   await assert.rejects(fs.stat(path.join(f.root, '.coop/sharing.lock')), { code: 'ENOENT' });
 });
 
+test('reopening a manager verifies a cached attachment and replaces an uninstalled bridge once', async t => {
+  const f = await fixture(t);
+  Object.assign(f.service.options, { attach: true, deferDesktop: true });
+  let installed = true, opens = 0, verifies = 0, closes = 0;
+  f.service.dependencies.attachDesktop = async () => {
+    const id = ++opens;
+    return { isCurrent: async () => { verifies++; return installed; },
+      listThreads: async () => [id], close: async () => { closes++; } };
+  };
+  await f.service.start();
+  const list = f.ownerOptions.listThreads;
+  assert.deepEqual(await list({}, true), [1]);
+  assert.deepEqual(await list({}, true), [1]);
+  assert.deepEqual(await list({ search: 'a' }), [1]);
+  assert.deepEqual([verifies, opens, closes], [1, 1, 0]);
+  installed = false;
+  const results = await Promise.all([list({}, true), list({}, true), list({ search: 'b' })]);
+  assert.deepEqual(results, [[2], [2], [2]]);
+  assert.deepEqual([verifies, opens, closes], [2, 2, 1]);
+  await f.service.close();
+});
+
+test('deferred first connection failure keeps retry metadata and successful retry does not reconnect twice', async t => {
+  const f = await fixture(t); Object.assign(f.service.options, { attach: true, deferDesktop: true });
+  let attempts = 0, reconnects = 0;
+  const desktopInfo = { transport: 'desktop-app-tools', connected: true, capabilities: { uploads: false } };
+  f.service.dependencies.attachDesktop = async () => {
+    attempts++;
+    if (attempts === 1) throw Object.assign(new Error('desktop_bridge_connect_timeout'), { code: 'desktop_bridge_connect_timeout' });
+    return { desktopInfo, listThreads: async () => [], rpcFactory: async () => {}, selectThread: async () => {},
+      reconnect: async () => { reconnects++; }, close: async () => {} };
+  };
+  await f.service.start();
+  assert.equal(attempts, 0);
+  assert.deepEqual(f.ownerOptions.getDesktopConnection(), { transport: null, connected: false, canReconnect: true });
+  await assert.rejects(f.ownerOptions.listThreads(), { code: 'desktop_bridge_connect_timeout' });
+  assert.deepEqual(f.ownerOptions.getDesktopConnection(), { transport: null, connected: false, canReconnect: true });
+  await f.ownerOptions.reconnectDesktop();
+  assert.equal(attempts, 2); assert.equal(reconnects, 0, 'first successful attach is already a complete reconnect');
+  assert.deepEqual(f.ownerOptions.getDesktopConnection(), desktopInfo);
+  await f.ownerOptions.reconnectDesktop();
+  assert.equal(attempts, 2); assert.equal(reconnects, 1);
+  assert.deepEqual(await f.ownerOptions.listThreads(), []);
+  assert.deepEqual(f.calls, ['owner'], 'retry never creates a backend or public relay');
+});
+
+test('deferred retry shares an in-flight first handshake without restarting its successful result', async t => {
+  const f = await fixture(t); Object.assign(f.service.options, { attach: true, deferDesktop: true });
+  let finish, attempts = 0, reconnects = 0;
+  f.service.dependencies.attachDesktop = async () => {
+    attempts++;
+    await new Promise(resolve => { finish = resolve; });
+    return { listThreads: async () => [], rpcFactory: async () => {}, selectThread: async () => {},
+      reconnect: async () => { reconnects++; }, close: async () => {} };
+  };
+  await f.service.start();
+  const list = f.ownerOptions.listThreads(), retry = f.ownerOptions.reconnectDesktop();
+  assert.equal(attempts, 1); finish();
+  await Promise.all([list, retry]);
+  assert.equal(reconnects, 0);
+  assert.equal(f.ownerOptions.getDesktopConnection(), null, 'a legacy attachment retains its existing metadata contract');
+});
+
+test('Desktop lifecycle events notify every manager without resuming rooms or sending input', async t => {
+  for (const deferred of [true, false]) {
+    const f = await fixture(t); Object.assign(f.service.options, { attach: true, deferDesktop: deferred });
+    const attachment = new EventEmitter(), notifications = []; let connected = true, reads = 0;
+    Object.defineProperty(attachment, 'desktopInfo', { get: () => ({ transport: 'desktop-app-tools', connected }) });
+    Object.assign(attachment, { listThreads: async () => { reads++; return []; }, close: async () => {},
+      reconnect: async () => { connected = true; attachment.emit('connected'); } });
+    f.service.dependencies.attachDesktop = async () => attachment;
+    const startOwner = f.service.dependencies.startOwner;
+    f.service.dependencies.startOwner = async options => {
+      const owner = await startOwner(options);
+      owner.notifyDesktopChanged = () => notifications.push(options.getDesktopConnection());
+      owner.restoreLanRooms = () => assert.fail('connection notification must not restore rooms');
+      return owner;
+    };
+    await f.service.start();
+    if (deferred) {
+      await f.ownerOptions.listThreads();
+      assert.equal(notifications.at(-1).connected, true, 'first lazy handshake notifies an already-open manager');
+    }
+    connected = false; attachment.emit('disconnected');
+    assert.equal(notifications.at(-1).connected, false);
+    await f.service.reconnectDesktop();
+    assert.equal(notifications.at(-1).connected, true, 'native reconnect uses the same manager notification');
+    connected = false; attachment.emit('closed');
+    assert.equal(notifications.at(-1).connected, false);
+    assert.equal(reads, deferred ? 1 : 0);
+    assert.deepEqual(f.calls, ['owner']);
+    await f.service.close();
+    for (const event of ['connected', 'disconnected', 'closed']) assert.equal(attachment.listenerCount(event), 0);
+    const count = notifications.length; attachment.emit('connected'); assert.equal(notifications.length, count);
+  }
+});
+
 test('named tunnel validates before starting resources and forwards only explicit fixed-origin options', async t => {
   const f = await fixture(t);
   f.service.options.tunnelTokenFile = '/synthetic/token';

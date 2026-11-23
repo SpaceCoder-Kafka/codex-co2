@@ -25,10 +25,16 @@ const ui = Object.fromEntries([
   'attach-button', 'attachment-input', 'compose-attachments',
   'import-to-codex', 'codex-import-dialog', 'close-codex-import', 'retry-codex-import', 'codex-import-status', 'codex-import-scope',
 ].map((id) => [id, byId(id)]));
+const desktopBoundary = document.createElement('p');
+desktopBoundary.className = 'field-help';
+desktopBoundary.textContent = '定时同步 · 仅文字输入；忙时消息排队；历史附件可能不完整，作者可能无法确认';
+desktopBoundary.hidden = true;
+ui['proposal-form'].append(desktopBoundary);
 
 const proposals = new Map();
 const selectedUploads = [], uploadWaiters = new Map();
 let uploadEnabled = false, uploadGeneration = 0, uploadRunning = false;
+let desktopBridge = false;
 const uploadLimit = 32 * 1024 * 1024, uploadChunkBytes = 30 * 1024;
 let documentThumbnailCount = 0;
 function isValidInvitation(room, token) {
@@ -257,6 +263,7 @@ function canPropose() {
 
 function updateControls() {
   refreshCollaboration();
+  desktopBoundary.hidden = !desktopBridge || !admitted;
   if (!canPropose()) hasImportableContent = false;
   ui['import-to-codex'].hidden = !admitted;
   ui['import-to-codex'].disabled = !hasImportableContent;
@@ -510,7 +517,7 @@ function useRecoveredInvitation(next, request) {
   validInvitation = isValidInvitation(roomId, inviteToken);
   terminal = false; connecting = false; admitted = false; hostOnline = false;
   savedVisitor = false; visitorToken = request.visitorToken; displayName = request.name;
-  lastRevision = null; receivedSnapshot = false; policyKnown = false; requireApproval = true;
+  lastRevision = null; receivedSnapshot = false; policyKnown = false; requireApproval = true; desktopBridge = false;
   reconnectAttempts = 0;
   // A new grant starts a fresh conversation connection, never a replay queue.
   proposals.clear(); selectedUploads.length = 0; renderUploads(); renderProposals(); ui.messages.replaceChildren(); images?.clear(); clearRichText(); contentCapabilities = []; assistantTexts.clear(); messageFolds.clear(); workFolds.clear();
@@ -748,6 +755,8 @@ function renderSnapshot(payload) {
     lastRevision = payload.revision;
   }
   clearRichText();
+  desktopBridge = payload.desktopBridge === true;
+  if (desktopBridge) uploadEnabled = false;
   contentCapabilities = Array.isArray(payload.capabilities) ? payload.capabilities.filter(c => ['file-original', 'activity-details'].includes(c)) : [];
   const nearBottom = nearConversationBottom();
   const previousScrollTop = ui.conversation.scrollTop;
@@ -774,13 +783,15 @@ function renderSnapshot(payload) {
   const hasRoomAttachment = ref => ref && typeof ref.name === 'string' && /^[a-f0-9]{64}$/.test(ref.id) && ref.url === undefined;
   hasImportableContent = items.some(item => item.role !== 'activity' && (item.text.trim()
     || item.files?.some(hasRoomAttachment) || item.images?.some(hasRoomAttachment)));
-  truncatedImport = payload.historyTruncated === true || allItems.length > items.length;
-  ui['history-note'].hidden = allItems.length <= 500 && payload.historyTruncated !== true;
-  ui['history-note'].textContent = allItems.length > 500
+  truncatedImport = payload.historyTruncated === true || payload.historyDetailsOmitted === true || allItems.length > items.length;
+  ui['history-note'].hidden = allItems.length <= 500 && payload.historyTruncated !== true && payload.historyDetailsOmitted !== true;
+  const historyNote = allItems.length > 500
     ? '当前展示最近 500 条文字消息，较早内容未包含在此视图中。'
     : Number.isSafeInteger(payload.omittedActivities) && payload.omittedActivities > 0
       ? `为优先展示聊天正文，${payload.omittedActivities} 条较早活动未包含在当前视图中。`
       : '当前仅展示最近的共享文字，较早或过长的内容可能已截断。';
+  ui['history-note'].textContent = payload.historyDetailsOmitted === true
+    ? `为读取对话，部分执行细节已省略；当前视图可能不含全部历史。${allItems.length > 500 || payload.omittedActivities > 0 ? historyNote : ''}` : historyNote;
   receivedSnapshot = true;
   hostOnline = payload.status !== 'offline';
   ui['agent-status'].hidden = false;
@@ -810,6 +821,7 @@ function renderSnapshot(payload) {
 const proposalLabels = {
   pending: '等待分享者确认',
   processing: '正在提交给 Agent',
+  queued: '已排队，等待 Codex 执行',
   accepted: '已交给 Agent',
   rejected: '分享者未接受',
   failed: '提交失败',
@@ -940,7 +952,7 @@ function handleMessage(message) {
       if (!admitted || !message.payload || typeof message.payload !== 'object') return;
       const payload = message.payload;
       if (payload.type === 'upload-policy') {
-        uploadEnabled = payload.enabled === true && payload.maxFileBytes === uploadLimit && payload.maxAttachments === 8 && payload.chunkBytes === uploadChunkBytes;
+        uploadEnabled = !desktopBridge && payload.enabled === true && payload.maxFileBytes === uploadLimit && payload.maxAttachments === 8 && payload.chunkBytes === uploadChunkBytes;
         updateControls();
       }
       if (payload.type === 'upload-status') {

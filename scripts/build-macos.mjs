@@ -114,7 +114,7 @@ for (const size of [16, 32, 128, 256, 512]) {
 }
 run('/usr/bin/iconutil', ['--convert', 'icns', '--output', path.join(resources, 'AppIcon.icns'), iconset]);
 for (const [name, bytes] of source.contents) {
-  if (!['lib', 'owner', 'public'].includes(name.split('/')[0])) continue;
+  if (!['lib', 'owner', 'public', 'plugins'].includes(name.split('/')[0])) continue;
   const target = path.join(service, name); await fs.mkdir(path.dirname(target), { recursive: true }); await fs.writeFile(target, bytes);
 }
 await fs.copyFile(path.join(root, 'macos/AppIcon.png'), path.join(service, 'owner/app-icon.png'));

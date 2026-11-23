@@ -176,6 +176,58 @@ function snapshot(socket, revision, items, status = 'running') {
 const prompt = { id: 'u-1', role: 'user', text: '只回复 desktop-to-phone-ok，不使用工具' };
 const reply = text => ({ id: 'a-1', role: 'assistant', text });
 
+test('new Desktop transport explains its limits and cannot enable attachment input', () => {
+  const page = browser(), e = page.elements;
+  const boundary = nodesByClass(e['proposal-form'], 'field-help')[0];
+  assert.ok(boundary); assert.equal(boundary.hidden, true);
+  const socket = page.join();
+  snapshot(socket, 1, [], 'idle');
+  assert.equal(boundary.hidden, true, 'legacy snapshots retain the existing UI');
+  socket.receive({ type: 'data', payload: { type: 'snapshot', revision: 2, status: 'idle', items: [], desktopBridge: true } });
+  assert.equal(boundary.hidden, false);
+  assert.equal(boundary.textContent, '定时同步 · 仅文字输入；忙时消息排队；历史附件可能不完整，作者可能无法确认');
+  socket.receive({ type: 'data', payload: { type: 'upload-policy', enabled: true, maxFileBytes: 32*1024*1024, maxAttachments: 8, chunkBytes: 30*1024 } });
+  assert.equal(e['attach-button'].disabled, true);
+  socket.receive({ type: 'data', payload: { type: 'snapshot', revision: 3, status: 'idle', items: [], desktopBridge: 'true' } });
+  assert.equal(boundary.hidden, true, 'only an explicit boolean enables the transport notice');
+});
+
+test('omitted execution details are explicit without claiming complete conversation history', () => {
+  const page = browser(), e = page.elements, socket = page.join();
+  const show = (revision, values) => socket.receive({ type: 'data', payload: {
+    type: 'snapshot', revision, status: 'idle', items: [prompt], historyTruncated: true, ...values,
+  } });
+  show(1, { historyDetailsOmitted: true });
+  assert.equal(e['history-note'].hidden, false);
+  assert.equal(e['history-note'].textContent, '为读取对话，部分执行细节已省略；当前视图可能不含全部历史。');
+  assert.deepEqual(page.messages(), [prompt.text]);
+  show(2, { historyDetailsOmitted: true, items: Array.from({ length: 501 }, (_, index) => ({ ...prompt, id: `synthetic-${index}` })) });
+  assert.match(e['history-note'].textContent, /部分执行细节已省略/);
+  assert.match(e['history-note'].textContent, /最近 500 条/);
+  show(3, { historyDetailsOmitted: true, omittedActivities: 12 });
+  assert.match(e['history-note'].textContent, /12 条较早活动/);
+  show(4, { historyDetailsOmitted: 'true' });
+  assert.doesNotMatch(e['history-note'].textContent, /执行细节已省略/);
+});
+
+test('queued guest submissions remain queued across disconnect and are never replayed', () => {
+  const page = browser(), e = page.elements;
+  const socket = page.join(); snapshot(socket, 1, [], 'running');
+  e['proposal-text'].value = 'Synthetic queued input'; e['proposal-form'].trigger('submit');
+  const proposal = socket.sent.find(m => m.type === 'proposal');
+  socket.receive({ type: 'data', payload: { type: 'proposal-status', requestId: proposal.requestId, status: 'queued' } });
+  assert.equal(e.proposals.children[0].children[0].dataset.status, 'queued');
+  assert.equal(e.proposals.children[0].children[0].textContent, '已排队，等待 Codex 执行');
+  assert.equal(e['proposal-feedback'].textContent, '已排队，等待 Codex 执行');
+  socket.close();
+  assert.equal(e.proposals.children[0].children[0].dataset.status, 'queued');
+  e['reconnect-button'].trigger('click');
+  const reconnected = page.sockets.at(-1); reconnected.open();
+  reconnected.receive({ type: 'admitted', guestId: 'synthetic-guest' }); snapshot(reconnected, 1, [], 'idle');
+  assert.equal(socket.sent.filter(m => m.type === 'proposal').length, 1);
+  assert.equal(reconnected.sent.some(m => m.type === 'proposal'), false);
+});
+
 test('download is available before an explicit native launch, which requires a fresh scoped ticket', () => {
   const page = browser(), ui = page.elements;
   const button = ui['import-to-codex'];
