@@ -18,7 +18,7 @@ test('split releases use fixed independent feeds and reject cross-architecture h
   await fs.writeFile(path.join(directory, 'macos/release.json'), JSON.stringify({ build: '37', channel: 'stable', repository, feedURL, publicKey: randomBytes(32).toString('base64') }));
   for (const architecture of ['arm64', 'x86_64']) {
     const release = await releaseConfiguration(directory, {}, architecture);
-    assert.equal(release.feedURL, `https://raw.githubusercontent.com/${repository}/updates/appcast-${architecture}.xml`);
+    assert.equal(release.feedURL, `https://raw.githubusercontent.com/${repository}/updates/v2/appcast-${architecture}.xml`);
     assert.match(updateAssetName(release), new RegExp(`-${architecture}\\.dmg$`));
     const old = appcastXML({ release: { ...release, version: '0.4.0', build: '36' }, minimumMacOS: '14.0', size: 100, signature });
     const items = previousAppcastItems(old);

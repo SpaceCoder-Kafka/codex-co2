@@ -8,7 +8,7 @@ struct UpdatePolicy {
     static let feed = "https://raw.githubusercontent.com/SpaceCoder-Kafka/codex-co2/updates/appcast.xml"
     static func architectureFeed(_ architecture: String) -> String? {
         guard ["arm64", "x86_64"].contains(architecture) else { return nil }
-        return "https://raw.githubusercontent.com/SpaceCoder-Kafka/codex-co2/updates/appcast-\(architecture).xml"
+        return "https://raw.githubusercontent.com/SpaceCoder-Kafka/codex-co2/updates/v2/appcast-\(architecture).xml"
     }
     static let interval: TimeInterval = 86400
 

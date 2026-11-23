@@ -1,7 +1,7 @@
 {
-  "build": "40",
+  "build": "41",
   "channel": "stable",
   "repository": "SpaceCoder-Kafka/codex-co2",
   "feedURL": "https://raw.githubusercontent.com/SpaceCoder-Kafka/codex-co2/updates/appcast.xml",
-  "publicKey": "ypk7+k9khcnzDgkXMwy3ekMUTaht6EyWoLW1ziiFeE8="
+  "publicKey": "HfB7YUwAwY5AnvqE2s0AEUNd0mE00jEeNlW4to0jX58="
 }

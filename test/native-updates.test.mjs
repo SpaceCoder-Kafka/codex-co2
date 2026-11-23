@@ -36,6 +36,7 @@ precondition(UpdatePolicy.allowsFeed(UpdatePolicy.architectureFeed("arm64")!, te
 precondition(UpdatePolicy.allowsFeed(UpdatePolicy.architectureFeed("x86_64")!, testing: false, architecture: "x86_64"))
 precondition(!UpdatePolicy.allowsFeed(UpdatePolicy.architectureFeed("arm64")!, testing: false, architecture: "x86_64"))
 precondition(!UpdatePolicy.allowsFeed(UpdatePolicy.feed, testing: false, architecture: "arm64"))
+precondition(!UpdatePolicy.allowsFeed("https://raw.githubusercontent.com/SpaceCoder-Kafka/codex-co2/updates/appcast-arm64.xml", testing: false, architecture: "arm64"))
 precondition(!UpdatePolicy.allowsFeed(UpdatePolicy.feed, testing: false, architecture: "unknown"))
 precondition(!UpdatePolicy.allowsFeed("http://127.0.0.1:12345/appcast.xml", testing: false))
 precondition(UpdatePolicy.allowsFeed("http://127.0.0.1:12345/appcast.xml", testing: true))

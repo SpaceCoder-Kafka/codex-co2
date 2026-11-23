@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/SpaceCoder-Kafka/codex-co2/releases/tag/v0.6.0"><img src="https://img.shields.io/badge/release-v0.6.0-2563eb" alt="发布版本 v0.6.0"></a>
+  <a href="https://github.com/SpaceCoder-Kafka/codex-co2/releases/tag/v0.6.1"><img src="https://img.shields.io/badge/release-v0.6.1-2563eb" alt="发布版本 v0.6.1"></a>
   <img src="https://img.shields.io/badge/host-macOS%20%7C%20Windows-555555" alt="分享者：macOS 或 Windows">
   <img src="https://img.shields.io/badge/guest-any%20browser-2563eb" alt="协作者：任意浏览器">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-22c55e" alt="许可：MIT"></a>
@@ -41,7 +41,9 @@ brew tap SpaceCoder-Kafka/tap && brew install --cask SpaceCoder-Kafka/tap/codex-
 
 </details>
 
-需要 DMG 或 Windows 版本？请从 [Releases](https://github.com/SpaceCoder-Kafka/codex-co2/releases/tag/v0.6.0) 下载。安装包尚未经过公证，macOS 首次打开时需要确认。
+需要 DMG 或 Windows 版本？请从 [Releases](https://github.com/SpaceCoder-Kafka/codex-co2/releases/tag/v0.6.1) 下载。安装包尚未经过公证，macOS 首次打开时需要确认。
+
+0.6.1 更换了 macOS 应用内更新的签名密钥。使用 0.6.0 或更早版本的用户，请通过 Homebrew 或对应架构的 DMG 手动升级一次。此后，Co² 将使用新密钥验证应用内更新。
 
 **如果 Co² 对你的团队有帮助，欢迎点一个 ⭐，让更多 Codex 用户发现它。**
 

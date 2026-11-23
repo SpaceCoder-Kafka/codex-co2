@@ -9,7 +9,7 @@ export const SPARKLE = Object.freeze({
   sha256: 'c2bf58aa8387266ac179357b1415d6f2635f044da8be41042af32425dae6da0c',
   licenseSHA256: '389a4e4e9a32f059775b13a06e25a591445ba229d2838d26dd3e7c0c45127cfe',
   frameworkSHA256: 'be0a8c2c818549983ede816cb60b3924ddc66095975d9285dd4ee230e53f3563',
-  account: 'local.codexco2.updates',
+  account: 'local.codexco2.updates.v2',
 });
 export const digest = bytes => createHash('sha256').update(bytes).digest('hex');
 export const validPublicKey = value => typeof value === 'string' && /^[A-Za-z0-9+/]{43}=$/.test(value) && Buffer.from(value, 'base64').length === 32;
@@ -19,7 +19,7 @@ export function updateFeedURL(architecture) {
   const base = 'https://raw.githubusercontent.com/SpaceCoder-Kafka/codex-co2/updates/';
   if (architecture == null || architecture === 'universal') return base + 'appcast.xml';
   if (!MACOS_ARCHITECTURES.includes(architecture)) throw new Error('Unsupported macOS release architecture');
-  return base + `appcast-${architecture}.xml`;
+  return base + `v2/appcast-${architecture}.xml`;
 }
 export function compareMacOSVersions(a, b) {
   const av = a.split('.').map(Number), bv = b.split('.').map(Number);

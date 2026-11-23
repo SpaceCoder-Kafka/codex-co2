@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.1
+
+[中文版 →](https://github.com/SpaceCoder-Kafka/codex-co2/blob/main/docs/release-notes/v0.6.1-zh.md)
+
+Co² 0.6.1 rotates the macOS update signing key. If you use 0.6.0 or earlier, upgrade once via Homebrew or the DMG for your Mac. Subsequent in-app updates use the new key.
+
 ## 0.6.0
 
 [中文版 →](https://github.com/SpaceCoder-Kafka/codex-co2/blob/main/docs/release-notes/v0.6.0-zh.md)
