@@ -74,7 +74,7 @@ Co² attaches to the Codex Desktop you already have open. It doesn't restart, pa
 
 ## Learn more
 
-[Changelog](CHANGELOG.md) · [Contributing](CONTRIBUTING.md) · [Security policy](SECURITY.md)
+[Website](https://spacecoder-kafka.github.io/codex-co2/) · [Changelog](CHANGELOG.md) · [Contributing](CONTRIBUTING.md) · [Security policy](SECURITY.md)
 
 Questions or bugs? Open an [issue](https://github.com/SpaceCoder-Kafka/codex-co2/issues).
 

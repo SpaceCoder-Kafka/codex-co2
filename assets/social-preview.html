@@ -1,0 +1,138 @@
+<!doctype html>
+<!--
+  Source for assets/social-preview.png (GitHub Social preview and Open Graph card).
+  The window frames are simplified illustrations; all roles and messages are fictional.
+  Re-render at exactly 1280x640:
+  "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless --hide-scrollbars \
+    --force-device-scale-factor=1 --window-size=1280,640 --allow-file-access-from-files \
+    --screenshot=assets/social-preview.png assets/social-preview.html
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Codex Co² social preview</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 1280px; height: 640px; overflow: hidden; }
+  body { position: relative; background: #fff; color: #0a0a0a; font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Arial, sans-serif; }
+  svg { display: block; }
+
+  .left { position: absolute; left: 64px; top: 64px; width: 320px; }
+  .brand { display: flex; align-items: center; gap: 12px; }
+  .brand img { width: 44px; height: 44px; border-radius: 10px; }
+  .brand b { font-size: 25px; font-weight: 700; letter-spacing: -.3px; }
+  .rule { width: 48px; height: 2px; background: #0a0a0a; margin: 70px 0 24px; }
+  h1 { font-size: 56px; line-height: 1.04; font-weight: 600; letter-spacing: -1.8px; }
+  p.sub { margin-top: 22px; font-size: 21px; line-height: 1.42; color: #4a4a4a; }
+  .meta { position: absolute; left: 64px; bottom: 54px; font-size: 13px; font-weight: 700; letter-spacing: .15em; text-transform: uppercase; color: #6b6b6b; }
+
+  .panel { position: absolute; top: 0; right: 0; width: 920px; height: 640px; background: #0a0a0a; clip-path: polygon(8% 0, 100% 0, 100% 100%, 0 100%); }
+  .lbl { position: absolute; font-size: 11.5px; font-weight: 700; letter-spacing: .16em; text-transform: uppercase; color: #8a8a8a; white-space: nowrap; }
+  .lbl b { color: #fff; margin-right: 8px; }
+
+  .window { position: absolute; background: #fff; border-radius: 11px; overflow: hidden; box-shadow: 0 0 0 1px rgba(255,255,255,.08), 0 24px 60px rgba(0,0,0,.45); color: #1a1a1a; font-size: 13.5px; line-height: 1.42; }
+  .lights { display: flex; gap: 6px; flex: none; }
+  .lights i { width: 10px; height: 10px; border-radius: 50%; background: #ff5f57; }
+  .lights i:nth-child(2) { background: #febc2e; } .lights i:nth-child(3) { background: #28c840; }
+
+  /* Codex Desktop */
+  .cx-title { height: 38px; display: flex; align-items: center; padding: 0 12px; background: #f7f7f7; border-bottom: 1px solid #ececec; }
+  .cx-title .toggle { margin-left: 14px; color: #555; }
+  .cx-title .name { margin-left: 12px; display: flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 600; color: #222; white-space: nowrap; }
+  .cx-body { display: flex; height: calc(100% - 38px); }
+  .rail { width: 46px; background: #f7f7f7; border-right: 1px solid #ececec; display: flex; flex-direction: column; align-items: center; gap: 13px; padding-top: 11px; }
+  .rail .on { background: #e9e9e9; border-radius: 8px; padding: 5px; margin: -5px; }
+  .chat { flex: 1; position: relative; padding: 16px 16px 0; }
+  .bubble-row { display: flex; flex-direction: column; align-items: flex-end; margin-bottom: 11px; }
+  .who { font-size: 10.5px; color: #8a8a8a; margin: 0 6px 3px 0; }
+  .who b { color: #111; font-weight: 700; }
+  .bubble { background: #f0f0f0; border-radius: 15px; padding: 6px 12px; color: #111; max-width: 88%; }
+  .ag { margin-bottom: 11px; }
+  .ag .dim { color: #9a9a9a; font-size: 12px; }
+  .ag .dim span { color: #3b82f6; }
+  .ag .dim .add { color: #16a34a; } .ag .dim .del { color: #dc2626; }
+  .ag p { margin-top: 3px; }
+  .composer { position: absolute; left: 12px; right: 12px; bottom: 12px; height: 50px; border: 1px solid #e6e6e6; border-radius: 14px; padding: 7px 11px; font-size: 12px; color: #aaa; }
+  .composer .row { position: absolute; left: 11px; right: 8px; bottom: 6px; display: flex; align-items: center; color: #555; font-size: 14px; }
+  .composer .send { margin-left: auto; width: 22px; height: 22px; border-radius: 50%; background: #8f8f8f; color: #fff; display: grid; place-items: center; font-size: 12px; }
+
+  /* Chrome */
+  .ch-tabs { height: 34px; background: #dfe1e5; display: flex; align-items: flex-end; gap: 6px; padding: 0 9px; }
+  .ch-tabs .lights { align-self: center; margin-right: 6px; }
+  .tab { width: 210px; height: 27px; background: #fff; border-radius: 8px 8px 0 0; display: flex; align-items: center; gap: 7px; padding: 0 9px; font-size: 11.5px; color: #222; white-space: nowrap; }
+  .tab img { width: 14px; height: 14px; border-radius: 3px; }
+  .tab span { overflow: hidden; text-overflow: ellipsis; }
+  .tab .x { margin-left: auto; color: #666; font-size: 10px; }
+  .ch-tabs .plus { align-self: center; color: #444; font-size: 16px; }
+  .ch-bar { height: 34px; display: flex; align-items: center; gap: 10px; padding: 0 10px; color: #5f6368; border-bottom: 1px solid #e8eaed; font-size: 13px; }
+  .omni { flex: 1; height: 24px; border-radius: 12px; background: #f1f3f4; display: flex; align-items: center; gap: 7px; padding: 0 11px; font-size: 11.5px; color: #202124; }
+  .gpage { position: relative; height: calc(100% - 68px); padding: 12px 14px 0; }
+  .gcomp { position: absolute; left: 12px; right: 12px; bottom: 10px; height: 32px; border: 1px solid #e0e0e0; border-radius: 16px; display: flex; align-items: center; padding: 0 4px 0 12px; font-size: 11.5px; color: #aaa; }
+  .gcomp .send { margin-left: auto; width: 24px; height: 24px; border-radius: 50%; background: #0a0a0a; color: #fff; display: grid; place-items: center; font-size: 12px; }
+
+  .hub { position: absolute; width: 56px; height: 56px; border-radius: 50%; background: #0a0a0a; border: 2px solid #fff; display: grid; place-items: center; box-shadow: 0 6px 20px rgba(0,0,0,.45); }
+  .hub img { width: 36px; height: 36px; border-radius: 8px; }
+</style>
+</head>
+<body>
+  <div class="left">
+    <div class="brand"><img src="../macos/AppIcon.png" alt=""><b>Codex Co²</b></div>
+    <div class="rule"></div>
+    <h1>Multiplayer<br>for Codex.</h1>
+    <p class="sub">One Codex conversation. Your whole team joins from the browser.</p>
+  </div>
+  <div class="meta">Open source · MIT</div>
+
+  <div class="panel"></div>
+
+  <!-- 01 Ops hosts the conversation in Codex Desktop -->
+  <div class="window" style="left:428px; top:52px; width:420px; height:456px">
+    <div class="cx-title">
+      <div class="lights"><i></i><i></i><i></i></div>
+      <svg class="toggle" width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="1.5" y="2.5" width="13" height="11" rx="2.5"/><path d="M6 2.5v11"/></svg>
+      <div class="name"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="#444" stroke-width="1.3"><path d="M1.5 4.5a1.5 1.5 0 0 1 1.5-1.5h3l1.5 1.5H13a1.5 1.5 0 0 1 1.5 1.5v6A1.5 1.5 0 0 1 13 13.5H3A1.5 1.5 0 0 1 1.5 12z"/></svg>Export stuck on “Processing”</div>
+    </div>
+    <div class="cx-body">
+      <div class="rail">
+        <span class="on"><svg width="16" height="16" viewBox="0 0 20 20" fill="#111"><path d="M10 2.5 2.5 9v8.5h5v-5h5v5h5V9z"/></svg></span>
+        <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="#333" stroke-width="1.5"><circle cx="10" cy="10" r="7.5"/><path d="M10 5.5V10l3 2"/></svg>
+        <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="#333" stroke-width="1.5"><path d="M3.5 3.5v13M7.5 3.5v13M11 4l4 12.3"/></svg>
+        <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="#333" stroke-width="1.5"><circle cx="10" cy="10" r="3"/><path d="M13 10v1.2a2.3 2.3 0 0 0 4.5 0V10A7.5 7.5 0 1 0 14 16.4"/></svg>
+      </div>
+      <div class="chat">
+        <div class="bubble-row"><div class="who"><b>Ops</b></div><div class="bubble">Users say exports stay stuck on “Processing”.</div></div>
+        <div class="bubble-row"><div class="who"><b>Eng</b> · via Co²</div><div class="bubble">Check how subscriptions recover after a reconnect.</div></div>
+        <div class="ag"><div class="dim">Edited <span>sync.ts</span> <span class="add">+6</span> <span class="del">-2</span></div><p>Root cause: the subscription isn't restored after a reconnect. Fixed, tests pass.</p></div>
+        <div class="bubble-row"><div class="who"><b>PM</b> · via Co²</div><div class="bubble">Ship the hotfix today. I'll reply to users.</div></div>
+        <div class="composer">Ask Codex anything<div class="row"><span>＋</span><span class="send">↑</span></div></div>
+      </div>
+    </div>
+  </div>
+  <div class="lbl" style="left:428px; top:528px"><b>01</b>Ops · Codex Desktop</div>
+
+  <!-- 02 Eng in a browser -->
+  <div class="window" style="left:888px; top:52px; width:350px; height:200px">
+    <div class="ch-tabs"><div class="lights"><i></i><i></i><i></i></div><div class="tab"><img src="../macos/AppIcon.png" alt=""><span>Export stuck on “Processing”</span><span class="x">✕</span></div><span class="plus">+</span></div>
+    <div class="ch-bar"><span>←</span><span>→</span><span>↻</span><div class="omni"><svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="#5f6368" stroke-width="1.5"><rect x="3" y="7" width="10" height="7" rx="1.5"/><path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2"/></svg>Invitation link</div></div>
+    <div class="gpage">
+      <div class="bubble-row"><div class="bubble">Check how subscriptions recover after a reconnect.</div></div>
+      <div class="ag"><div class="dim">Edited <span>sync.ts</span> <span class="add">+6</span> <span class="del">-2</span></div><p>Fixed, tests pass.</p></div>
+    </div>
+  </div>
+  <div class="lbl" style="left:888px; top:266px"><b>02</b>Eng · Browser</div>
+
+  <!-- 03 PM in a browser -->
+  <div class="window" style="left:888px; top:308px; width:350px; height:200px">
+    <div class="ch-tabs"><div class="lights"><i></i><i></i><i></i></div><div class="tab"><img src="../macos/AppIcon.png" alt=""><span>Export stuck on “Processing”</span><span class="x">✕</span></div><span class="plus">+</span></div>
+    <div class="ch-bar"><span>←</span><span>→</span><span>↻</span><div class="omni"><svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="#5f6368" stroke-width="1.5"><rect x="3" y="7" width="10" height="7" rx="1.5"/><path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2"/></svg>Invitation link</div></div>
+    <div class="gpage">
+      <div class="ag"><div class="dim">Edited <span>sync.ts</span> <span class="add">+6</span> <span class="del">-2</span></div><p>Fixed, tests pass.</p></div>
+      <div class="bubble-row"><div class="bubble">Ship the hotfix today. I'll reply to users.</div></div>
+    </div>
+  </div>
+  <div class="lbl" style="left:888px; top:528px"><b>03</b>PM · Browser</div>
+
+  <!-- Co² bridges Desktop and both browsers -->
+  <div class="hub" style="left:818px; top:252px"><img src="../macos/AppIcon.png" alt=""></div>
+</body>
+</html>

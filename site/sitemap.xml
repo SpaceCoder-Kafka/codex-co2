@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:xhtml="http://www.w3.org/1999/xhtml">
+  <url>
+    <loc>https://spacecoder-kafka.github.io/codex-co2/</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://spacecoder-kafka.github.io/codex-co2/"/>
+    <xhtml:link rel="alternate" hreflang="zh-CN" href="https://spacecoder-kafka.github.io/codex-co2/zh/"/>
+  </url>
+  <url>
+    <loc>https://spacecoder-kafka.github.io/codex-co2/zh/</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://spacecoder-kafka.github.io/codex-co2/"/>
+    <xhtml:link rel="alternate" hreflang="zh-CN" href="https://spacecoder-kafka.github.io/codex-co2/zh/"/>
+  </url>
+</urlset>

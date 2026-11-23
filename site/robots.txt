@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://spacecoder-kafka.github.io/codex-co2/sitemap.xml

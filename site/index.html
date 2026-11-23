@@ -1,0 +1,268 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Codex Co² — Share a Codex conversation for real-time collaboration</title>
+<meta name="description" content="Share a live OpenAI Codex Desktop conversation. Teammates join from any browser and talk to the same AI coding agent: pair programming, reviews and handoffs. Open source.">
+<link rel="canonical" href="https://spacecoder-kafka.github.io/codex-co2/">
+<link rel="alternate" hreflang="en" href="https://spacecoder-kafka.github.io/codex-co2/">
+<link rel="alternate" hreflang="zh-CN" href="https://spacecoder-kafka.github.io/codex-co2/zh/">
+<link rel="alternate" hreflang="x-default" href="https://spacecoder-kafka.github.io/codex-co2/">
+<meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0d0d0d" media="(prefers-color-scheme: dark)">
+<link rel="icon" type="image/png" href="favicon.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="stylesheet" href="style.css">
+
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Codex Co²">
+<meta property="og:title" content="Codex Co² — Multiplayer for Codex">
+<meta property="og:description" content="One Codex conversation. Your whole team joins from the browser and talks to the same AI coding agent.">
+<meta property="og:url" content="https://spacecoder-kafka.github.io/codex-co2/">
+<meta property="og:image" content="https://spacecoder-kafka.github.io/codex-co2/media/social-preview.png">
+<meta property="og:image:width" content="1280">
+<meta property="og:image:height" content="640">
+<meta property="og:image:alt" content="Codex Co²: Multiplayer for Codex. A shared conversation where a host and two browser guests talk to the same AI agent.">
+<meta property="og:locale" content="en_US">
+<meta property="og:locale:alternate" content="zh_CN">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Codex Co² — Multiplayer for Codex">
+<meta name="twitter:description" content="One Codex conversation. Your whole team joins from the browser and talks to the same AI coding agent.">
+<meta name="twitter:image" content="https://spacecoder-kafka.github.io/codex-co2/media/social-preview.png">
+
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "Codex Co²",
+  "alternateName": ["codex-co2", "Codex Conversation Collaboration"],
+  "description": "Real-time collaboration for Codex. Share a live OpenAI Codex Desktop conversation so teammates can join from a browser and talk to the same AI coding agent.",
+  "applicationCategory": "DeveloperApplication",
+  "operatingSystem": "macOS 14 or later; Windows 10 (1809) or later, x64",
+  "url": "https://spacecoder-kafka.github.io/codex-co2/",
+  "downloadUrl": "https://github.com/SpaceCoder-Kafka/codex-co2/releases/latest",
+  "installUrl": "https://github.com/SpaceCoder-Kafka/codex-co2#readme",
+  "codeRepository": "https://github.com/SpaceCoder-Kafka/codex-co2",
+  "license": "https://opensource.org/licenses/MIT",
+  "isAccessibleForFree": true,
+  "image": "https://spacecoder-kafka.github.io/codex-co2/media/social-preview.png",
+  "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+}
+</script>
+</head>
+<body>
+<header class="hero">
+  <div class="wrap">
+    <nav class="nav" aria-label="Main">
+      <a class="logo" href="./"><img src="apple-touch-icon.png" alt="" width="28" height="28">Codex Co²</a>
+      <div class="links">
+        <a class="hide-sm" href="#how-it-works">How it works</a>
+        <a class="hide-sm" href="#security">Security</a>
+        <a class="hide-sm" href="#install">Install</a>
+        <a href="zh/" hreflang="zh-CN" lang="zh-CN">中文</a>
+        <a href="https://github.com/SpaceCoder-Kafka/codex-co2">GitHub</a>
+      </div>
+    </nav>
+    <div class="hero-grid">
+      <div class="hero-text">
+        <div class="rule"></div>
+        <h1>Share a live Codex conversation with your team.</h1>
+        <p class="lede">Codex Co² is multiplayer for OpenAI Codex Desktop. Teammates join from any browser, with no install and no Codex login, and talk to the same AI coding agent.</p>
+        <div class="actions">
+          <a class="arrow-link" href="#install">Install <i>↓</i></a>
+          <a class="arrow-link" href="https://github.com/SpaceCoder-Kafka/codex-co2">Star on GitHub <i>→</i></a>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="hero-art">
+    <div class="ends" role="img" aria-label="One Codex conversation, three roles. Ops hosts it in Codex Desktop; Eng and PM join from their browsers through Co². Eng suggests where to look, the agent fixes the bug, and PM decides to ship the hotfix.">
+      <figure class="end host">
+        <div class="window">
+          <div class="cx-title">
+            <div class="lights"><i></i><i></i><i></i></div>
+            <svg class="toggle" width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="1.5" y="2.5" width="13" height="11" rx="2.5"/><path d="M6 2.5v11"/></svg>
+            <div class="name"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="#444" stroke-width="1.3"><path d="M1.5 4.5a1.5 1.5 0 0 1 1.5-1.5h3l1.5 1.5H13a1.5 1.5 0 0 1 1.5 1.5v6A1.5 1.5 0 0 1 13 13.5H3A1.5 1.5 0 0 1 1.5 12z"/></svg>Export stuck on “Processing”</div>
+          </div>
+          <div class="cx-body">
+            <div class="rail">
+              <span class="on"><svg width="16" height="16" viewBox="0 0 20 20" fill="#111"><path d="M10 2.5 2.5 9v8.5h5v-5h5v5h5V9z"/></svg></span>
+              <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="#333" stroke-width="1.5"><circle cx="10" cy="10" r="7.5"/><path d="M10 5.5V10l3 2"/></svg>
+              <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="#333" stroke-width="1.5"><path d="M3.5 3.5v13M7.5 3.5v13M11 4l4 12.3"/></svg>
+              <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="#333" stroke-width="1.5"><circle cx="10" cy="10" r="3"/><path d="M13 10v1.2a2.3 2.3 0 0 0 4.5 0V10A7.5 7.5 0 1 0 14 16.4"/></svg>
+            </div>
+            <div class="chat">
+              <div class="bubble-row"><div class="who"><b>Ops</b></div><div class="bubble">Users say exports stay stuck on “Processing”.</div></div>
+              <div class="bubble-row"><div class="who"><b>Eng</b> · via Co²</div><div class="bubble">Check how subscriptions recover after a reconnect.</div></div>
+              <div class="ag"><div class="dim">Edited <span>sync.ts</span> <span class="add">+6</span> <span class="del">-2</span></div><p>Root cause: the subscription isn't restored after a reconnect. Fixed, tests pass.</p></div>
+              <div class="bubble-row"><div class="who"><b>PM</b> · via Co²</div><div class="bubble">Ship the hotfix today. I'll reply to users.</div></div>
+              <div class="cx-composer">Ask Codex anything<div class="row"><span>＋</span><span class="send">↑</span></div></div>
+            </div>
+          </div>
+        </div>
+        <figcaption class="lbl"><b>01</b>Ops · Codex Desktop</figcaption>
+      </figure>
+      <div class="hub"><img src="apple-touch-icon.png" alt="" width="34" height="34"></div>
+      <div class="guests">
+        <figure class="end guest">
+          <div class="window">
+            <div class="ch-tabs"><div class="lights"><i></i><i></i><i></i></div><div class="tab"><img src="apple-touch-icon.png" alt=""><span>Export stuck on “Processing”</span><span class="x">✕</span></div><span class="plus">+</span></div>
+            <div class="ch-bar"><span>←</span><span>→</span><span>↻</span><div class="omni"><svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="#5f6368" stroke-width="1.5"><rect x="3" y="7" width="10" height="7" rx="1.5"/><path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2"/></svg>Invitation link</div></div>
+            <div class="gpage">
+              <div class="bubble-row"><div class="bubble">Check how subscriptions recover after a reconnect.</div></div>
+              <div class="ag"><div class="dim">Edited <span>sync.ts</span> <span class="add">+6</span> <span class="del">-2</span></div><p>Fixed, tests pass.</p></div>
+            </div>
+          </div>
+          <figcaption class="lbl"><b>02</b>Eng · Browser</figcaption>
+        </figure>
+        <figure class="end guest">
+          <div class="window">
+            <div class="ch-tabs"><div class="lights"><i></i><i></i><i></i></div><div class="tab"><img src="apple-touch-icon.png" alt=""><span>Export stuck on “Processing”</span><span class="x">✕</span></div><span class="plus">+</span></div>
+            <div class="ch-bar"><span>←</span><span>→</span><span>↻</span><div class="omni"><svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="#5f6368" stroke-width="1.5"><rect x="3" y="7" width="10" height="7" rx="1.5"/><path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2"/></svg>Invitation link</div></div>
+            <div class="gpage">
+              <div class="ag"><div class="dim">Edited <span>sync.ts</span> <span class="add">+6</span> <span class="del">-2</span></div><p>Fixed, tests pass.</p></div>
+              <div class="bubble-row"><div class="bubble">Ship the hotfix today. I'll reply to users.</div></div>
+            </div>
+          </div>
+          <figcaption class="lbl"><b>03</b>PM · Browser</figcaption>
+        </figure>
+      </div>
+    </div>
+  </div>
+</header>
+
+<main>
+  <section id="what">
+    <div class="wrap split">
+      <div class="section-head">
+        <span class="label">What it is</span>
+        <h2>Multiplayer for Codex.</h2>
+        <a class="arrow-link" href="#how-it-works">How it works <i>→</i></a>
+      </div>
+      <div class="section-head">
+        <p class="big">Screen sharing lets people watch. Copy-pasting a chat loses the live context. Co² puts your team in the same Codex conversation, with the same agent.</p>
+        <p>Pick one conversation in Codex Desktop and send an invitation. Teammates follow the history and new replies in their browser and add context or the next instruction themselves. The agent keeps running on your machine, and you stay in control of who joins and what runs.</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="how-it-works">
+    <div class="wrap">
+      <div class="section-head">
+        <span class="label">How it works</span>
+        <h2>One conversation, three ends.</h2>
+      </div>
+      <div class="three">
+        <div><span class="label"><b>01</b>Host</span><h3>Official Codex Desktop</h3><p>Keeps running on your Mac or PC, unmodified. Co² never restarts, patches or replaces it, and stops if its interface is unavailable.</p></div>
+        <div><span class="label"><b>02</b>Bridge</span><h3>Co² host app</h3><p>Attaches to Desktop's existing local interface and shares only the conversation you pick, through an outbound TLS relay or an intranet-only link.</p></div>
+        <div><span class="label"><b>03</b>Guests</span><h3>Any browser</h3><p>Teammates open the invitation, wait for your approval, then message the same agent. Nothing to install, no Codex login.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="security" class="band">
+    <div class="wrap split">
+      <div class="section-head">
+        <span class="label">Security at a glance</span>
+        <h2>Sharing an agent means sharing what it can do.</h2>
+        <p>Read this before you invite anyone.</p>
+      </div>
+      <div class="section-head">
+        <ul>
+          <li><b>Same agent, same permissions.</b>Guest messages use the conversation's existing tools, sandbox and usage allowance. Invite only people you trust.</li>
+          <li><b>One conversation only.</b>Your other conversations and Codex credentials are never shared.</li>
+          <li><b>You stay in control.</b>You approve each guest, can require approval for every message, and can revoke access at any time. Tool approvals stay in Desktop.</li>
+          <li><b>Not end-to-end encrypted.</b>Public sharing relies on TLS and the relay. Intranet-only mode uses plain HTTP on your private network.</li>
+          <li><b>Revoking stops new delivery.</b>It can't erase what a guest already copied.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section id="why">
+    <div class="wrap">
+      <div class="section-head">
+        <span class="label">Why Co²</span>
+        <h2>Codex collaboration without screen sharing.</h2>
+      </div>
+      <div class="numbered">
+        <div><span class="num">01</span><h3>Pair program with one agent</h3><p>Your teammate sees everything the agent has already tried, then adds context or the next instruction directly.</p></div>
+        <div><span class="num">02</span><h3>Hand off without losing context</h3><p>Import to my Codex gives a teammate an independent copy of the conversation in their own Codex.</p></div>
+        <div><span class="num">03</span><h3>Run a live review</h3><p>Reviewers follow replies and attachments in the browser while you keep control of tool approvals.</p></div>
+        <div><span class="num">04</span><h3>Nothing for guests to install</h3><p>A modern browser on a laptop, tablet or phone is enough. Guests don't need a Codex or OpenAI account.</p></div>
+        <div><span class="num">05</span><h3>Approval when you want it</h3><p>Messages reach the agent directly by default. Turn on per-message approval when you want to review each one first.</p></div>
+        <div><span class="num">06</span><h3>Intranet-only mode</h3><p>Share on a private network you select, with no public tunnel and no public fallback.</p></div>
+      </div>
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th scope="col"></th><th scope="col">Screen sharing</th><th scope="col">Copy-paste the chat</th><th scope="col" class="us">Codex Co²</th></tr></thead>
+          <tbody>
+            <tr><th scope="row">Collaborators can message the agent</th><td class="dim">No</td><td class="dim">No</td><td class="us">Yes</td></tr>
+            <tr><th scope="row">History and new replies stay in sync</th><td>While watching</td><td class="dim">No</td><td class="us">Yes</td></tr>
+            <tr><th scope="row">What collaborators install</th><td>Meeting app</td><td class="dim">—</td><td class="us">Nothing</td></tr>
+            <tr><th scope="row">Continue in your own Codex</th><td class="dim">No</td><td>Manually</td><td class="us">Yes</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <section id="install">
+    <div class="wrap split">
+      <div class="section-head">
+        <span class="label">Get started</span>
+        <h2>Install on the host.</h2>
+        <p>Requires the official Codex Desktop app, already running, on macOS 14 or later. A Windows x64 build is available as an experimental preview.</p>
+      </div>
+      <div class="section-head">
+        <span class="label">Homebrew</span>
+        <div class="cmd"><code id="brew">brew tap SpaceCoder-Kafka/tap &amp;&amp; brew install --cask SpaceCoder-Kafka/tap/codex-co2</code><button type="button" data-copy="brew" aria-label="Copy install command">Copy</button></div>
+        <ol class="steps">
+          <li>Open Co² and pick a conversation.</li>
+          <li>Generate an invitation and send it privately.</li>
+          <li>Approve your teammate. They join in a browser.</li>
+        </ol>
+        <div class="actions">
+          <a class="arrow-link" href="https://github.com/SpaceCoder-Kafka/codex-co2/releases/latest">Download DMG or Windows <i>→</i></a>
+          <a class="arrow-link" href="https://github.com/SpaceCoder-Kafka/codex-co2">Star on GitHub <i>→</i></a>
+        </div>
+        <p class="fine" style="margin-top:22px">Free and open source (MIT). Preview packages are not notarized yet, so macOS asks you to confirm the first launch.</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="faq">
+    <div class="wrap">
+      <div class="section-head">
+        <span class="label">FAQ</span>
+        <h2>Questions.</h2>
+      </div>
+      <div class="faq">
+        <details><summary><span class="q">01</span>Can I share a Codex conversation with my team?</summary><p>Yes. Co² shares one conversation from the official Codex Desktop app on your computer. Invited teammates see its history and live replies in a browser and can send messages to the same agent.</p></details>
+        <details><summary><span class="q">02</span>Do collaborators need Codex or an OpenAI account?</summary><p>No. Guests only need a modern browser. The agent runs on the host's computer under the host's Codex setup, so guest messages use the host's tools, sandbox and usage allowance.</p></details>
+        <details><summary><span class="q">03</span>Can a teammate continue the work on their own computer?</summary><p>Yes. With Co² installed, a guest can choose Import to my Codex to create an independent copy of the conversation in their own Codex Desktop.</p></details>
+        <details><summary><span class="q">04</span>Is it end-to-end encrypted?</summary><p>No. Public sharing goes through an outbound relay protected by ordinary TLS. Intranet-only mode uses plain HTTP on a private network you select and never falls back to a public link.</p></details>
+        <details><summary><span class="q">05</span>Is Codex Co² an official OpenAI product?</summary><p>No. It is an independent, experimental open-source project. It is not affiliated with or endorsed by OpenAI.</p></details>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <div class="row"><a href="https://github.com/SpaceCoder-Kafka/codex-co2">GitHub</a><a href="https://github.com/SpaceCoder-Kafka/codex-co2/releases">Releases</a><a href="https://github.com/SpaceCoder-Kafka/codex-co2/blob/main/CHANGELOG.md">Changelog</a><a href="https://github.com/SpaceCoder-Kafka/codex-co2/blob/main/SECURITY.md">Security policy</a><a href="https://github.com/SpaceCoder-Kafka/codex-co2/issues">Issues</a></div>
+    <p>Codex Co² (Codex Conversation Collaboration) is an independent experimental project, not an official OpenAI product or an OpenAI-endorsed integration. OpenAI and Codex are names of their respective owners. Code is MIT licensed.</p>
+  </div>
+</footer>
+<script>
+document.querySelectorAll('[data-copy]').forEach(function (button) {
+  button.addEventListener('click', function () {
+    var text = document.getElementById(button.dataset.copy).textContent;
+    var done = function () { var label = button.textContent; button.textContent = button.dataset.done || 'Copied'; setTimeout(function () { button.textContent = label; }, 1600); };
+    if (navigator.clipboard) navigator.clipboard.writeText(text).then(done, function () {});
+  });
+});
+</script>
+</body>
+</html>

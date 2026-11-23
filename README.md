@@ -74,7 +74,7 @@ Co² 接入你已经打开的 Codex Desktop，不会重启、修改或替换它�
 
 ## 了解更多
 
-[更新日志](CHANGELOG.md) · [参与贡献](CONTRIBUTING.md) · [安全策略](SECURITY.md)
+[项目主页](https://spacecoder-kafka.github.io/codex-co2/zh/) · [更新日志](CHANGELOG.md) · [参与贡献](CONTRIBUTING.md) · [安全策略](SECURITY.md)
 
 遇到问题或有建议？请提交 [Issue](https://github.com/SpaceCoder-Kafka/codex-co2/issues)。
 

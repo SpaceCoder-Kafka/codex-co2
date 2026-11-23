@@ -1,0 +1,279 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Codex Co² — 共享 Codex 会话，Codex 多人协作与结对编程</title>
+<meta name="description" content="共享一条 Codex 会话，一起推进工作。团队成员用浏览器加入你正在进行的 Codex Desktop 会话，直接与同一个 AI 编程 Agent 对话：结对编程、现场评审、无损交接。开源免费。">
+<link rel="canonical" href="https://spacecoder-kafka.github.io/codex-co2/zh/">
+<link rel="alternate" hreflang="en" href="https://spacecoder-kafka.github.io/codex-co2/">
+<link rel="alternate" hreflang="zh-CN" href="https://spacecoder-kafka.github.io/codex-co2/zh/">
+<link rel="alternate" hreflang="x-default" href="https://spacecoder-kafka.github.io/codex-co2/">
+<meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0d0d0d" media="(prefers-color-scheme: dark)">
+<link rel="icon" type="image/png" href="../favicon.png">
+<link rel="apple-touch-icon" href="../apple-touch-icon.png">
+<link rel="stylesheet" href="../style.css">
+
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Codex Co²">
+<meta property="og:title" content="Codex Co² — 共享一条 Codex 会话，一起推进工作">
+<meta property="og:description" content="团队成员用浏览器加入你正在进行的 Codex 会话，直接与同一个 AI 编程 Agent 对话。">
+<meta property="og:url" content="https://spacecoder-kafka.github.io/codex-co2/zh/">
+<meta property="og:image" content="https://spacecoder-kafka.github.io/codex-co2/media/social-preview.png">
+<meta property="og:image:width" content="1280">
+<meta property="og:image:height" content="640">
+<meta property="og:image:alt" content="Codex Co²：Codex 多人协作。分享者与两位浏览器协作者在同一条会话里和同一个 AI Agent 对话。">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:locale:alternate" content="en_US">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Codex Co² — 共享一条 Codex 会话，一起推进工作">
+<meta name="twitter:description" content="团队成员用浏览器加入你正在进行的 Codex 会话，直接与同一个 AI 编程 Agent 对话。">
+<meta name="twitter:image" content="https://spacecoder-kafka.github.io/codex-co2/media/social-preview.png">
+
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "Codex Co²",
+  "alternateName": ["codex-co2", "Codex Conversation Collaboration"],
+  "description": "共享一条 Codex 会话，一起推进工作。团队成员用浏览器加入正在进行的 Codex Desktop 会话，与同一个 AI 编程 Agent 对话。",
+  "inLanguage": "zh-CN",
+  "applicationCategory": "DeveloperApplication",
+  "operatingSystem": "macOS 14 或更高版本；Windows 10 (1809) 或更高版本，x64",
+  "url": "https://spacecoder-kafka.github.io/codex-co2/zh/",
+  "downloadUrl": "https://github.com/SpaceCoder-Kafka/codex-co2/releases/latest",
+  "installUrl": "https://github.com/SpaceCoder-Kafka/codex-co2#readme",
+  "codeRepository": "https://github.com/SpaceCoder-Kafka/codex-co2",
+  "license": "https://opensource.org/licenses/MIT",
+  "isAccessibleForFree": true,
+  "image": "https://spacecoder-kafka.github.io/codex-co2/media/social-preview.png",
+  "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+}
+</script>
+</head>
+<body>
+<header class="hero">
+  <div class="wrap">
+    <nav class="nav" aria-label="主导航">
+      <a class="logo" href="./"><img src="../apple-touch-icon.png" alt="" width="28" height="28">Codex Co²</a>
+      <div class="links">
+        <a class="hide-sm" href="#how-it-works">工作原理</a>
+        <a class="hide-sm" href="#security">安全边界</a>
+        <a class="hide-sm" href="#install">安装</a>
+        <a href="../" hreflang="en" lang="en">English</a>
+        <a href="https://github.com/SpaceCoder-Kafka/codex-co2">GitHub</a>
+      </div>
+    </nav>
+    <div class="hero-grid">
+      <div class="hero-text">
+        <div class="rule"></div>
+        <h1>共享一条 Codex 会话，<br>一起推进工作。</h1>
+        <p class="lede">Codex Co² 为官方 Codex Desktop 带来多人协作。团队成员用浏览器加入你正在进行的会话，无需安装、无需登录 Codex，直接与同一个 AI 编程 Agent 对话。</p>
+        <div class="actions">
+          <a class="arrow-link" href="#install">安装 <i>↓</i></a>
+          <a class="arrow-link" href="https://github.com/SpaceCoder-Kafka/codex-co2">在 GitHub 上 Star <i>→</i></a>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="hero-art">
+    <div class="ends" role="img" aria-label="同一条 Codex 会话，三个角色：运营在 Codex Desktop 中分享会话，研发和产品通过 Co² 在浏览器里加入。研发给出排查方向，Agent 修复问题，产品决定当天发布热修复。">
+      <figure class="end host">
+        <div class="window">
+          <div class="cx-title">
+            <div class="lights"><i></i><i></i><i></i></div>
+            <svg class="toggle" width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="1.5" y="2.5" width="13" height="11" rx="2.5"/><path d="M6 2.5v11"/></svg>
+            <div class="name"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="#444" stroke-width="1.3"><path d="M1.5 4.5a1.5 1.5 0 0 1 1.5-1.5h3l1.5 1.5H13a1.5 1.5 0 0 1 1.5 1.5v6A1.5 1.5 0 0 1 13 13.5H3A1.5 1.5 0 0 1 1.5 12z"/></svg>导出一直显示「处理中」</div>
+          </div>
+          <div class="cx-body">
+            <div class="rail">
+              <span class="on"><svg width="16" height="16" viewBox="0 0 20 20" fill="#111"><path d="M10 2.5 2.5 9v8.5h5v-5h5v5h5V9z"/></svg></span>
+              <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="#333" stroke-width="1.5"><circle cx="10" cy="10" r="7.5"/><path d="M10 5.5V10l3 2"/></svg>
+              <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="#333" stroke-width="1.5"><path d="M3.5 3.5v13M7.5 3.5v13M11 4l4 12.3"/></svg>
+              <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="#333" stroke-width="1.5"><circle cx="10" cy="10" r="3"/><path d="M13 10v1.2a2.3 2.3 0 0 0 4.5 0V10A7.5 7.5 0 1 0 14 16.4"/></svg>
+            </div>
+            <div class="chat">
+              <div class="bubble-row"><div class="who"><b>运营</b></div><div class="bubble">用户反馈：导出完成后，页面一直显示「处理中」。</div></div>
+              <div class="bubble-row"><div class="who"><b>研发</b> · 来自 Co²</div><div class="bubble">先查一下断线重连后的订阅恢复。</div></div>
+              <div class="ag"><div class="dim">已编辑 <span>sync.ts</span> <span class="add">+6</span> <span class="del">-2</span></div><p>根因：重连后没有恢复订阅。已修复，测试通过。</p></div>
+              <div class="bubble-row"><div class="who"><b>产品</b> · 来自 Co²</div><div class="bubble">今天发热修复，我去回复用户。</div></div>
+              <div class="cx-composer">向 Codex 提问<div class="row"><span>＋</span><span class="send">↑</span></div></div>
+            </div>
+          </div>
+        </div>
+        <figcaption class="lbl"><b>01</b>运营 · Codex Desktop</figcaption>
+      </figure>
+      <div class="hub"><img src="../apple-touch-icon.png" alt="" width="34" height="34"></div>
+      <div class="guests">
+        <figure class="end guest">
+          <div class="window">
+            <div class="ch-tabs"><div class="lights"><i></i><i></i><i></i></div><div class="tab"><img src="../apple-touch-icon.png" alt=""><span>导出一直显示「处理中」</span><span class="x">✕</span></div><span class="plus">+</span></div>
+            <div class="ch-bar"><span>←</span><span>→</span><span>↻</span><div class="omni"><svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="#5f6368" stroke-width="1.5"><rect x="3" y="7" width="10" height="7" rx="1.5"/><path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2"/></svg>邀请链接</div></div>
+            <div class="gpage">
+              <div class="bubble-row"><div class="bubble">先查一下断线重连后的订阅恢复。</div></div>
+              <div class="ag"><div class="dim">已编辑 <span>sync.ts</span> <span class="add">+6</span> <span class="del">-2</span></div><p>已修复，测试通过。</p></div>
+            </div>
+          </div>
+          <figcaption class="lbl"><b>02</b>研发 · 浏览器</figcaption>
+        </figure>
+        <figure class="end guest">
+          <div class="window">
+            <div class="ch-tabs"><div class="lights"><i></i><i></i><i></i></div><div class="tab"><img src="../apple-touch-icon.png" alt=""><span>导出一直显示「处理中」</span><span class="x">✕</span></div><span class="plus">+</span></div>
+            <div class="ch-bar"><span>←</span><span>→</span><span>↻</span><div class="omni"><svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="#5f6368" stroke-width="1.5"><rect x="3" y="7" width="10" height="7" rx="1.5"/><path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2"/></svg>邀请链接</div></div>
+            <div class="gpage">
+              <div class="ag"><div class="dim">已编辑 <span>sync.ts</span> <span class="add">+6</span> <span class="del">-2</span></div><p>已修复，测试通过。</p></div>
+              <div class="bubble-row"><div class="bubble">今天发热修复，我去回复用户。</div></div>
+            </div>
+          </div>
+          <figcaption class="lbl"><b>03</b>产品 · 浏览器</figcaption>
+        </figure>
+      </div>
+    </div>
+  </div>
+</header>
+
+<main>
+  <section id="what">
+    <div class="wrap split">
+      <div class="section-head">
+        <span class="label">这是什么</span>
+        <h2>Codex 多人协作。</h2>
+        <a class="arrow-link" href="#how-it-works">工作原理 <i>→</i></a>
+      </div>
+      <div class="section-head">
+        <p class="big">屏幕共享只能看，复制粘贴对话会丢掉实时上下文。Co² 让团队进入同一条 Codex 会话，面对同一个 Agent。</p>
+        <p>在 Codex Desktop 中选一条会话并发出邀请。同事在浏览器里跟进历史和新回复，直接补充上下文或给出下一步指令。Agent 仍在你的电脑上运行，谁能加入、执行什么，都由你掌控。</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="how-it-works">
+    <div class="wrap">
+      <div class="section-head">
+        <span class="label">工作原理</span>
+        <h2>一条会话，三个端。</h2>
+      </div>
+      <div class="three">
+        <div><span class="label"><b>01</b>分享者</span><h3>官方 Codex Desktop</h3><p>在你的 Mac 或 PC 上照常运行，不做修改。Co² 不会重启、修改或替换它；Desktop 接口不可用时会直接停止。</p></div>
+        <div><span class="label"><b>02</b>桥接</span><h3>Co² 主机应用</h3><p>连接 Desktop 现有的本地接口，只共享你选中的那条会话，经出站 TLS 中继或仅内网链接送达协作者。</p></div>
+        <div><span class="label"><b>03</b>协作者</span><h3>任意浏览器</h3><p>同事打开邀请、等你批准后，就能给同一个 Agent 发消息。无需安装，无需登录 Codex。</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="demo" class="demo">
+    <div class="wrap">
+      <div class="section-head">
+        <span class="label">演示视频</span>
+        <h2>运营、研发、产品，在同一条会话里接力解决一条用户反馈。</h2>
+      </div>
+      <video controls playsinline preload="none" poster="../media/demo-poster-zh.jpg" width="1280" height="720" aria-label="演示视频：运营、研发、产品在同一条 Codex 会话里接力解决一条用户反馈"><source src="../media/demo-zh.mp4" type="video/mp4"></video>
+    </div>
+  </section>
+
+  <section id="security" class="band">
+    <div class="wrap split">
+      <div class="section-head">
+        <span class="label">安全要点</span>
+        <h2>共享 Agent，就是共享它能做的事。</h2>
+        <p>邀请任何人之前，请先读完这几条。</p>
+      </div>
+      <div class="section-head">
+        <ul>
+          <li><b>同一个 Agent，同样的权限。</b>协作者的消息会使用这条会话现有的工具、沙箱和额度。只邀请你信任的人。</li>
+          <li><b>只共享一条会话。</b>你的其他会话和 Codex 凭据不会被共享。</li>
+          <li><b>控制权在你手里。</b>你逐个批准协作者，可以要求每条消息先经你审批，也可以随时撤销访问。工具审批仍留在 Desktop。</li>
+          <li><b>不是端到端加密。</b>公网分享依赖 TLS 和中继；仅内网模式在你的私有网络上使用未加密的 HTTP。</li>
+          <li><b>撤销只会停止后续投递。</b>它无法抹去协作者已经复制的内容。</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section id="why">
+    <div class="wrap">
+      <div class="section-head">
+        <span class="label">为什么用 Co²</span>
+        <h2>不用屏幕共享的 Codex 协作。</h2>
+      </div>
+      <div class="numbered">
+        <div><span class="num">01</span><h3>和同一个 Agent 结对编程</h3><p>同事能看到 Agent 已经尝试过的一切，直接补充上下文或给出下一步指令。</p></div>
+        <div><span class="num">02</span><h3>交接工作不丢上下文</h3><p>通过「导入到我的 Codex」，同事可以在自己电脑上得到一份独立副本继续推进。</p></div>
+        <div><span class="num">03</span><h3>现场评审</h3><p>评审者在浏览器中跟进回复和附件，工具审批仍由你掌控。</p></div>
+        <div><span class="num">04</span><h3>协作者无需安装</h3><p>笔记本、平板或手机上的现代浏览器就够了，不需要 Codex 或 OpenAI 账号。</p></div>
+        <div><span class="num">05</span><h3>按需审批</h3><p>默认情况下消息直接送达 Agent；需要逐条把关时，可以开启每条消息审批。</p></div>
+        <div><span class="num">06</span><h3>仅内网模式</h3><p>在你选择的私有网络上分享，不建立公网隧道，也不会回退到公网。</p></div>
+      </div>
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th scope="col"></th><th scope="col">屏幕共享</th><th scope="col">复制粘贴对话</th><th scope="col" class="us">Codex Co²</th></tr></thead>
+          <tbody>
+            <tr><th scope="row">协作者能给 Agent 发消息</th><td class="dim">不能</td><td class="dim">不能</td><td class="us">能</td></tr>
+            <tr><th scope="row">历史与新回复保持同步</th><td>仅限观看时</td><td class="dim">不同步</td><td class="us">同步</td></tr>
+            <tr><th scope="row">协作者需要安装</th><td>会议软件</td><td class="dim">—</td><td class="us">无需安装</td></tr>
+            <tr><th scope="row">在自己的 Codex 中继续</th><td class="dim">不能</td><td>手动</td><td class="us">能</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <section id="install">
+    <div class="wrap split">
+      <div class="section-head">
+        <span class="label">开始使用</span>
+        <h2>在分享者电脑上安装。</h2>
+        <p>需要已经在运行的官方 Codex Desktop，macOS 14 或更高版本。Windows x64 版本以实验性预览形式提供。</p>
+      </div>
+      <div class="section-head">
+        <span class="label">Homebrew</span>
+        <div class="cmd"><code id="brew">brew tap SpaceCoder-Kafka/tap &amp;&amp; brew install --cask SpaceCoder-Kafka/tap/codex-co2</code><button type="button" data-copy="brew" data-done="已复制" aria-label="复制安装命令">复制</button></div>
+        <ol class="steps">
+          <li>打开 Co²，选择一条会话。</li>
+          <li>生成邀请，私下发给同事。</li>
+          <li>批准同事加入，对方用浏览器打开即可。</li>
+        </ol>
+        <div class="actions">
+          <a class="arrow-link" href="https://github.com/SpaceCoder-Kafka/codex-co2/releases/latest">下载 DMG 或 Windows 版 <i>→</i></a>
+          <a class="arrow-link" href="https://github.com/SpaceCoder-Kafka/codex-co2">在 GitHub 上 Star <i>→</i></a>
+        </div>
+        <p class="fine" style="margin-top:22px">开源免费（MIT）。预览安装包尚未经过公证，macOS 首次打开时需要确认。</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="faq">
+    <div class="wrap">
+      <div class="section-head">
+        <span class="label">常见问题</span>
+        <h2>常见问题。</h2>
+      </div>
+      <div class="faq">
+        <details><summary><span class="q">01</span>Codex 会话可以分享给团队一起用吗？</summary><p>可以。Co² 从你电脑上的官方 Codex Desktop 共享一条会话。受邀同事在浏览器里看到历史和实时回复，并能给同一个 Agent 发消息。</p></details>
+        <details><summary><span class="q">02</span>协作者需要安装 Codex 或拥有 OpenAI 账号吗？</summary><p>不需要，只要一个现代浏览器。Agent 运行在分享者电脑上、使用分享者的 Codex 配置，所以协作者的消息会使用分享者的工具、沙箱和额度。</p></details>
+        <details><summary><span class="q">03</span>同事能在自己电脑上接着做吗？</summary><p>可以。协作者安装 Co² 后，可以选择「导入到我的 Codex」，在自己的 Codex Desktop 中得到一份独立副本。</p></details>
+        <details><summary><span class="q">04</span>是端到端加密的吗？</summary><p>不是。公网分享通过出站中继，依赖普通 TLS。仅内网模式在你选择的私有网络上使用未加密的 HTTP，并且不会回退到公网链接。</p></details>
+        <details><summary><span class="q">05</span>Codex Co² 是 OpenAI 官方产品吗？</summary><p>不是。这是一个独立的实验性开源项目，与 OpenAI 没有隶属或背书关系。</p></details>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <div class="row"><a href="https://github.com/SpaceCoder-Kafka/codex-co2">GitHub</a><a href="https://github.com/SpaceCoder-Kafka/codex-co2/releases">Releases</a><a href="https://github.com/SpaceCoder-Kafka/codex-co2/blob/main/CHANGELOG.md">更新日志</a><a href="https://github.com/SpaceCoder-Kafka/codex-co2/blob/main/SECURITY.md">安全策略</a><a href="https://github.com/SpaceCoder-Kafka/codex-co2/issues">问题反馈</a></div>
+    <p>Codex Co²（Codex Conversation Collaboration）是独立的实验性项目，不是 OpenAI 官方产品，也不是 OpenAI 认可的集成。OpenAI 与 Codex 是其各自所有者的名称。代码采用 MIT 许可。</p>
+  </div>
+</footer>
+<script>
+document.querySelectorAll('[data-copy]').forEach(function (button) {
+  button.addEventListener('click', function () {
+    var text = document.getElementById(button.dataset.copy).textContent;
+    var done = function () { var label = button.textContent; button.textContent = button.dataset.done || 'Copied'; setTimeout(function () { button.textContent = label; }, 1600); };
+    if (navigator.clipboard) navigator.clipboard.writeText(text).then(done, function () {});
+  });
+});
+</script>
+</body>
+</html>
