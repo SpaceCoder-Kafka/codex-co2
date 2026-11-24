@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.6.2
+
+[中文版 →](https://github.com/SpaceCoder-Kafka/codex-co2/blob/main/docs/release-notes/v0.6.2-zh.md)
+
+- **Send screenshots and files through the macOS bridge.** Admitted guests can paste a screenshot, choose files or drop them into the chat, then send them with or without text. New shares enable attachments by default when the conversation supports them. Each message can include up to 8 files, with a limit of 32 MiB per file and 64 MiB total. Originals are stored on the host’s computer. Access to ordinary files depends on where the conversation runs.
+- **Choose when a share accepts attachments.** Under **Settings → Messages and approvals**, turn off **Allow guests to send screenshots and attachments** for that share to accept only text. Turning it off cancels unfinished uploads and attachment messages still waiting to be submitted. Messages already in the Codex queue continue. Restored LAN shares keep their saved setting.
+- **Wake the conversation in the background.** After Codex accepts a guest message into its queue, Co² asks macOS to wake the shared conversation in the background. This applies to both text and attachments.
+
 ## 0.6.1
 
 [中文版 →](https://github.com/SpaceCoder-Kafka/codex-co2/blob/main/docs/release-notes/v0.6.1-zh.md)

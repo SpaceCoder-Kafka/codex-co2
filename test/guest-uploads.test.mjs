@@ -10,7 +10,7 @@ import WebSocket from 'ws';
 import { GuestUploads, uploadMessage, attachmentInput, MAX_UPLOAD_BYTES, UPLOAD_CHUNK_BYTES } from '../lib/guest-uploads.mjs';
 import { protectedAttachmentPath } from '../lib/attachment-paths.mjs';
 import { fileRefs, readFilePreview } from '../lib/thread-files.mjs';
-import { SharedRoom, secret } from '../lib/host.mjs';
+import { SharedRoom, startOwner, secret } from '../lib/host.mjs';
 import { GuestPermissions } from '../lib/guest-permissions.mjs';
 import { startRelay } from '../lib/relay.mjs';
 import { ScopedThread } from '../lib/scoped-thread.mjs';
@@ -119,10 +119,29 @@ class Rpc extends EventEmitter {
   }
   close() {}
 }
-async function live(t, requireApproval = false) {
-  const { runtime } = fixture(t), rpc = new Rpc(), registrationSecret = secret();
+class QueueRpc extends Rpc {
+  capabilities = { transport: 'desktop-app-tools', submission: 'native-queue' };
+  supportsUploadedAttachments = true;
+  supportsClientMessageId = true;
+  enabled = false;
+  canConfigureLocalUploads() { return true; }
+  canUploadAttachments() { return this.enabled; }
+  setLocalUploadPermission(value) { this.enabled = value; }
+  async request(method, params, options) {
+    if (method !== 'turn/start') return super.request(method, params);
+    this.beforeDispatch = true;
+    await this.waitBefore;
+    if (!options.canDispatch()) throw Object.assign(new Error('Revoked'), { code: 'SUBMISSION_REVOKED', outcome: 'notSubmitted' });
+    this.calls.push(params);
+    await this.waitForReceipt;
+    if (this.queueError) throw this.queueError;
+    return { queued: { id: randomUUID(), clientUserMessageId: params.clientUserMessageId } };
+  }
+}
+async function live(t, requireApproval = false, rpc = new Rpc(), restart) {
+  const { runtime } = fixture(t), registrationSecret = secret();
   const relay = await startRelay({ registrationSecret });
-  const room = await new SharedRoom({ relayUrl: relay.url, registrationSecret, threadId: 'synthetic-thread', runtimeDir: runtime, requireApproval, permissions: new GuestPermissions(), rpcFactory: async () => rpc }).start();
+  const room = await new SharedRoom({ relayUrl: relay.url, registrationSecret, threadId: 'synthetic-thread', runtimeDir: runtime, requireApproval, restart, permissions: new GuestPermissions(), rpcFactory: async () => rpc }).start();
   t.after(async () => { room.close(); await relay.close(); });
   async function join(admit = true, sessionId) {
     const ws = new WebSocket(relay.url.replace(/^http/, 'ws')+'/guest', { origin: relay.url }), messages = [];
@@ -146,6 +165,111 @@ async function live(t, requireApproval = false) {
   }
   return { rpc, room, relay, join };
 }
+
+test('compatible shares enable Desktop uploads by default and only the local manager can turn them off', async t => {
+  const { runtime } = fixture(t), registrationSecret = secret();
+  const relay = await startRelay({ registrationSecret });
+  const owner = await startOwner({ relayUrl: relay.url, registrationSecret, runtimeDir: runtime,
+    rpcFactory: async () => new QueueRpc(), ownerDir: new URL('../owner', import.meta.url).pathname });
+  t.after(async () => { await owner.close(); await relay.close(); });
+  const messages = [], socket = new WebSocket(owner.baseUrl.replace('http:', 'ws:') + '/owner', { origin: owner.baseUrl });
+  t.after(() => socket.terminate()); socket.on('message', bytes => messages.push(JSON.parse(bytes)));
+  await once(socket, 'open');
+  const send = message => socket.send(JSON.stringify(message));
+  send({ type: 'auth', token: new URLSearchParams(new URL(owner.url).hash.slice(1)).get('owner') });
+  send({ type: 'share', threadId: 'synthetic-thread' });
+  const room = await until(() => [...owner.rooms.values()].find(r => r.state === 'online'));
+  assert.equal(room.view().desktopUploads, true); assert.equal(room.view().canConfigureDesktopUploads, true);
+  const toggle = { type: 'set-desktop-uploads', roomId: room.roomId, enabled: false };
+  room.guests.set('guest', { id: 'guest', name: 'Synthetic', status: 'admitted' });
+  room.receive({ type: 'guest-message', guestId: 'guest', payload: toggle });
+  assert.equal(room.view().desktopUploads, true);
+  send({ ...toggle, enabled: 'false' }); await until(() => messages.some(m => m.type === 'error'));
+  assert.equal(room.view().desktopUploads, true);
+  send(toggle); await until(() => room.view().desktopUploads === false);
+  await until(() => messages.some(m => m.type === 'state' && m.rooms.some(r => r.state === 'online' && r.desktopUploads === false)));
+  room.close();
+  send({ type: 'share', threadId: 'synthetic-thread' });
+  const next = await until(() => [...owner.rooms.values()].find(r => !r.closed && r.state === 'online'));
+  assert.notEqual(next.roomId, room.roomId); assert.equal(next.view().desktopUploads, true);
+});
+
+test('room recovery retains its upload decision and never enables an unsupported bridge', async t => {
+  for (const desktopUploads of [true, false, undefined]) {
+    const restart = { roomId: randomUUID(), admissionScope: randomUUID(), ...(desktopUploads === undefined ? {} : { desktopUploads }) };
+    const { room, rpc } = await live(t, false, new QueueRpc(), restart);
+    assert.equal(room.view().desktopUploads, desktopUploads === true);
+    assert.equal(rpc.enabled, desktopUploads === true);
+  }
+  const unsupported = Object.assign(new QueueRpc(), { canConfigureLocalUploads: () => false });
+  const { room } = await live(t, false, unsupported);
+  assert.equal(room.view().canConfigureDesktopUploads, false);
+  assert.equal(room.view().desktopUploads, false);
+  assert.throws(() => room.setDesktopUploads(true), /不支持/);
+  const older = new Rpc();
+  older.capabilities = { transport: 'desktop-app-tools', submission: 'native-queue' };
+  const old = await live(t, false, older);
+  assert.equal(old.room.view().canConfigureDesktopUploads, undefined);
+  assert.equal(old.room.uploadsEnabled, false);
+});
+
+test('disabling uploads cancels unsent attachments across re-enable, preserves text and broadcasts the effective policy', async t => {
+  const { room, join, rpc } = await live(t, true, new QueueRpc()), guest = await join();
+  const proposal = (text, id) => {
+    const requestId = randomUUID();
+    guest.send({ type: 'proposal', requestId, text, ...(id ? { attachmentIds: [id] } : {}) });
+    return requestId;
+  };
+  const state = id => room.proposals.get(guest.id + ':' + id)?.status;
+  const acknowledged = (id, status) => guest.messages.some(m => m.payload?.requestId === id && m.payload.status === status);
+  const start = { type: 'upload-start', uploadId: randomUUID(), name: 'partial.txt', size: 4 };
+  assert.ok(guest.messages.some(m => m.payload?.type === 'upload-policy' && m.payload.enabled === true));
+  room.setDesktopUploads(false);
+  guest.send(start); await until(() => guest.messages.some(m => m.payload?.uploadId === start.uploadId && m.payload.status === 'failed'));
+  assert.equal(room.uploads.items.size, 0);
+  room.setDesktopUploads(true);
+  await until(() => guest.messages.some(m => m.payload?.type === 'snapshot' && m.payload.desktopUploads === true));
+  const ready = await guest.upload('ready.txt', Buffer.from('synthetic'));
+  const pending = await guest.upload('approval.txt', Buffer.from('synthetic'));
+  const waiting = await guest.upload('worker.txt', Buffer.from('synthetic'));
+  guest.send(start); await until(() => room.uploads.items.has(start.uploadId));
+  const pendingId = proposal('', pending), waitingId = proposal('', waiting), textId = proposal('Keep this text');
+  await until(() => [pendingId, waitingId, textId].every(id => state(id) === 'pending'));
+  let resume; rpc.waitBefore = new Promise(resolve => { resume = resolve; });
+  const decision = room.decide(guest.id + ':' + waitingId, true);
+  await until(() => rpc.beforeDispatch);
+  const before = guest.messages.length;
+  room.setDesktopUploads(false);
+  await until(() => guest.messages.slice(before).some(m => m.payload?.type === 'upload-policy' && m.payload.enabled === false));
+  assert.ok(guest.messages.slice(before).some(m => m.payload?.type === 'snapshot' && m.payload.desktopUploads === false));
+  assert.ok([pendingId, waitingId].every(id => state(id) === 'rejected')); assert.equal(state(textId), 'pending');
+  assert.equal(room.uploads.items.size, 0);
+  const stale = proposal('', ready); await until(() => acknowledged(stale, 'rejected'));
+  room.setDesktopUploads(true);
+  guest.send({ type: 'upload-chunk', uploadId: start.uploadId, index: 0, data: 'dGVzdA==' });
+  const retry = proposal('', ready); await until(() => acknowledged(retry, 'rejected'));
+  resume(); await decision;
+  assert.equal(rpc.calls.length, 0); assert.equal(state(waitingId), 'rejected');
+  await room.decide(guest.id + ':' + textId, true); assert.equal(state(textId), 'queued');
+});
+
+test('Desktop uploads keep bytes after dispatch while unknown, and remove them on a definitive rejection', async t => {
+  const { room, join, rpc } = await live(t, false, new QueueRpc()), guest = await join();
+  for (const outcome of ['queued', 'unknown', 'rejected']) {
+    room.setDesktopUploads(true);
+    const id = await guest.upload('input.txt', Buffer.from(outcome));
+    const file = room.uploads.items.get(id).path, requestId = randomUUID(), before = rpc.calls.length;
+    let finish; rpc.waitForReceipt = new Promise(resolve => { finish = resolve; });
+    rpc.queueError = outcome === 'queued' ? null : Object.assign(new Error('Synthetic queue response'), { outcome });
+    guest.send({ type: 'proposal', requestId, text: '', attachmentIds: [id] });
+    await until(() => rpc.calls.length > before); room.setDesktopUploads(false);
+    assert.equal(room.proposals.get(guest.id + ':' + requestId)?.status, 'processing');
+    assert.ok(fs.existsSync(file));
+    finish();
+    await until(() => room.proposals.get(guest.id + ':' + requestId)?.status === outcome);
+    assert.equal(fs.existsSync(file), outcome !== 'rejected');
+  }
+});
 
 test('two tabs of an approved member share pending proposals and attachments, deduplicate dispatch and revoke together', async t => {
   const { rpc, room, join } = await live(t, true), identity = secret();

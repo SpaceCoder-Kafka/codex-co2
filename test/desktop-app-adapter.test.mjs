@@ -1,6 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter, once } from 'node:events';
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import os from 'node:os';
+import { randomUUID } from 'node:crypto';
+import { GuestUploads } from '../lib/guest-uploads.mjs';
+import { createDesktopUploadHistory } from '../lib/desktop-upload-history.mjs';
+import { ScopedThread } from '../lib/scoped-thread.mjs';
 import { setTimeout as delay } from 'node:timers/promises';
 import { attachDesktopApp, desktopAppCapabilities } from '../lib/desktop-app-adapter.mjs';
 
@@ -112,7 +119,7 @@ test('native queued acknowledgement is immediate and never fabricates a turn or 
   assert.deepEqual(calls[0].input, [{ type: 'text', text: '合成访客输入', text_elements: [] }]);
   assert.equal(rpc.supportsClientMessageId, true);
   assert.equal(rpc.capabilities.authorBinding, false);
-  assert.equal(rpc.supportsUploadedAttachments, false);
+  assert.equal(rpc.supportsUploadedAttachments, true);
   assert.equal(rpc.canUploadAttachments(), false);
   assert.throws(() => rpc.validateUploadedAttachments(), { code: 'DESKTOP_APP_UPLOAD_UNAVAILABLE' });
   assert.equal(attachment.capabilities, desktopAppCapabilities);
@@ -359,4 +366,104 @@ test('attachment forwards real bridge recovery once and removes connection liste
   await attachment.close();
   assert.equal(bridge.listenerCount('connected'), 0);
   bridge.connected = true; bridge.emit('connected'); assert.equal(recoveries, 2);
+});
+
+test('the room can enable attachments on ordinary local Desktop reads, while incompatible targets revoke that permission', async t => {
+  const bridge = new Bridge();
+  let metadata = { kind: 'codex' };
+  bridge.handler = async id => {
+    const result = page(id);
+    Object.assign(result.thread, metadata);
+    return result;
+  };
+  const { attachment } = await fixture(t, { bridge, uploadHistory: { filesFor: () => [] } });
+  await attachment.selectThread(THREAD);
+  const rpc = await attachment.rpcFactory(), refresh = () => rpc.request('thread/read', { threadId: THREAD });
+  assert.equal(rpc.canConfigureLocalUploads(), false);
+  for (const incompatible of [{ kind: 'chatgpt' }, { kind: 'codex', mode: 'durable' }, { kind: 'codex', mode: 'new-mode' },
+    { kind: 'codex', environments: [{ environmentId: 'local' }, { environmentId: 'remote' }] },
+    { kind: 'codex', environments: [{}] }]) {
+    // The current native schema omits execution mode and environments.
+    metadata = { kind: 'codex' }; await refresh();
+    assert.equal(rpc.canConfigureLocalUploads(), true);
+    assert.equal(rpc.canUploadAttachments(), false, 'only the room establishes its effective policy');
+    rpc.setLocalUploadPermission(true);
+    assert.equal(rpc.canUploadAttachments(), true);
+    metadata = incompatible; await refresh();
+    assert.equal(rpc.canConfigureLocalUploads(), false);
+    assert.equal(rpc.canUploadAttachments(), false);
+    assert.throws(() => rpc.setLocalUploadPermission(true), { code: 'DESKTOP_APP_UPLOAD_UNAVAILABLE' });
+  }
+});
+
+test('room-authorized uploads and originals recover in the selected thread after re-sharing', async t => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'co2-native-attachments-'));
+  t.after(() => fs.rm(dir, { recursive: true, force: true }));
+  const runtime = path.join(dir, '.coop'), store = new GuestUploads(runtime, randomUUID());
+  t.after(() => store.close());
+  const samples = [
+    ['screenshot.png', Buffer.from('89504e470d0a1a0a', 'hex')],
+    ['review.pdf', Buffer.from('%PDF-1.7\nsynthetic')],
+    ['report.docx', Buffer.from('504b0304', 'hex')],
+    ['empty.bin', Buffer.alloc(0)],
+  ];
+  const ids = samples.map(([name, bytes]) => {
+    const uploadId = randomUUID();
+    store.receive('guest', { type: 'upload-start', uploadId, name, size: bytes.length });
+    if (bytes.length) store.receive('guest', { type: 'upload-chunk', uploadId, index: 0, data: bytes.toString('base64') });
+    store.receive('guest', { type: 'upload-finish', uploadId });
+    return uploadId;
+  });
+  const attachments = store.claim('guest', ids), bridge = new Bridge();
+  let messages = [], gated = false, mode, pending, resume;
+  bridge.handler = async id => {
+    const result = page(id, [turn('turn', messages)]);
+    Object.assign(result.thread, { kind: 'codex', mode }); return result;
+  };
+  const setup = async (id = THREAD) => {
+    const { attachment } = await fixture(t, { bridge, uploadHistory: createDesktopUploadHistory(runtime),
+      queue: { async submit(request) {
+        if (gated) { pending(); await new Promise(resolve => { resume = resolve; }); }
+        if (!request.canDispatch()) throw Object.assign(new Error('revoked'), { code: 'SUBMISSION_REVOKED', outcome: 'notSubmitted' });
+        messages = [{ id: 'native-item-id', type: 'userMessage', content: request.input }];
+        return { id: randomUUID(), clientUserMessageId: request.clientUserMessageId, wakePending: false };
+      } } });
+    await attachment.selectThread(id);
+    const rpc = await attachment.rpcFactory(), scoped = new ScopedThread({ rpc, threadId: id });
+    t.after(() => scoped.close()); await scoped.start();
+    return { rpc, scoped };
+  };
+  const { rpc, scoped } = await setup();
+  assert.equal(rpc.canConfigureLocalUploads(), true);
+  assert.equal(rpc.canUploadAttachments(), false);
+  await assert.rejects(scoped.submitApproved('', randomUUID(), { canDispatch: () => true, attachments }), { code: 'ATTACHMENT_INVALID' });
+  rpc.setLocalUploadPermission(true);
+  const receipt = await scoped.submitApproved('Review together', randomUUID(), { canDispatch: () => true, attachments });
+  assert.equal(receipt.kind, 'queued'); await scoped.refresh();
+  assert.deepEqual(messages[0].content.map(p => p.type), ['text', 'localImage']);
+  // Desktop can persist an inline image, whose bytes app-tools omits on read.
+  messages[0].content = [messages[0].content[0], { type: 'image' }];
+  const reopened = await setup();
+  assert.equal(reopened.rpc.canUploadAttachments(), false);
+  const [item] = reopened.scoped.snapshot.items;
+  assert.equal(item.text, 'Review together');
+  assert.equal(item.images.length, 1);
+  assert.deepEqual(item.files.map(f => f.name), samples.map(([name]) => name));
+  assert.equal(item.files[0].previewImageId, item.images[0].id);
+  for (const [i, file] of item.files.entries()) {
+    assert.deepEqual((await reopened.scoped.readFile(file.id, { representation: 'original' })).bytes, samples[i][1]);
+  }
+  // Pasting the exact task text into a different thread grants no file rights.
+  messages = [user('copy', messages[0].content[0].text)];
+  assert.equal((await setup(OTHER)).scoped.snapshot.items[0].files, undefined);
+
+  // Turning off and on during worker startup cannot authorize the original submission.
+  gated = true;
+  const started = new Promise(resolve => { pending = resolve; });
+  const rejected = scoped.submitApproved('', randomUUID(), { canDispatch: () => true, attachments });
+  await started; rpc.setLocalUploadPermission(false); rpc.setLocalUploadPermission(true); resume();
+  await assert.rejects(rejected, { code: 'SUBMISSION_REVOKED' });
+  mode = 'durable'; await scoped.refresh();
+  assert.equal(rpc.canUploadAttachments(), false);
+  assert.throws(() => rpc.setLocalUploadPermission(true), { code: 'DESKTOP_APP_UPLOAD_UNAVAILABLE' });
 });

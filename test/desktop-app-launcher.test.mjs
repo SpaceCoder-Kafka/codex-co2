@@ -7,6 +7,20 @@ import { fileURLToPath } from 'node:url';
 import { createDesktopAppLauncher } from '../lib/desktop-app-launcher.mjs';
 
 const resourceRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
+test('queue wake requests background delivery while opening the bridge stays interactive', async () => {
+  const calls = [];
+  const launcher = await createDesktopAppLauncher({ runtimeDir: '/synthetic/runtime', resourceRoot,
+    executables: { cliPath: '/synthetic/official/codex', nodePath: '/synthetic/official/node' },
+    execute: async (file, args) => { calls.push({ file, args }); } });
+  const threadId = '00000000-0000-4000-8000-000000000001';
+  await launcher.wakeThread(threadId);
+  await launcher.openBridge();
+  assert.deepEqual(calls[0], { file: '/usr/bin/open', args: ['-g', `codex://threads/wake/${threadId}`] });
+  assert.equal(calls[1].file, '/usr/bin/open');
+  assert.equal(calls[1].args.length, 1);
+  assert.ok(calls[1].args[0].startsWith(launcher.link + '?path='));
+});
+
 test('bootstrap installs only bundled local source and uses official URLs without starting a model', async t => {
   const runtimeDir = await fs.mkdtemp(path.join(os.tmpdir(), 'co2-launcher-'));
   t.after(() => fs.rm(runtimeDir, { recursive: true, force: true }));

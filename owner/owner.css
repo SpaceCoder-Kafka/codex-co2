@@ -200,6 +200,7 @@ h3 { font-size: 13px; font-weight: 600; }
 .policy-row > div { min-width: 0; }
 .policy-row strong { display: block; font-size: 12px; font-weight: 550; overflow-wrap: anywhere; }
 .policy-row .muted { font-size: 10px; margin-top: 4px; }
+.room-upload-policy { border-top: 0; padding-top: 0; }
 .policy-toggle { font-size: 11px; min-height: 32px; flex-shrink: 0; }
 .policy-toggle[aria-pressed="true"] { color: #3474cc; background: #edf4ff; }
 .settings-footnote { display: flex; gap: 10px; color: #9999a1; font-size: 11px; padding: 0 6px; line-height: 1.9; }

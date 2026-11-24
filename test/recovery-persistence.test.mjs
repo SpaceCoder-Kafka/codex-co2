@@ -86,12 +86,20 @@ test('host startup restores only the latest eligible invitation per thread, incl
     assert.ok(first.registerRoom(room)); return room;
   };
   const old = add('one'); first.updateRoom(old.roomId, { state: 'revoked', endReason: 'paused' });
-  const current = add('one'), other = add('two');
+  const current = add('one', { desktopUploads: true }), other = add('two', { desktopUploads: true });
+  first.updateRoom(other.roomId, { desktopUploads: false });
+  const older = add('pre-upload-policy');
   add('stopped'); first.revokeThread('stopped');
   const expiring = add('expired', { inviteExpiresAt: f.now() + HOUR });
   first.close({ preserve: true }); f.advance(HOUR);
+  const checkpoint = JSON.parse(await fs.readFile(f.file, 'utf8'));
+  delete checkpoint.rooms.find(room => room.roomId === older.roomId).desktopUploads;
+  await fs.writeFile(f.file, JSON.stringify(checkpoint), { mode: 0o600 });
   const second = await f.open();
-  assert.deepEqual(second.restartRoomIds(origin), [current.roomId, other.roomId]);
+  assert.deepEqual(second.restartRoomIds(origin), [current.roomId, other.roomId, older.roomId]);
+  assert.equal(second.hostRestartAuthorization(current.roomId, origin).desktopUploads, true);
+  assert.equal(second.hostRestartAuthorization(other.roomId, origin).desktopUploads, false);
+  assert.equal(second.hostRestartAuthorization(older.roomId, origin).desktopUploads, false);
   assert.deepEqual(second.hostRestartAuthorization(other.roomId, origin).members, []);
   assert.equal(second.hostRestartAuthorization(expiring.roomId, origin), null);
   assert.deepEqual(second.restartRoomIds('http://192.168.1.21:47870'), []);
@@ -253,6 +261,7 @@ test('unexpected state fields, duplicated identities, and plaintext credentials 
   for (const mutate of [
     data => { data.body = 'synthetic forbidden content'; },
     data => { data.rooms[0].inviteToken = source.inviteToken; },
+    data => { data.rooms[0].desktopUploads = 'true'; },
     data => { data.rooms.push(data.rooms[0]); },
     data => { data.rooms[0].recoveryExpiresAt += DAY; },
     data => { data.rooms[0].inviteHash = 'invalid'; },

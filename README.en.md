@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/SpaceCoder-Kafka/codex-co2/releases/tag/v0.6.1"><img src="https://img.shields.io/badge/release-v0.6.1-2563eb" alt="Release v0.6.1"></a>
+  <a href="https://github.com/SpaceCoder-Kafka/codex-co2/releases/tag/v0.6.2"><img src="https://img.shields.io/badge/release-v0.6.2-2563eb" alt="Release v0.6.2"></a>
   <img src="https://img.shields.io/badge/host-macOS%20%7C%20Windows-555555" alt="Host: macOS or Windows">
   <img src="https://img.shields.io/badge/guest-any%20browser-2563eb" alt="Guest: any browser">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-22c55e" alt="License: MIT"></a>
@@ -41,9 +41,11 @@ Newer Codex Desktop versions connect through the Co² bridge plugin. Click **Ins
 
 </details>
 
-Prefer a DMG or Windows build? Download from [Releases](https://github.com/SpaceCoder-Kafka/codex-co2/releases/tag/v0.6.1). Packages aren't notarized yet, so macOS asks you to confirm the first launch.
+On macOS, new shares that use the bridge plugin allow guest attachments by default when the conversation supports them. Guests can paste screenshots, select or drop files, and send them with or without a message. Files are stored on the host’s computer. To accept only text for a share, turn off **Allow guests to send screenshots and attachments** under **Settings → Messages and approvals**.
 
-Co² 0.6.1 rotates the macOS update signing key. If you use 0.6.0 or earlier, upgrade once via Homebrew or the DMG for your Mac. Subsequent in-app updates use the new key.
+Prefer a DMG or Windows build? Download from [Releases](https://github.com/SpaceCoder-Kafka/codex-co2/releases/tag/v0.6.2). Packages aren't notarized yet, so macOS asks you to confirm the first launch.
+
+Co² 0.6.1 introduced a new macOS update signing key. If you use 0.6.0 or earlier, upgrade once via Homebrew or the DMG for your Mac. Subsequent in-app updates use the new key.
 
 **If Co² helps your team, give it a ⭐ so other Codex users can find it.**
 

@@ -176,20 +176,58 @@ function snapshot(socket, revision, items, status = 'running') {
 const prompt = { id: 'u-1', role: 'user', text: '只回复 desktop-to-phone-ok，不使用工具' };
 const reply = text => ({ id: 'a-1', role: 'assistant', text });
 
-test('new Desktop transport explains its limits and cannot enable attachment input', () => {
+test('older Desktop bridges stay text-only even with a stale or incompatible upload policy', () => {
   const page = browser(), e = page.elements;
   const boundary = nodesByClass(e['proposal-form'], 'field-help')[0];
   assert.ok(boundary); assert.equal(boundary.hidden, true);
   const socket = page.join();
   snapshot(socket, 1, [], 'idle');
   assert.equal(boundary.hidden, true, 'legacy snapshots retain the existing UI');
+  enableUploads(socket);
+  assert.equal(e['attach-button'].disabled, false);
   socket.receive({ type: 'data', payload: { type: 'snapshot', revision: 2, status: 'idle', items: [], desktopBridge: true } });
   assert.equal(boundary.hidden, false);
-  assert.equal(boundary.textContent, '定时同步 · 仅文字输入；忙时消息排队；历史附件可能不完整，作者可能无法确认');
-  socket.receive({ type: 'data', payload: { type: 'upload-policy', enabled: true, maxFileBytes: 32*1024*1024, maxAttachments: 8, chunkBytes: 30*1024 } });
+  assert.match(boundary.textContent, /当前共享仅开放文字消息/);
+  assert.equal(e['attach-button'].disabled, true, 'the previous transport policy is discarded');
+  enableUploads(socket);
   assert.equal(e['attach-button'].disabled, true);
-  socket.receive({ type: 'data', payload: { type: 'snapshot', revision: 3, status: 'idle', items: [], desktopBridge: 'true' } });
+  socket.receive({ type: 'data', payload: { type: 'snapshot', revision: 3, status: 'idle', items: [], desktopBridge: true, desktopUploads: 'true' } });
+  enableUploads(socket);
+  assert.equal(e['attach-button'].disabled, true, 'the upload capability must be a boolean');
+  socket.receive({ type: 'data', payload: { type: 'snapshot', revision: 4, status: 'idle', items: [], desktopBridge: 'true' } });
   assert.equal(boundary.hidden, true, 'only an explicit boolean enables the transport notice');
+});
+
+test('Desktop bridge enables PDF and image uploads only after both the snapshot and policy allow them', async () => {
+  const page = browser(), e = page.elements, socket = page.join();
+  const boundary = nodesByClass(e['proposal-form'], 'field-help')[0];
+  const bridge = { type: 'snapshot', status: 'idle', items: [], desktopBridge: true, desktopUploads: true };
+  enableUploads(socket);
+  socket.receive({ type: 'data', payload: { ...bridge, revision: 1 } });
+  assert.equal(e['attach-button'].disabled, true, 'a policy before the first snapshot grants no uploads');
+  assert.match(boundary.textContent, /正在同步附件设置/);
+  enableUploads(socket);
+  assert.equal(e['attach-button'].disabled, false);
+  assert.match(boundary.textContent, /可粘贴截图或添加文件，附件会上传到分享者的电脑/);
+  e['attachment-input'].files = [syntheticFile('review.pdf'), syntheticFile('image.png')];
+  e['attachment-input'].trigger('change');
+  await finishBrowserUploads(page, socket);
+  socket.receive({ type: 'data', payload: { ...bridge, revision: 2 } });
+  assert.equal(e['send-button'].disabled, false, 'regular polling preserves ready attachments');
+  e['proposal-form'].trigger('submit');
+  const proposals = socket.sent.filter(message => message.type === 'proposal');
+  assert.equal(proposals.length, 1);
+  assert.equal(proposals[0].text, '');
+  assert.equal(proposals[0].attachmentIds.length, 2);
+  e['attachment-input'].files = [syntheticFile('draft.pdf')];
+  e['attachment-input'].trigger('change');
+  await finishBrowserUploads(page, socket);
+  socket.receive({ type: 'data', payload: { type: 'upload-policy', enabled: false } });
+  assert.equal(e['attach-button'].disabled, true);
+  assert.equal(e['send-button'].disabled, true);
+  e['proposal-form'].trigger('submit');
+  assert.equal(socket.sent.filter(message => message.type === 'proposal').length, 1);
+  assert.match(boundary.textContent, /当前共享仅开放文字消息/);
 });
 
 test('omitted execution details are explicit without claiming complete conversation history', () => {

@@ -9,7 +9,8 @@ import { resolveCli } from '../lib/runtime.mjs';
 import { importReceiverSnapshot } from '../lib/receiver-import.mjs';
 import { createContentMarkdown } from '../lib/markdown-parser.mjs';
 import { startResponsesFixture } from './fixtures/responses-server.mjs';
-import { GuestUploads } from '../lib/guest-uploads.mjs';
+import { GuestUploads, attachmentInput } from '../lib/guest-uploads.mjs';
+import { createDesktopQueue } from '../lib/desktop-queue.mjs';
 import { ScopedThread } from '../lib/scoped-thread.mjs';
 import { randomUUID } from 'node:crypto';
 
@@ -178,6 +179,44 @@ stream_max_retries = 0
     const afterBusy = await b.request('thread/read', { threadId, includeTurns: true });
     assert.equal(afterBusy.thread.turns.length, 5, 'Two inputs while busy must not produce two independent turns');
     t.diagnostic(`Busy turn/start returned existing turn ${active.turn.id}; both clients observed completion; one additional turn, two synthetic model requests.`);
+  });
+
+  await t.test('the official native queue delivers a mixed guest attachment message to the isolated consumer', async () => {
+    const uploads = new GuestUploads(path.join(workspace, '.coop'), randomUUID());
+    const queue = createDesktopQueue({ cliPath: binary, environment: { HOME: home, CODEX_HOME: codexHome, TMPDIR: root },
+      wakeThread: async () => true });
+    try {
+      const files = [
+        ['queued.png', Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAEUlEQVR4nGP4z8DwH4QZYAwAR8oH+WdZbrcAAAAASUVORK5CYII=', 'base64')],
+        ['queued.pdf', Buffer.from('%PDF-1.7\nSynthetic queue document')],
+      ];
+      const ids = files.map(([name, bytes]) => {
+        const uploadId = randomUUID();
+        uploads.receive('guest', { type: 'upload-start', uploadId, name, size: bytes.length });
+        uploads.receive('guest', { type: 'upload-chunk', uploadId, index: 0, data: bytes.toString('base64') });
+        uploads.receive('guest', { type: 'upload-finish', uploadId });
+        return uploadId;
+      });
+      const attachments = uploads.claim('guest', ids);
+      const before = fixture.requests.length, input = attachmentInput('Review the two queued files.', attachments);
+      const receipt = await queue.submit({ threadId, input, attachments, clientUserMessageId: randomUUID(), canDispatch: () => true });
+      assert.equal(fixture.requests.length, before);
+      const listed = await reconnected.request('thread/queue/list', { threadId });
+      const queued = listed.data.find(record => record.id === receipt.id);
+      assert.equal(queued.clientUserMessageId, receipt.clientUserMessageId);
+      assert.deepEqual(queued.input.map(part => part.type), ['text', 'image']);
+      assert.deepEqual(Buffer.from(queued.input[1].url.split(',')[1], 'base64'), files[0][1]);
+      const started = await reconnected.request('thread/queue/start', { threadId, queuedSubmissionId: receipt.id });
+      await until(() => eventsB.some(e => e.method === 'turn/completed' && e.params.turn.id === started.turn.id), 'queued attachments consumed');
+      assert.equal(fixture.requests.length, before + 1);
+      const parts = fixture.requests.at(-1).input.filter(item => item.role === 'user').at(-1).content;
+      assert.ok(parts.some(p => p.type === 'input_image'));
+      assert.ok(parts.some(p => p.type === 'input_text' && p.text.includes(attachments[1].path)));
+      assert.deepEqual(await fs.readFile(attachments[1].path), files[1][1]);
+      const after = await reconnected.request('thread/read', { threadId, includeTurns: true });
+      const sent = after.thread.turns.find(turn => turn.id === started.turn.id).items.find(item => item.type === 'userMessage');
+      assert.equal(sent.content[0].text, input[0].text);
+    } finally { await queue.close(); uploads.close(); }
   });
 
   await t.test('uploaded images and ordinary/audio/video files reach the isolated pinned backend with model calls confined to loopback', async () => {

@@ -664,6 +664,10 @@ function renderDesktopConnection(m) {
   const attached = canReconnectDesktop(m);
   $('#desktop-connection').hidden = !attached;
   $('#desktop-boundary').hidden = m.desktop?.transport !== 'desktop-app-tools';
+  const uploads = m.desktop?.capabilities?.uploads;
+  const input = uploads === true ? t('支持附件的会话开始共享时默认允许上传。可在设置的“消息与审批”中按会话关闭。')
+    : uploads === false ? t('当前连接仅支持文字消息。') : '';
+  $('#desktop-boundary').textContent = t('{input}会话定时同步，Codex 忙时消息会排队。历史附件和消息署名可能不完整。', { input }).trimStart();
   $('#desktop-connection').dataset.state = m.desktop?.connected === true ? 'online' : 'unavailable';
   $('#desktop-status').textContent = t(desktopReconnectBusy ? '正在重新连接 Codex…'
     : m.desktop?.connected === true ? 'Codex 已连接' : 'Codex 未连接，共享已暂停');
@@ -751,7 +755,7 @@ function proposalCard(room, proposal) {
     card.append(row);
   }
   if (proposal.status === 'unknown') card.append(el('p', t('提交结果不确定。请在 Codex 确认是否已执行；不会自动重试。'), 'muted'));
-  if (proposal.status === 'failed' && proposal.message) card.append(el('p', t(proposal.message), 'muted'));
+  if (['failed', 'rejected'].includes(proposal.status) && proposal.message) card.append(el('p', t(proposal.message), 'muted'));
   return card;
 }
 ws.onmessage = event => {
@@ -834,6 +838,24 @@ ws.onmessage = event => {
   renderRooms(m);
   if (desktopRecovered) { notice('Codex 已连接'); refreshDesktopCatalog(); }
 };
+function desktopUploadPolicy(room) {
+  const row = el('div', null, 'policy-row room-upload-policy'), description = el('div');
+  const configurable = room.canConfigureDesktopUploads === true;
+  const hint = el('p', configurable ? t('访客上传的截图和文件会保存到你的电脑。关闭后，本次共享只接收文字，直到你重新开启附件。')
+    : t('此会话的执行环境或连接不支持访客附件。'), 'muted');
+  hint.id = 'desktop-upload-hint-' + room.roomId;
+  description.append(el('strong', t('允许访客发送截图/附件')), hint);
+  const enabled = configurable && room.desktopUploads === true;
+  const toggle = button(configurable ? (enabled ? '已开启' : '已关闭') : '不可用', () => {
+    if (!toggle.disabled) send({ type: 'set-desktop-uploads', roomId: room.roomId, enabled: !enabled });
+  }, 'policy-toggle');
+  toggle.setAttribute('aria-pressed', String(enabled));
+  toggle.setAttribute('aria-label', t('{title}：允许访客发送截图/附件', { title: room.title }));
+  toggle.setAttribute('aria-describedby', hint.id);
+  toggle.disabled = !configurable || disconnected || room.state !== 'online';
+  row.append(description, toggle);
+  return row;
+}
 function renderRooms(m) {
   lastState = m;
   for (const requestId of recoveryDecisions.keys()) {
@@ -921,6 +943,9 @@ function renderRooms(m) {
       policy.setAttribute('aria-label', t('{title}：{action}消息审批', { title: room.title, action: t(room.requireApproval ? '关闭' : '开启') }));
       policy.disabled = room.state !== 'online';
       policyRow.append(policyTitle, policy); $('#room-policies').append(policyRow);
+      if (room.canConfigureDesktopUploads === false || room.canConfigureDesktopUploads === true && typeof room.desktopUploads === 'boolean') {
+        $('#room-policies').append(desktopUploadPolicy(room));
+      }
       invite.append(row);
       let alternateInvite;
       if (room.intranetOnly === true && lanReady && room.ipInviteUrl) {

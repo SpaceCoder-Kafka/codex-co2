@@ -27,14 +27,13 @@ const ui = Object.fromEntries([
 ].map((id) => [id, byId(id)]));
 const desktopBoundary = document.createElement('p');
 desktopBoundary.className = 'field-help';
-desktopBoundary.textContent = '定时同步 · 仅文字输入；忙时消息排队；历史附件可能不完整，作者可能无法确认';
 desktopBoundary.hidden = true;
 ui['proposal-form'].append(desktopBoundary);
 
 const proposals = new Map();
 const selectedUploads = [], uploadWaiters = new Map();
-let uploadEnabled = false, uploadGeneration = 0, uploadRunning = false;
-let desktopBridge = false;
+let uploadEnabled = false, uploadPolicyKnown = false, uploadGeneration = 0, uploadRunning = false;
+let desktopBridge = false, desktopUploads = false;
 const uploadLimit = 32 * 1024 * 1024, uploadChunkBytes = 30 * 1024;
 let documentThumbnailCount = 0;
 function isValidInvitation(room, token) {
@@ -263,7 +262,12 @@ function canPropose() {
 
 function updateControls() {
   refreshCollaboration();
-  desktopBoundary.hidden = !desktopBridge || !admitted;
+  desktopBoundary.hidden = !desktopBridge || !canPropose();
+  if (!desktopBoundary.hidden) {
+    const input = uploadEnabled ? '可粘贴截图或添加文件，附件会上传到分享者的电脑。'
+      : desktopUploads && !uploadPolicyKnown ? '正在同步附件设置。' : '当前共享仅开放文字消息。';
+    desktopBoundary.textContent = input + '会话定时同步，Codex 忙时消息会排队。历史附件和消息署名可能不完整。';
+  }
   if (!canPropose()) hasImportableContent = false;
   ui['import-to-codex'].hidden = !admitted;
   ui['import-to-codex'].disabled = !hasImportableContent;
@@ -272,7 +276,8 @@ function updateControls() {
   ui['send-button'].disabled = !canPropose() || (!ui['proposal-text'].value.trim() && !selectedUploads.length)
     || selectedUploads.some(a => a.status !== 'ready');
   ui['attach-button'].disabled = !canPropose() || !uploadEnabled || selectedUploads.length >= 8;
-  ui['attach-button'].title = uploadEnabled ? '添加文件，也可粘贴或拖放；单个最大 32 MiB' : '当前共享暂不支持发送附件';
+  ui['attach-button'].title = !canPropose() ? '连接共享会话后可查看附件设置' : uploadEnabled ? '可粘贴截图、选择或拖入文件，单个最大 32 MiB'
+    : desktopUploads && !uploadPolicyKnown ? '正在同步附件设置' : '当前共享暂不支持发送附件';
   ui['join-button'].disabled = !validInvitation || terminal || connecting || admitted;
   ui['display-name'].disabled = connecting || admitted || terminal;
   ui['recovery-input'].disabled = connecting || admitted || terminal;
@@ -416,7 +421,7 @@ async function prepareUploadPreview(item, ext) {
   } catch { fallback(); disposeUploadPreview(item); }
 }
 function pauseUploads() {
-  uploadEnabled = false; uploadGeneration++;
+  uploadEnabled = false; uploadPolicyKnown = false; uploadGeneration++;
   for (const waiter of uploadWaiters.values()) waiter.reject(new Error('连接已中断'));
   for (const item of selectedUploads) { item.status = 'failed'; disposeUploadPreview(item); }
   renderUploads();
@@ -755,8 +760,14 @@ function renderSnapshot(payload) {
     lastRevision = payload.revision;
   }
   clearRichText();
-  desktopBridge = payload.desktopBridge === true;
-  if (desktopBridge) uploadEnabled = false;
+  const bridge = payload.desktopBridge === true;
+  const acceptsUploads = bridge && payload.desktopUploads === true;
+  if (desktopBridge !== bridge || desktopUploads !== acceptsUploads || payload.status === 'offline') {
+    uploadPolicyKnown = false;
+    if (uploadEnabled) pauseUploads();
+  }
+  desktopBridge = bridge;
+  desktopUploads = acceptsUploads;
   contentCapabilities = Array.isArray(payload.capabilities) ? payload.capabilities.filter(c => ['file-original', 'activity-details'].includes(c)) : [];
   const nearBottom = nearConversationBottom();
   const previousScrollTop = ui.conversation.scrollTop;
@@ -952,7 +963,11 @@ function handleMessage(message) {
       if (!admitted || !message.payload || typeof message.payload !== 'object') return;
       const payload = message.payload;
       if (payload.type === 'upload-policy') {
-        uploadEnabled = !desktopBridge && payload.enabled === true && payload.maxFileBytes === uploadLimit && payload.maxAttachments === 8 && payload.chunkBytes === uploadChunkBytes;
+        const enabled = canPropose() && (!desktopBridge || desktopUploads) && payload.enabled === true
+          && payload.maxFileBytes === uploadLimit && payload.maxAttachments === 8 && payload.chunkBytes === uploadChunkBytes;
+        if (uploadEnabled && !enabled) pauseUploads();
+        uploadEnabled = enabled;
+        uploadPolicyKnown = canPropose();
         updateControls();
       }
       if (payload.type === 'upload-status') {

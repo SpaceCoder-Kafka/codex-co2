@@ -167,14 +167,18 @@ test('Desktop reconnect is scoped to the new transport, allows a disconnected De
 test('Desktop limitations and queued proposals are translated without claiming completion', () => {
   const page = browser(), e = page.elements;
   const queuedRoom = room(); queuedRoom.proposals[0].status = 'queued';
-  page.receive(lanState({ rooms: [queuedRoom], desktop: { transport: 'desktop-app-tools', connected: true } }));
-  const boundary = '定时同步 · 仅文字输入；忙时消息排队；历史附件可能不完整，作者可能无法确认';
-  for (const language of ['zh-CN', 'zh-TW', 'en']) {
-    e.language.value = language; e.language.onchange();
-    assert.equal(e['desktop-boundary'].textContent, messages[language][boundary]);
-    assert.equal(e['reconnect-desktop'].textContent, messages[language]['重新连接 Codex']);
-    assert.ok(page.nodes().some(n => n.dataset.state === 'queued' && n.textContent === messages[language]['已排队，等待 Codex 执行']));
-    assert.equal(page.nodes().some(n => n.textContent === messages[language]['提交结果不确定。请在 Codex 确认是否已执行；不会自动重试。']), false);
+  const boundary = '{input}会话定时同步，Codex 忙时消息会排队。历史附件和消息署名可能不完整。';
+  for (const uploads of [undefined, false, true]) {
+    page.receive(lanState({ rooms: [queuedRoom], desktop: { transport: 'desktop-app-tools', connected: true, capabilities: { uploads } } }));
+    for (const language of ['zh-CN', 'zh-TW', 'en']) {
+      e.language.value = language; e.language.onchange();
+      const input = uploads === true ? '支持附件的会话开始共享时默认允许上传。可在设置的“消息与审批”中按会话关闭。'
+        : uploads === false ? '当前连接仅支持文字消息。' : '';
+      assert.equal(e['desktop-boundary'].textContent, messages[language][boundary].replace('{input}', messages[language][input] ?? '').trimStart());
+      assert.equal(e['reconnect-desktop'].textContent, messages[language]['重新连接 Codex']);
+      assert.ok(page.nodes().some(n => n.dataset.state === 'queued' && n.textContent === messages[language]['已排队，等待 Codex 执行']));
+      assert.equal(page.nodes().some(n => n.textContent === messages[language]['提交结果不确定。请在 Codex 确认是否已执行；不会自动重试。']), false);
+    }
   }
 });
 
@@ -771,6 +775,41 @@ test('owner chooses approval before sharing and toggles each room without approv
   assert.deepEqual(page.sent.at(-1), { type: 'set-message-policy', roomId: r.roomId, requireApproval: false });
   assert.equal(page.sent.some(m => m.type === 'approve'), false);
   assert.ok(page.nodes().some(e => e.textContent === '确认并交给 Agent'));
+});
+
+test('local attachment permission applies only to the chosen bridge room and follows the confirmed host state', () => {
+  const page = browser(), r = { ...room(), canConfigureDesktopUploads: true, desktopUploads: true };
+  const other = { ...room(), roomId: 'other-room', title: 'Synthetic other thread' };
+  const state = room => page.receive(lanState({ rooms: [room, other] }));
+  const toggles = () => page.nodes().filter(n => n.getAttribute('aria-describedby')?.startsWith('desktop-upload-hint-'));
+  state({ ...r, desktopUploads: undefined });
+  assert.equal(toggles().length, 0, 'wait until the host reports the room setting');
+  state(r);
+  const [toggle] = toggles();
+  assert.equal(toggles().length, 1, 'no switch for a room that has not advertised this setting');
+  assert.equal(toggle.getAttribute('aria-pressed'), 'true');
+  assert.equal(toggle.getAttribute('aria-label'), r.title + '：允许访客发送截图/附件');
+  assert.ok(page.nodes().some(n => n.id === toggle.getAttribute('aria-describedby') && n.textContent.includes('截图和文件会保存到你的电脑')));
+  toggle.onclick();
+  assert.deepEqual(page.sent.at(-1), { type: 'set-desktop-uploads', roomId: r.roomId, enabled: false });
+  assert.equal(toggle.getAttribute('aria-pressed'), 'true', 'wait for confirmation from the host');
+  state({ ...r, desktopUploads: false });
+  assert.equal(toggles()[0].getAttribute('aria-pressed'), 'false');
+  toggles()[0].onclick();
+  assert.deepEqual(page.sent.at(-1), { type: 'set-desktop-uploads', roomId: r.roomId, enabled: true });
+  state({ ...r, canConfigureDesktopUploads: false });
+  assert.equal(toggles()[0].getAttribute('aria-pressed'), 'false');
+  assert.equal(toggles()[0].textContent, '不可用');
+  assert.equal(toggles()[0].disabled, true);
+  toggles()[0].onclick();
+  state({ ...r, state: 'offline' });
+  assert.equal(toggles()[0].disabled, true);
+  toggles()[0].onclick();
+  state(r);
+  page.socket.close();
+  assert.equal(toggles()[0].disabled, true);
+  toggles()[0].onclick();
+  assert.equal(page.sent.filter(m => m.type === 'set-desktop-uploads').length, 2);
 });
 
 test('tabs separate the catalog, shared rooms and settings and support keyboard navigation', () => {
